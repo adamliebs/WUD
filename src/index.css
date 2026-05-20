@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Shared input style for the auth flow. */
+  .auth-input {
+    @apply w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3
+           text-white placeholder:text-zinc-500
+           focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30
+           transition;
+  }
+}
+
+:root {
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overscroll-behavior: none;
+}
+
+body {
+  background:
+    radial-gradient(1200px 800px at 20% 0%, rgba(244, 63, 94, 0.20), transparent 60%),
+    radial-gradient(900px 600px at 90% 100%, rgba(168, 85, 247, 0.18), transparent 55%),
+    radial-gradient(700px 500px at 50% 60%, rgba(251, 146, 60, 0.10), transparent 55%),
+    #07060b;
+  color: #f5f3ff;
+  min-height: 100vh;
+}
+
+/* Hide scrollbar but keep scrollability for the phone screen */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* Glass surface */
+.glass {
+  background: rgba(20, 18, 28, 0.55);
+  backdrop-filter: saturate(160%) blur(18px);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.glass-strong {
+  background: rgba(15, 13, 22, 0.78);
+  backdrop-filter: saturate(160%) blur(22px);
+  -webkit-backdrop-filter: saturate(160%) blur(22px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Brand gradient text */
+.text-grad {
+  background: linear-gradient(120deg, #fb7185 0%, #f472b6 40%, #fb923c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Pulsing live dot */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.7); opacity: 0.9; }
+  80%  { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.live-dot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+/* Subtle shine sweep for the brand button */
+@keyframes shine {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+.shine::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 40%;
+  background: linear-gradient(110deg, transparent 20%, rgba(255,255,255,0.35) 50%, transparent 80%);
+  transform: translateX(-120%);
+  animation: shine 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Phone-frame backdrop background outside the device */
+.stage-bg {
+  background:
+    radial-gradient(800px 600px at 30% 10%, rgba(244, 63, 94, 0.25), transparent 60%),
+    radial-gradient(800px 600px at 80% 90%, rgba(99, 102, 241, 0.22), transparent 60%),
+    #050308;
+}
