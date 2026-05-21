@@ -3,6 +3,7 @@ import { uid } from '../auth/middleware.js';
 import { badRequest } from '../lib/errors.js';
 import { handler, requireString } from '../lib/http.js';
 import { search, suggestions, trending } from '../services/discovery.js';
+import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
 import { listNotifications, markAllRead, sendPing, unreadCount } from '../services/notifications.js';
 import { clearLiveStatus, setLiveStatus } from '../services/presence.js';
 import { friendIds } from '../services/social.js';
@@ -78,7 +79,10 @@ miscRouter.post('/pings', handler((req, res) => {
 /* ---- discovery ---- */
 
 miscRouter.get('/search', handler((req, res) => {
-  res.json(search(uid(req), String(req.query.q ?? '')));
+  const results = search(uid(req), String(req.query.q ?? ''));
+  // Side-load users for the matched plans' hosts/joiners (people are full users already).
+  const users = hydrateUsers(collectUserIds({ activities: results.plans, people: results.people }));
+  res.json({ ...results, users });
 }));
 
 miscRouter.get('/trending', handler((req, res) => {

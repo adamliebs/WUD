@@ -12,7 +12,8 @@
       "Bash(curl -s http://localhost:5173/src/screens/SplashScreen.tsx)",
       "Bash(git checkout *)",
       "Bash(npm start *)",
-      "Bash(curl -s -X POST localhost:4000/v1/auth/email/login -H 'content-type: application/json' -d '{\"email\":\"admin@wud.app\",\"password\":\"admin1234\"}')"
+      "Bash(curl -s -X POST localhost:4000/v1/auth/email/login -H 'content-type: application/json' -d '{\"email\":\"admin@wud.app\",\"password\":\"admin1234\"}')",
+      "Bash(node -e ' *)"
     ]
   }
 }

@@ -248,24 +248,49 @@ export function createActivity(hostId: string, input: {
   });
 }
 
-/** Host-only edit of mutable fields before the plan starts. */
+/**
+ * Edit mutable fields. Most fields are host-only; the per-plan `reminderMins`
+ * can be set by any participant (it's that user's own reminder preference) and
+ * is allowed even after the plan starts is disallowed — reminders only matter
+ * before. Storage encoding for reminderMins: undefined→NULL, null→-1, n→n.
+ */
 export function updateActivity(actorId: string, activityId: string, patch: {
   title?: string; description?: string; place?: string; startsAt?: number;
   maxSize?: number | null; bannerUrl?: string | null;
+  // 'default' clears the override (use the user's default), 'off' disables it.
+  reminderMins?: number | 'default' | 'off';
 }): Activity {
   const row = getActivityRow(activityId);
   if (!row) throw notFound('ACTIVITY_NOT_FOUND', 'Plan not found');
-  if (row.host_id !== actorId) throw forbidden('Only the host can edit this plan');
-  if (isPast(row)) throw conflict('ACTIVITY_OVER', 'This plan has already started');
+
+  const reminderOnly =
+    patch.title === undefined && patch.description === undefined && patch.place === undefined &&
+    patch.startsAt === undefined && patch.maxSize === undefined && patch.bannerUrl === undefined;
+
+  // Host-only for content edits; participants may tweak only their reminder.
+  if (!reminderOnly && row.host_id !== actorId) {
+    throw forbidden('Only the host can edit this plan');
+  }
+  if (!reminderOnly && isPast(row)) {
+    throw conflict('ACTIVITY_OVER', 'This plan has already started');
+  }
+
+  const reminderCol =
+    patch.reminderMins === undefined ? row.reminder_minutes  // unchanged
+    : patch.reminderMins === 'default' ? null                // clear override
+    : patch.reminderMins === 'off' ? -1                      // disabled
+    : patch.reminderMins;                                    // explicit lead
+
   q.run(
     `UPDATE activities SET title = ?, description = ?, place = ?, starts_at = ?,
-       max_size = ?, banner_url = ?, updated_at = ? WHERE id = ?`,
+       max_size = ?, banner_url = ?, reminder_minutes = ?, updated_at = ? WHERE id = ?`,
     patch.title?.trim() || row.title,
     patch.description?.trim() ?? row.description,
     patch.place?.trim() ?? row.place,
     patch.startsAt ?? row.starts_at,
     patch.maxSize === undefined ? row.max_size : patch.maxSize,
     patch.bannerUrl === undefined ? row.banner_url : patch.bannerUrl,
+    reminderCol,
     now(), activityId,
   );
   return emitActivity(activityId);

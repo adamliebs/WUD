@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Calendar, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { Avatar, AvatarStack } from '../components/Avatar';
+import { AvatarStack } from '../components/Avatar';
 import { OverlayShell } from '../components/OverlayShell';
 import { categoryFor } from '../data/categories';
 import { useApp, clockTime, relTime } from '../store';

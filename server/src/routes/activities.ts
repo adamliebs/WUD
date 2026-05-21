@@ -7,7 +7,13 @@ import {
   leaveActivity, setRsvp, toggleReaction, updateActivity,
 } from '../services/activities.js';
 import { resolveHostOffers } from '../services/notifications.js';
-import type { CategoryKey, RsvpState } from '../types.js';
+import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
+import type { Activity, CategoryKey, RsvpState } from '../types.js';
+
+/** Attach the `users` cache for a set of activities (side-loaded resources). */
+function withUsers(activities: Activity[]) {
+  return { users: hydrateUsers(collectUserIds({ activities })) };
+}
 
 export const activitiesRouter = Router();
 
@@ -23,12 +29,13 @@ activitiesRouter.get('/feed', handler((req, res) => {
       ? (String(req.query.timeWindow) as 'now' | 'today' | 'week' | 'all') : undefined,
     nearMe: req.query.nearMe === 'true',
   });
-  res.json({ activities, hasFoF: hasFoFAvailable(id) });
+  res.json({ activities, hasFoF: hasFoFAvailable(id), ...withUsers(activities) });
 }));
 
 /** GET /v1/history */
 activitiesRouter.get('/history', handler((req, res) => {
-  res.json({ activities: historyFor(uid(req)) });
+  const activities = historyFor(uid(req));
+  res.json({ activities, ...withUsers(activities) });
 }));
 
 /** POST /v1/activities */
@@ -55,12 +62,13 @@ activitiesRouter.post('/activities', handler((req, res) => {
     mapX: typeof b.mapX === 'number' ? b.mapX : undefined,
     mapY: typeof b.mapY === 'number' ? b.mapY : undefined,
   });
-  res.status(201).json({ activity });
+  res.status(201).json({ activity, ...withUsers([activity]) });
 }));
 
 /** GET /v1/activities/:id */
 activitiesRouter.get('/activities/:id', handler((req, res) => {
-  res.json({ activity: getActivity(req.params.id) });
+  const activity = getActivity(req.params.id);
+  res.json({ activity, ...withUsers([activity]) });
 }));
 
 /** PATCH /v1/activities/:id — host-only edit. */
@@ -73,8 +81,13 @@ activitiesRouter.patch('/activities/:id', handler((req, res) => {
     startsAt: typeof b.startsAt === 'number' ? b.startsAt : undefined,
     maxSize: 'maxSize' in b ? (b.maxSize ?? null) : undefined,
     bannerUrl: 'bannerUrl' in b ? (b.bannerUrl ?? null) : undefined,
+    // Wire encoding: 'default' clears the override, 'off' disables, number = lead.
+    reminderMins: b.reminderMins === 'default' ? 'default'
+      : b.reminderMins === 'off' ? 'off'
+      : typeof b.reminderMins === 'number' ? b.reminderMins
+      : undefined,
   });
-  res.json({ activity });
+  res.json({ activity, ...withUsers([activity]) });
 }));
 
 /** PUT /v1/activities/:id/rsvp  body: { state } */
@@ -83,13 +96,14 @@ activitiesRouter.put('/activities/:id/rsvp', handler((req, res) => {
   if (!RSVP_STATES.has(state)) {
     throw badRequest('BAD_RSVP', 'state must be going/maybe/cant/none', 'state');
   }
-  res.json({ activity: setRsvp(uid(req), req.params.id, state) });
+  const activity = setRsvp(uid(req), req.params.id, state);
+  res.json({ activity, ...withUsers([activity]) });
 }));
 
 /** POST /v1/activities/:id/leave — leave; triggers host transfer if host. */
 activitiesRouter.post('/activities/:id/leave', handler((req, res) => {
   const result = leaveActivity(uid(req), req.params.id);
-  res.json(result);
+  res.json({ ...result, ...withUsers(result.activity ? [result.activity] : []) });
 }));
 
 /** POST /v1/activities/:id/host/accept — confirm you'll keep the host role. */
@@ -99,7 +113,8 @@ activitiesRouter.post('/activities/:id/host/accept', handler((req, res) => {
   if (!row) throw badRequest('ACTIVITY_NOT_FOUND', 'Plan not found');
   if (row.host_id !== id) throw conflict('NOT_HOST', 'You are not the host of this plan');
   resolveHostOffers(id, req.params.id);
-  res.json({ activity: getActivity(req.params.id) });
+  const activity = getActivity(req.params.id);
+  res.json({ activity, ...withUsers([activity]) });
 }));
 
 /** POST /v1/activities/:id/host/decline — pass the host role on (or dissolve). */
@@ -107,10 +122,11 @@ activitiesRouter.post('/activities/:id/host/decline', handler((req, res) => {
   const id = uid(req);
   resolveHostOffers(id, req.params.id);
   const result = leaveActivity(id, req.params.id);
-  res.json(result);
+  res.json({ ...result, ...withUsers(result.activity ? [result.activity] : []) });
 }));
 
 /** PUT /v1/activities/:id/reaction  body: { emoji }  — toggles. */
 activitiesRouter.put('/activities/:id/reaction', handler((req, res) => {
-  res.json({ activity: toggleReaction(uid(req), req.params.id, requireString(req.body, 'emoji')) });
+  const activity = toggleReaction(uid(req), req.params.id, requireString(req.body, 'emoji'));
+  res.json({ activity, ...withUsers([activity]) });
 }));

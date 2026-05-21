@@ -1,17 +1,48 @@
 # WUD — What U Doing?
 
-A polished mockup of a friends-only "presence feed" — post what you're doing, see what friends are doing, tap **+ Join** to roll with them. Per-event chat, host-transfer, and friend-of-friend visibility all wired up.
+A friends-only "presence feed" — post what you're doing, see what friends are doing,
+tap **+ Join** to roll with them. Per-event chat, host-transfer, squads, live presence,
+discovery and friend-of-friend visibility — now backed by a **real server**.
 
-> 100% in-memory mock — no backend. Refreshing the browser resets the demo to the seeded state.
+The app is two parts:
 
-## Run it
+- **Frontend** — React + TypeScript client (this directory).
+- **Backend** — REST API + WebSocket realtime + scheduler in [`server/`](server/).
+
+The client talks to the backend over HTTP + WebSocket; data is persisted in the
+server's SQLite database and updates stream in over the realtime gateway.
+
+## Run it (both halves)
+
+**1 — start the backend** (terminal 1):
+
+```bash
+cd server
+npm install
+npm run seed     # creates server/wud.db with demo data
+npm start        # API on http://localhost:4000
+```
+
+**2 — start the frontend** (terminal 2):
 
 ```bash
 npm install
-npm run dev
+npm run dev      # app on http://localhost:5173
 ```
 
-Then open the printed URL (default: http://localhost:5173). The phone-frame is shown on desktop; on mobile width it fills the viewport.
+Open **http://localhost:5173**. The phone-frame is shown on desktop; on mobile
+width it fills the viewport.
+
+### Logging in
+
+- **🎬 Admin · view demo data** on the Welcome screen — logs in as the seeded
+  admin account (`admin@wud.app` / `admin1234`) with friends, plans and a squad.
+- **Sign up** — creates a fresh empty account through the real auth flow.
+- Any seeded user also works as a login: `<handle>@wud.app` / `demo1234`
+  (e.g. `mike@wud.app`).
+
+> The API base URL defaults to `http://localhost:4000`. Override with a
+> `VITE_API_URL` env var if the backend runs elsewhere.
 
 ## What's in it
 

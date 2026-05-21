@@ -6,6 +6,11 @@ import {
   discoverUsers, getSquad, incomingRequests, leaveSquad, listFriends, listSquadsForUser,
   removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
 } from '../services/social.js';
+import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
+import type { Squad } from '../types.js';
+
+/** Side-load the users referenced by a set of squads. */
+const squadUsers = (squads: Squad[]) => ({ users: hydrateUsers(collectUserIds({ squads })) });
 
 export const socialRouter = Router();
 
@@ -46,7 +51,8 @@ socialRouter.post('/friend-requests/:id/decline', handler((req, res) => {
 /* ---- squads ---- */
 
 socialRouter.get('/squads', handler((req, res) => {
-  res.json({ squads: listSquadsForUser(uid(req)) });
+  const squads = listSquadsForUser(uid(req));
+  res.json({ squads, ...squadUsers(squads) });
 }));
 
 socialRouter.post('/squads', handler((req, res) => {
@@ -60,7 +66,8 @@ socialRouter.post('/squads', handler((req, res) => {
 }));
 
 socialRouter.get('/squads/:id', handler((req, res) => {
-  res.json({ squad: getSquad(req.params.id) });
+  const squad = getSquad(req.params.id);
+  res.json({ squad, ...squadUsers([squad]) });
 }));
 
 socialRouter.patch('/squads/:id', handler((req, res) => {

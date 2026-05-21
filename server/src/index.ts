@@ -8,6 +8,7 @@ import { errorMiddleware } from './lib/http.js';
 import { attachRealtime, realtimeClientCount } from './realtime/gateway.js';
 import { startScheduler } from './scheduler.js';
 import { authRouter } from './routes/auth.js';
+import { bootstrapRouter } from './routes/bootstrap.js';
 import { usersRouter } from './routes/users.js';
 import { socialRouter } from './routes/social.js';
 import { activitiesRouter } from './routes/activities.js';
@@ -40,6 +41,7 @@ app.use('/v1/auth', authRouter);
 
 const api = express.Router();
 api.use(requireAuth);
+api.use(bootstrapRouter);
 api.use(usersRouter);
 api.use(socialRouter);
 api.use(activitiesRouter);
