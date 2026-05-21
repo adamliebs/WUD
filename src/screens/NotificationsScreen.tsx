@@ -7,11 +7,11 @@ import { useApp, relTime } from '../store';
 import type { AppNotification, NotificationType } from '../types';
 
 const ICONS: Record<NotificationType, React.ReactNode> = {
-  join:        <UserPlus size={14} />,
+  join:        <Bell size={14} />,
   host_offer:  <Crown size={14} />,
   host_taken:  <Crown size={14} />,
   ping:        <Megaphone size={14} />,
-  invite:      <Bell size={14} />,
+  invite:      <UserPlus size={14} />,
   reminder:    <Clock size={14} />,
 };
 
@@ -76,6 +76,7 @@ function NotificationRow({ n }: { n: AppNotification }) {
   const from = useApp(s => s.userById(n.fromId));
   const activity = useApp(s => n.activityId ? s.activities.find(a => a.id === n.activityId) : undefined);
   const openActivity = useApp(s => s.openActivity);
+  const openOverlay = useApp(s => s.openOverlay);
   const accept = useApp(s => s.acceptHostOffer);
   const decline = useApp(s => s.declineHostOffer);
 
@@ -124,6 +125,16 @@ function NotificationRow({ n }: { n: AppNotification }) {
               className="mt-2 text-xs font-semibold text-rose-300"
             >
               View plan →
+            </button>
+          )}
+
+          {/* Friend request — jump to the Friends overlay to accept/decline. */}
+          {n.type === 'invite' && (
+            <button
+              onClick={() => openOverlay('friends')}
+              className="mt-2 text-xs font-semibold text-rose-300"
+            >
+              {n.resolved ? 'View friends →' : 'Respond →'}
             </button>
           )}
         </div>

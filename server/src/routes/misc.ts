@@ -15,7 +15,11 @@ export const miscRouter = Router();
 
 miscRouter.get('/notifications', handler((req, res) => {
   const id = uid(req);
-  res.json({ notifications: listNotifications(id), unread: unreadCount(id) });
+  const notifications = listNotifications(id);
+  // Side-load the users referenced as notification senders (e.g. a friend
+  // requester who isn't yet in the client's cache).
+  const users = hydrateUsers(collectUserIds({ notifications }));
+  res.json({ notifications, unread: unreadCount(id), users });
 }));
 
 miscRouter.post('/notifications/read', handler((req, res) => {

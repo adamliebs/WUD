@@ -21,9 +21,22 @@ const USERS: SeedUser[] = [
   { id: 'u_maya',  name: 'Maya',       handle: 'mayaa',  emoji: '👩',  color: 'from-emerald-400 to-teal-600' },
   { id: 'u_ravi',  name: 'Ravi',       handle: 'rav',    emoji: '🧑‍🎤', color: 'from-amber-400 to-orange-600' },
   { id: 'u_priya', name: 'Priya',      handle: 'pri',    emoji: '👩‍🎨', color: 'from-fuchsia-400 to-purple-700' },
+  // Not admin's friends — they exist so "people you may know" (friends-of-
+  // friends) and handle search have something to surface in the demo.
+  { id: 'u_noah',  name: 'Noah',       handle: 'noahw',  emoji: '🧑‍🚀', color: 'from-teal-400 to-cyan-700' },
+  { id: 'u_zoe',   name: 'Zoe',        handle: 'zoey',   emoji: '🦊',  color: 'from-violet-500 to-fuchsia-600' },
+  { id: 'u_liam',  name: 'Liam',       handle: 'liamk',  emoji: '🥷',  color: 'from-zinc-500 to-zinc-800' },
 ];
 
 const FRIEND_IDS = ['u_mike', 'u_sam', 'u_josh', 'u_maya', 'u_ravi', 'u_priya'];
+
+// Friendships between non-admin users — these create the friend-of-friend graph
+// that powers "people you may know" suggestions in Discover.
+const CROSS_FRIENDSHIPS: [string, string][] = [
+  ['u_noah', 'u_mike'], ['u_noah', 'u_sam'],
+  ['u_zoe', 'u_maya'], ['u_zoe', 'u_ravi'],
+  ['u_liam', 'u_josh'], ['u_liam', 'u_ravi'],
+];
 
 function run(): void {
   migrate();
@@ -55,6 +68,11 @@ function run(): void {
     // Friendships — admin is friends with everyone in FRIEND_IDS.
     for (const fid of FRIEND_IDS) {
       const [a, b] = 'u_me' < fid ? ['u_me', fid] : [fid, 'u_me'];
+      q.run('INSERT INTO friendships (user_a, user_b, created_at) VALUES (?, ?, ?)', a, b, ts);
+    }
+    // Cross-friendships between non-admin users → friend-of-friend graph.
+    for (const [u1, u2] of CROSS_FRIENDSHIPS) {
+      const [a, b] = u1 < u2 ? [u1, u2] : [u2, u1];
       q.run('INSERT INTO friendships (user_a, user_b, created_at) VALUES (?, ?, ?)', a, b, ts);
     }
 
@@ -130,7 +148,7 @@ function run(): void {
 
   console.log('✅ Seed complete.');
   console.log('   Admin login →  email: admin@wud.app   password: admin1234');
-  console.log(`   ${USERS.length} users, ${FRIEND_IDS.length} friendships, 5 activities, 1 squad.`);
+  console.log(`   ${USERS.length} users, ${FRIEND_IDS.length + CROSS_FRIENDSHIPS.length} friendships, 5 activities, 1 squad.`);
 }
 
 run();

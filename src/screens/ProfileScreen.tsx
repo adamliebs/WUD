@@ -8,6 +8,7 @@ import { useApp, clockTime, relTime } from '../store';
 export function ProfileScreen() {
   const me = useApp(s => s.me());
   const friends = useApp(useShallow(s => s.friendIds.map(id => s.userById(id))));
+  const friendRequests = useApp(useShallow(s => s.friendRequests));
   // Upcoming = startsAt >= now. Past plans are surfaced in the History overlay.
   const myUpcomingPosts = useApp(useShallow(s =>
     s.activities.filter(a => a.hostId === s.meId && a.startsAt >= Date.now())));
@@ -140,6 +141,32 @@ export function ProfileScreen() {
             </div>
           )}
         </Section>
+
+        {/* New friend request banner — sits right above the Friends section. */}
+        {friendRequests.length > 0 && (
+          <motion.button
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => openOverlay('friends')}
+            className="mt-6 mx-4 flex w-[calc(100%-2rem)] items-center gap-3 p-3 rounded-2xl
+                       bg-gradient-to-br from-rose-500/20 to-orange-500/15 border border-rose-400/35 text-left"
+          >
+            <div className="h-9 w-9 rounded-full grid place-items-center shrink-0
+                            bg-gradient-to-br from-rose-500 to-orange-500 text-white">
+              <UserPlus size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-white">
+                {friendRequests.length} new friend request{friendRequests.length === 1 ? '' : 's'}
+              </div>
+              <div className="text-[11px] text-rose-200/80">Tap to review and respond</div>
+            </div>
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-rose-500 text-[11px] font-black text-white shrink-0">
+              {friendRequests.length}
+            </span>
+          </motion.button>
+        )}
 
         {/* Friends */}
         <div className="mt-6">

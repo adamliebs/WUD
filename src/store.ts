@@ -294,7 +294,8 @@ export const useApp = create<State>((set, get) => {
   };
 
   const refreshNotifications = async () => {
-    const { notifications } = await miscApi.notifications();
+    const { notifications, users } = await miscApi.notifications();
+    mergeUsers(users);
     set({ notifications });
   };
 
@@ -316,16 +317,26 @@ export const useApp = create<State>((set, get) => {
     const { channel, type, data } = event;
     if (type === 'notification.created') {
       void refreshNotifications();
-      const n = data as { text?: string };
-      if (n?.text) toast(n.text, 'success');
+      const n = data as { text?: string; type?: string };
+      // Friend-request ('invite') alerts get a friendlier, named toast from the
+      // friend.changed handler below — don't double-toast them here.
+      if (n?.text && n.type !== 'invite') toast(n.text, 'success');
       return;
     }
     if (type === 'friend.changed') {
-      void refreshFriends();
-      void refreshFriendRequests();
-      void refreshFeed();
       const d = data as { requestFrom?: string };
-      if (d?.requestFrom) toast('New friend request 👋', 'success');
+      void (async () => {
+        await refreshFriends();
+        await refreshFriendRequests();
+        void refreshFeed();
+        if (d?.requestFrom) {
+          const req = get().friendRequests.find(r => r.from.id === d.requestFrom);
+          toast(
+            req ? `${req.from.name} wants to be your friend 👋` : 'New friend request 👋',
+            'success',
+          );
+        }
+      })();
       return;
     }
     if (type === 'presence.changed') {
@@ -691,6 +702,7 @@ export const useApp = create<State>((set, get) => {
         await socialApi.acceptRequest(requestId);
         await refreshFriendRequests();
         await refreshFriends();
+        await refreshNotifications();   // the 'invite' alert is now resolved
         if (req) toast(`You're now friends with ${req.from.name}`, 'success');
       });
     },
@@ -698,6 +710,7 @@ export const useApp = create<State>((set, get) => {
       void guard(async () => {
         await socialApi.declineRequest(requestId);
         await refreshFriendRequests();
+        await refreshNotifications();   // the 'invite' alert is now resolved
       });
     },
 

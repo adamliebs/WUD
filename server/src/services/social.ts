@@ -4,6 +4,7 @@ import { newId, now, shortId } from '../lib/ids.js';
 import { publish } from '../realtime/bus.js';
 import type { PublicUser, Squad } from '../types.js';
 import { messagesForSquad } from './chat.js';
+import { createNotification } from './notifications.js';
 import { getUserRow, toPublicUser } from './users.js';
 
 /* ===================== FRIENDS ===================== */
@@ -85,7 +86,23 @@ export function sendFriendRequest(requesterId: string, recipientId: string): str
     id, requesterId, recipientId, now(),
   );
   publish({ channel: `user:${recipientId}`, type: 'friend.changed', data: { requestFrom: requesterId } });
+  // Surface the request in the recipient's Alerts inbox (and enqueue a push).
+  // Reuses the 'invite' notification type — see schema CHECK constraint.
+  createNotification({
+    userId: recipientId,
+    type: 'invite',
+    fromId: requesterId,
+    body: 'wants to be your friend',
+  });
   return id;
+}
+
+/** Resolve the friend-request ('invite') notification once it's been actioned. */
+function resolveFriendInviteNotification(recipientId: string, requesterId: string): void {
+  q.run(
+    "UPDATE notifications SET read = 1, resolved = 1 WHERE user_id = ? AND type = 'invite' AND from_id = ?",
+    recipientId, requesterId,
+  );
 }
 
 export function acceptFriendRequest(requestId: string, actingUserId: string): void {
@@ -98,6 +115,7 @@ export function acceptFriendRequest(requestId: string, actingUserId: string): vo
   tx(() => {
     q.run("UPDATE friend_requests SET status = 'accepted', resolved_at = ? WHERE id = ?", now(), requestId);
     addFriendship(r.requester_id, r.recipient_id);
+    resolveFriendInviteNotification(r.recipient_id, r.requester_id);
   });
 }
 
@@ -111,6 +129,7 @@ export function declineFriendRequest(requestId: string, actingUserId: string): v
   }
   const newStatus = r.requester_id === actingUserId ? 'cancelled' : 'declined';
   q.run('UPDATE friend_requests SET status = ?, resolved_at = ? WHERE id = ?', newStatus, now(), requestId);
+  resolveFriendInviteNotification(r.recipient_id, r.requester_id);
 }
 
 export function incomingRequests(userId: string) {
@@ -120,16 +139,59 @@ export function incomingRequests(userId: string) {
   ).map(r => ({ id: r.id, from: toPublicUser(getUserRow(r.requester_id)!), at: r.created_at }));
 }
 
-/** Friend-of-friend + search discovery. Excludes self and existing friends. */
+/** Users with a pending friend request to/from this user (either direction). */
+function pendingRequestPeers(userId: string): Set<string> {
+  const rows = q.all<{ requester_id: string; recipient_id: string }>(
+    `SELECT requester_id, recipient_id FROM friend_requests
+      WHERE status = 'pending' AND (requester_id = ? OR recipient_id = ?)`,
+    userId, userId,
+  );
+  const peers = new Set<string>();
+  for (const r of rows) peers.add(r.requester_id === userId ? r.recipient_id : r.requester_id);
+  return peers;
+}
+
+/**
+ * "People you may know" — friends-of-friends, ranked by mutual-friend count.
+ * Excludes self, current friends, and anyone with a pending request. This is
+ * the only place discovery surfaces people without an explicit search.
+ */
+export function suggestedUsers(userId: string): PublicUser[] {
+  const mine = friendIds(userId);
+  const exclude = new Set<string>([userId, ...mine, ...pendingRequestPeers(userId)]);
+  const mutuals = new Map<string, number>();
+  for (const friend of mine) {
+    for (const fof of friendIds(friend)) {
+      if (exclude.has(fof)) continue;
+      mutuals.set(fof, (mutuals.get(fof) ?? 0) + 1);
+    }
+  }
+  return [...mutuals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([id]) => getUserRow(id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .map(toPublicUser);
+}
+
+/**
+ * Discovery for the Friends → Discover tab.
+ *  - No (or 1-char) query → "people you may know" (friends-of-friends only).
+ *  - A real query → search the whole directory by handle or name.
+ * It never dumps every user: strangers are only reachable by searching.
+ */
 export function discoverUsers(userId: string, query: string): PublicUser[] {
-  const friends = new Set(friendIds(userId));
   const needle = query.trim().toLowerCase();
-  const rows = q.all<{ id: string }>('SELECT id FROM users WHERE id != ?', userId);
-  return rows
-    .filter(r => !friends.has(r.id))
-    .map(r => toPublicUser(getUserRow(r.id)!))
-    .filter(u => !needle || u.name.toLowerCase().includes(needle) || u.handle.toLowerCase().includes(needle))
-    .slice(0, 30);
+  if (needle.length < 2) return suggestedUsers(userId);
+
+  const exclude = new Set<string>([userId, ...friendIds(userId)]);
+  return q.all<{ id: string }>('SELECT id FROM users WHERE id != ?', userId)
+    .filter(r => !exclude.has(r.id))
+    .map(r => getUserRow(r.id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .map(toPublicUser)
+    .filter(u => u.handle.toLowerCase().includes(needle) || u.name.toLowerCase().includes(needle))
+    .slice(0, 20);
 }
 
 /* ===================== SQUADS ===================== */

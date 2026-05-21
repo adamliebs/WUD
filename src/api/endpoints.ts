@@ -149,7 +149,7 @@ export const socialApi = {
 
 export const miscApi = {
   notifications: () =>
-    api.get<{ notifications: AppNotification[]; unread: number }>('/notifications'),
+    api.get<{ notifications: AppNotification[]; unread: number; users: User[] }>('/notifications'),
   markRead: () => api.post('/notifications/read'),
 
   live: () => api.get<{ live: User[] }>('/live'),
