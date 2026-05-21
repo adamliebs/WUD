@@ -125,8 +125,12 @@ interface State {
   smartSuggestions: () => Suggestion[];
   openOverlay: (o: Overlay) => void;
 
+  /** Incoming friend requests awaiting my response. */
+  friendRequests: { id: string; from: User; at: number }[];
   addFriend: (userId: string) => void;
   removeFriend: (userId: string) => void;
+  acceptFriendRequest: (requestId: string) => void;
+  declineFriendRequest: (requestId: string) => void;
   updateMe: (patch: Partial<Pick<User, 'name' | 'handle' | 'avatar' | 'color' | 'photoUrl'>>) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
 
@@ -300,6 +304,12 @@ export const useApp = create<State>((set, get) => {
     set({ friendIds: friends.map(u => u.id) });
   };
 
+  const refreshFriendRequests = async () => {
+    const { requests } = await socialApi.friendRequests();
+    mergeUsers(requests.map(r => r.from));
+    set({ friendRequests: requests });
+  };
+
   /* ---- realtime event routing ---- */
 
   const handleRealtime = (event: RealtimeEvent) => {
@@ -312,7 +322,10 @@ export const useApp = create<State>((set, get) => {
     }
     if (type === 'friend.changed') {
       void refreshFriends();
+      void refreshFriendRequests();
       void refreshFeed();
+      const d = data as { requestFrom?: string };
+      if (d?.requestFrom) toast('New friend request 👋', 'success');
       return;
     }
     if (type === 'presence.changed') {
@@ -346,6 +359,7 @@ export const useApp = create<State>((set, get) => {
     });
     connectRealtime(handleRealtime);
     syncSubscriptions();
+    void refreshFriendRequests();   // load any pending incoming requests
   };
 
   /** Wrap an async action: surface ApiErrors as toasts, never throw to the UI. */
@@ -363,6 +377,7 @@ export const useApp = create<State>((set, get) => {
     meId: '',
     users: [],
     friendIds: [],
+    friendRequests: [],
     activities: [],
     notifications: [],
     squads: [],
@@ -392,12 +407,11 @@ export const useApp = create<State>((set, get) => {
 
     /* ---- selectors (compute over store state — unchanged behavior) ---- */
 
-    me: () => get().users.find(u => u.id === get().meId) ?? {
-      id: get().meId, name: 'You', handle: 'you', avatar: '✨', color: 'from-rose-400 to-orange-500',
-    },
-    userById: (id) =>
-      get().users.find(u => u.id === id) ??
-      { id, name: 'Unknown', handle: 'unknown', avatar: '👤', color: 'from-slate-400 to-slate-700' },
+    // me()/userById() return a STABLE cached fallback when the user isn't
+    // loaded — a fresh object each call would make useApp() see a new snapshot
+    // every render → infinite re-render loop (this is what crashed sign-out).
+    me: () => get().users.find(u => u.id === get().meId) ?? fallbackUser(get().meId),
+    userById: (id) => get().users.find(u => u.id === id) ?? fallbackUser(id),
     isFriend: (id) => get().friendIds.includes(id) || id === get().meId,
     // FoF graph isn't streamed to the client; the "via X" hint is cosmetic only.
     isFriendOfFriend: () => false,
@@ -551,7 +565,7 @@ export const useApp = create<State>((set, get) => {
       // Refresh the slice an overlay shows when it opens, so it's never stale.
       if (o === 'history') void refreshHistory();
       else if (o === 'squads') void refreshSquads();
-      else if (o === 'friends') void refreshFriends();
+      else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); }
     },
     setShowGoLiveSheet: (b) => set({ showGoLiveSheet: b }),
     setOpenLiveUserId: (id) => set({ openLiveUserId: id }),
@@ -645,7 +659,8 @@ export const useApp = create<State>((set, get) => {
       disconnectRealtime();
       tokens.clear();
       set({
-        meId: '', users: [], friendIds: [], activities: [], notifications: [], squads: [],
+        meId: '', users: [], friendIds: [], friendRequests: [], activities: [],
+        notifications: [], squads: [],
         tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
         showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
         feedFilters: { timeWindow: 'all', nearMe: false },
@@ -668,6 +683,21 @@ export const useApp = create<State>((set, get) => {
         await socialApi.removeFriend(userId);
         await refreshFriends();
         toast(`Removed ${name}`, 'warn');
+      });
+    },
+    acceptFriendRequest: (requestId) => {
+      const req = get().friendRequests.find(r => r.id === requestId);
+      void guard(async () => {
+        await socialApi.acceptRequest(requestId);
+        await refreshFriendRequests();
+        await refreshFriends();
+        if (req) toast(`You're now friends with ${req.from.name}`, 'success');
+      });
+    },
+    declineFriendRequest: (requestId) => {
+      void guard(async () => {
+        await socialApi.declineRequest(requestId);
+        await refreshFriendRequests();
       });
     },
 
@@ -938,6 +968,27 @@ export const useApp = create<State>((set, get) => {
 });
 
 /* ============ pure helpers (no store access) ============ */
+
+/**
+ * Stable fallback User for an id we don't have loaded. Cached per-id so the
+ * SAME object reference is returned every call — required so selectors that
+ * call userById()/me() don't churn React with a new snapshot each render.
+ */
+const fallbackUserCache = new Map<string, User>();
+function fallbackUser(id: string): User {
+  let u = fallbackUserCache.get(id);
+  if (!u) {
+    u = {
+      id,
+      name: id ? 'Unknown' : 'You',
+      handle: id ? 'unknown' : 'you',
+      avatar: id ? '👤' : '✨',
+      color: id ? 'from-slate-400 to-slate-700' : 'from-rose-400 to-orange-500',
+    };
+    fallbackUserCache.set(id, u);
+  }
+  return u;
+}
 
 function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const map = new Map<string, T>();

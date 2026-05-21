@@ -303,8 +303,12 @@ function Inner({ activityId }: { activityId: string }) {
                 onClick={() => leave(activity.id)}
                 className="py-3.5 rounded-2xl font-bold text-rose-200 bg-rose-500/15 border border-rose-400/30"
               >
-                <Crown size={16} className="inline mr-1.5 -mt-0.5" />
-                Pass host &amp; leave
+                {activity.joinerIds.length === 0 ? (
+                  // No joiners to hand off to — leaving dissolves the plan.
+                  <><X size={16} className="inline mr-1.5 -mt-0.5" /> End plan</>
+                ) : (
+                  <><Crown size={16} className="inline mr-1.5 -mt-0.5" /> Pass host &amp; leave</>
+                )}
               </motion.button>
             </div>
           ) : (

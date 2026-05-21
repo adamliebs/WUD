@@ -31,6 +31,12 @@ export const authApi = {
   }) => api.post<AuthResult>(`/auth/oauth/${provider}`, b, true),
 
   logout: (refreshToken: string) => api.post('/auth/logout', { refreshToken }, true),
+
+  /** Live handle-availability check (handles are unique; names are not). */
+  handleAvailable: (handle: string) =>
+    api.get<{ handle: string; available: boolean }>(
+      `/auth/handle-available?handle=${encodeURIComponent(handle)}`,
+    ),
 };
 
 /* ---- bootstrap ---- */
@@ -113,12 +119,17 @@ export const chatApi = {
 
 /* ---- social ---- */
 
+export interface IncomingRequest { id: string; from: User; at: number }
+
 export const socialApi = {
   friends: () => api.get<{ friends: User[] }>('/friends'),
   discover: (q: string) => api.get<{ users: User[] }>(`/friends/discover?q=${encodeURIComponent(q)}`),
   addFriend: (recipientId: string) =>
     api.post<{ requestId: string }>('/friend-requests', { recipientId }),
   removeFriend: (userId: string) => api.del(`/friends/${userId}`),
+  friendRequests: () => api.get<{ requests: IncomingRequest[] }>('/friend-requests'),
+  acceptRequest: (id: string) => api.post(`/friend-requests/${id}/accept`),
+  declineRequest: (id: string) => api.post(`/friend-requests/${id}/decline`),
 
   squads: () => api.get<{ squads: Squad[]; users: User[] }>('/squads'),
   squad: (id: string) => api.get<{ squad: Squad; users: User[] }>(`/squads/${id}`),

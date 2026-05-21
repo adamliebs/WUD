@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
-import { ChevronLeft } from 'lucide-react';
-import { useState } from 'react';
+import { Check, ChevronLeft, Loader2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Avatar } from '../components/Avatar';
 import { PulseButton } from '../components/PulseButton';
+import { authApi } from '../api/endpoints';
 import { useApp } from '../store';
 
 const AVATAR_OPTIONS = [
@@ -39,7 +40,23 @@ export function OnboardingScreen() {
 
   const sanitize = (h: string) => h.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
   const effectiveHandle = handle || sanitize(name);
-  const canFinish = name.trim().length > 0;
+
+  // Live handle-availability check (handles are unique; names are not).
+  const [handleState, setHandleState] = useState<'idle' | 'checking' | 'free' | 'taken'>('idle');
+  useEffect(() => {
+    const h = effectiveHandle;
+    if (h.length < 2) { setHandleState('idle'); return; }
+    setHandleState('checking');
+    let cancelled = false;
+    const t = setTimeout(() => {
+      authApi.handleAvailable(h)
+        .then(r => { if (!cancelled) setHandleState(r.available ? 'free' : 'taken'); })
+        .catch(() => { if (!cancelled) setHandleState('idle'); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [effectiveHandle]);
+
+  const canFinish = name.trim().length > 0 && handleState !== 'taken' && handleState !== 'checking';
 
   const finish = () => {
     if (!canFinish) return;
@@ -111,7 +128,8 @@ export function OnboardingScreen() {
 
           {/* Handle */}
           <Field label="Handle">
-            <div className="flex items-center auth-input gap-1 px-3.5 py-0">
+            <div className={`flex items-center auth-input gap-1 px-3.5 py-0
+                            ${handleState === 'taken' ? 'ring-2 ring-rose-400/60 border-rose-400/30' : ''}`}>
               <span className="text-zinc-500">@</span>
               <input
                 value={handle}
@@ -119,6 +137,17 @@ export function OnboardingScreen() {
                 placeholder={sanitize(name) || 'handle'}
                 className="flex-1 bg-transparent text-white placeholder:text-zinc-500 focus:outline-none py-3"
               />
+              {handleState === 'checking' && <Loader2 size={15} className="text-zinc-400 animate-spin" />}
+              {handleState === 'free' && <Check size={15} className="text-emerald-400" />}
+              {handleState === 'taken' && <X size={15} className="text-rose-400" />}
+            </div>
+            <div className="text-[11px] mt-1 px-1 h-3.5">
+              {handleState === 'taken' && (
+                <span className="text-rose-300">That handle is taken — try another.</span>
+              )}
+              {handleState === 'free' && (
+                <span className="text-emerald-300">@{effectiveHandle} is available.</span>
+              )}
             </div>
           </Field>
 

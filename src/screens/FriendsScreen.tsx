@@ -83,6 +83,9 @@ export function FriendsScreen() {
           })}
         </div>
 
+        {/* Incoming friend requests — shown on the Friends tab. */}
+        {tab === 'friends' && <FriendRequests />}
+
         {/* List — outer div is keyed by `tab` so swapping tabs cleanly remounts the
             list (no per-row exit/enter cascading from the old tab). Within a tab,
             AnimatePresence still gives a soft fade when a row is added/removed
@@ -118,6 +121,58 @@ export function FriendsScreen() {
         </motion.div>
       </div>
     </OverlayShell>
+  );
+}
+
+/** Incoming friend-request cards with Accept / Decline. */
+function FriendRequests() {
+  const requests = useApp(useShallow(s => s.friendRequests));
+  const accept = useApp(s => s.acceptFriendRequest);
+  const decline = useApp(s => s.declineFriendRequest);
+  if (requests.length === 0) return null;
+
+  return (
+    <div className="mt-4">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2 px-1">
+        Friend requests · {requests.length}
+      </div>
+      <div className="flex flex-col gap-2">
+        <AnimatePresence initial={false}>
+          {requests.map(r => (
+            <motion.div
+              key={r.id}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="flex items-center gap-3 p-2.5 rounded-2xl bg-rose-500/10 border border-rose-400/25"
+            >
+              <Avatar user={r.from} size={42} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white truncate">{r.from.name}</div>
+                <div className="text-[11px] text-zinc-400 truncate">@{r.from.handle} · wants to be friends</div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => accept(r.id)}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-br from-emerald-500 to-teal-600"
+                >
+                  Accept
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => decline(r.id)}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold text-zinc-300 bg-white/5 border border-white/10"
+                >
+                  Decline
+                </motion.button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
