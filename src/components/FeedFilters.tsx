@@ -1,14 +1,13 @@
 import { motion } from 'framer-motion';
-import { MapPin, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { CATEGORIES } from '../data/categories';
 import { useApp } from '../store';
 import type { CategoryKey } from '../types';
 
 /**
  * Discovery filter strip rendered above the Feed activity list.
- * Single horizontal scroll with three filter dimensions:
+ * Single horizontal scroll with two filter dimensions:
  *   • Time window (radio: All / Now / Today / Week)
- *   • Near-me (toggle)
  *   • Category (radio across CATEGORIES; tap an active one to clear)
  *
  * Active chips are rose-gradient. A "Clear" chip appears when any filter is on.
@@ -27,18 +26,6 @@ export function FeedFilters() {
         <TimeChip current={filters.timeWindow} value="now"   label="Now"      onPick={(v) => set({ timeWindow: v })} />
         <TimeChip current={filters.timeWindow} value="today" label="Today"    onPick={(v) => set({ timeWindow: v })} />
         <TimeChip current={filters.timeWindow} value="week"  label="Week"     onPick={(v) => set({ timeWindow: v })} />
-
-        {/* Divider */}
-        <div aria-hidden className="self-stretch w-px bg-white/10 mx-0.5" />
-
-        {/* Near-me toggle */}
-        <Chip
-          active={filters.nearMe}
-          onClick={() => set({ nearMe: !filters.nearMe })}
-        >
-          <MapPin size={12} />
-          Near me
-        </Chip>
 
         {/* Divider */}
         <div aria-hidden className="self-stretch w-px bg-white/10 mx-0.5" />

@@ -1,23 +1,19 @@
 import { motion } from 'framer-motion';
 import { ChevronLeft, Mail } from 'lucide-react';
 import { useState } from 'react';
-import { AppleIcon, FacebookIcon, GoogleIcon } from '../components/BrandIcons';
 import { PulseButton } from '../components/PulseButton';
 import { useApp } from '../store';
 
 /**
- * Real-looking auth screen — social providers up top, email/password below.
- * Sign up routes to the Onboarding step (avatar / colour / name); Log in goes
- * straight into the app. All providers are mockup-grade — any tap proceeds.
+ * Email/password auth screen. Sign up routes to the Onboarding step
+ * (avatar / colour / name); Log in goes straight into the app.
  */
 export function AuthScreen() {
   const setAuthState = useApp(s => s.setAuthState);
   const intent = useApp(s => s.authIntent);
   const setIntent = useApp(s => s.setAuthIntent);
   const logIn = useApp(s => s.logIn);
-  const logInSocial = useApp(s => s.logInSocial);
   const beginEmailSignup = useApp(s => s.beginEmailSignup);
-  const beginSocialSignup = useApp(s => s.beginSocialSignup);
   const pushToast = useApp(s => s.pushToast);
 
   const isSignup = intent === 'signup';
@@ -25,7 +21,7 @@ export function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Email path: sign up → onboarding step; log in → straight into the app.
+  // Sign up → onboarding step; log in → straight into the app.
   const proceedEmail = () => {
     if (!email.trim() || !password) {
       pushToast('Enter your email and password', 'warn');
@@ -33,12 +29,6 @@ export function AuthScreen() {
     }
     if (isSignup) beginEmailSignup(email.trim(), password);
     else logIn(email.trim(), password);
-  };
-
-  // Social path: sign up → onboarding step; log in → straight into the app.
-  const proceedSocial = (method: 'google' | 'apple' | 'facebook') => {
-    if (isSignup) beginSocialSignup(method);
-    else logInSocial(method);
   };
 
   return (
@@ -98,35 +88,6 @@ export function AuthScreen() {
           })}
         </div>
 
-        {/* Social providers */}
-        <div className="flex flex-col gap-2.5">
-          <SocialButton
-            onClick={() => proceedSocial('google')}
-            className="bg-white text-zinc-900 hover:bg-white/90"
-            icon={<GoogleIcon />}
-            label={`Continue with Google`}
-          />
-          <SocialButton
-            onClick={() => proceedSocial('apple')}
-            className="bg-black text-white border border-white/15 hover:bg-zinc-900"
-            icon={<AppleIcon size={18} />}
-            label={`Continue with Apple`}
-          />
-          <SocialButton
-            onClick={() => proceedSocial('facebook')}
-            className="bg-[#1877F2] text-white hover:brightness-110"
-            icon={<FacebookIcon />}
-            label={`Continue with Facebook`}
-          />
-        </div>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-white/10" />
-          <span className="text-[11px] uppercase tracking-widest text-zinc-500">or</span>
-          <div className="flex-1 h-px bg-white/10" />
-        </div>
-
         {/* Email / password */}
         <div className="flex flex-col gap-3">
           <div className="flex items-center auth-input gap-2 px-3.5 py-0">
@@ -184,25 +145,5 @@ export function AuthScreen() {
         </div>
       </div>
     </motion.div>
-  );
-}
-
-function SocialButton({
-  onClick, className, icon, label,
-}: {
-  onClick: () => void;
-  className: string;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      className={`w-full h-12 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2.5 transition ${className}`}
-    >
-      <span className="grid place-items-center">{icon}</span>
-      {label}
-    </motion.button>
   );
 }

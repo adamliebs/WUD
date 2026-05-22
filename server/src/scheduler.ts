@@ -93,7 +93,7 @@ function runRecurrence(): void {
   const recurring = q.all<{
     id: string; host_id: string; category: string; custom_emoji: string | null;
     custom_label: string | null; title: string; description: string; place: string;
-    map_x: number | null; map_y: number | null; starts_at: number; max_size: number | null;
+    starts_at: number; max_size: number | null;
     is_private: number; is_open_invite: number; banner_url: string | null;
     recurrence: string; reminder_minutes: number | null;
   }>(
@@ -123,11 +123,11 @@ function runRecurrence(): void {
     q.run(
       `INSERT INTO activities
         (id, host_id, category, custom_emoji, custom_label, title, description, place,
-         map_x, map_y, starts_at, max_size, is_private, is_open_invite, banner_url,
+         starts_at, max_size, is_private, is_open_invite, banner_url,
          recurrence, reminder_minutes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, a.host_id, a.category, a.custom_emoji, a.custom_label, a.title, a.description,
-      a.place, a.map_x, a.map_y, next, a.max_size, a.is_private, a.is_open_invite,
+      a.place, next, a.max_size, a.is_private, a.is_open_invite,
       a.banner_url, a.recurrence, a.reminder_minutes, ts, ts,
     );
     // Carry forward the squad tags.

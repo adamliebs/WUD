@@ -8,6 +8,7 @@ import { OverlayShell } from '../components/OverlayShell';
 import { PulseButton } from '../components/PulseButton';
 import { categoryFor } from '../data/categories';
 import { clockTime, relTime, useApp } from '../store';
+import { mediaUrl } from '../api/client';
 import type { Activity, User } from '../types';
 
 type Mode =
@@ -556,11 +557,10 @@ function SquadChatPane({ squadId }: { squadId: string }) {
   };
   const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    sendPhoto(squadId, url, draft);
-    setDraft('');
     e.target.value = '';
+    if (!file) return;
+    sendPhoto(squadId, file, draft);
+    setDraft('');
   };
 
   return (
@@ -599,7 +599,7 @@ function SquadChatPane({ squadId }: { squadId: string }) {
                         <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
                       )}
                       <img
-                        src={m.photoUrl}
+                        src={mediaUrl(m.photoUrl)}
                         alt={m.text ?? 'shared photo'}
                         className="block max-h-64 w-full object-cover"
                         draggable={false}

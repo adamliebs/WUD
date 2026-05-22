@@ -2,6 +2,7 @@
 import { sentryEnabled } from './instrument.js';
 
 import { createServer } from 'node:http';
+import { mkdirSync } from 'node:fs';
 import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import express from 'express';
@@ -22,10 +23,12 @@ import { socialRouter } from './routes/social.js';
 import { activitiesRouter } from './routes/activities.js';
 import { chatRouter } from './routes/chat.js';
 import { miscRouter } from './routes/misc.js';
+import { uploadsRouter } from './routes/uploads.js';
 
 /* --- database ------------------------------------------------------------- */
 
 migrate(); // apply pending migrations
+mkdirSync(config.uploadsDir, { recursive: true }); // ensure the uploads volume exists
 
 /* --- app ------------------------------------------------------------------ */
 
@@ -64,6 +67,15 @@ app.get('/v1/health/ready', (_req, res) => {
   res.status(ready ? 200 : 503).json({ ready, release: config.release });
 });
 
+/* --- uploaded media ------------------------------------------------------- */
+// Public + cacheable, with a cross-origin resource policy so the native app's
+// webview can load images served from this (different) origin.
+app.use('/uploads', express.static(config.uploadsDir, {
+  immutable: true,
+  maxAge: '30d',
+  setHeaders: res => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+}));
+
 /* --- middleware ----------------------------------------------------------- */
 
 // CORS — only the configured client origins. Requests with no Origin header
@@ -93,6 +105,7 @@ api.use(socialRouter);
 api.use(activitiesRouter);
 api.use(chatRouter);
 api.use(miscRouter);
+api.use(uploadsRouter);
 app.use('/v1', api);
 
 /* --- 404 + error handling ------------------------------------------------- */

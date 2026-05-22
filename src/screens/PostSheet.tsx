@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
-import { Calendar, Camera, Clock, Globe2, Lock, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Calendar, Camera, Clock, Globe2, Loader2, Lock, Sparkles } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
 import { BottomSheet } from '../components/BottomSheet';
 import { PulseButton } from '../components/PulseButton';
+import { uploadApi } from '../api/endpoints';
 import { useApp } from '../store';
 import type { CategoryKey, Recurrence } from '../types';
 import { recurrenceLabel } from '../store';
@@ -53,6 +54,7 @@ export function PostSheet() {
   const open = useApp(s => s.showPostSheet);
   const close = useApp(s => s.setShowPostSheet);
   const post = useApp(s => s.postActivity);
+  const pushToast = useApp(s => s.pushToast);
 
   const [category, setCategory] = useState<CategoryKey>('coffee');
   const [customEmoji, setCustomEmoji] = useState('');
@@ -74,33 +76,24 @@ export function PostSheet() {
     s.squads.filter(sq => sq.hostId === s.meId || sq.memberIds.includes(s.meId))
   ));
   const fileRef = useRef<HTMLInputElement>(null);
-  // Track the blob: URL we own so we can revoke it if the user backs out
-  // (post() transfers ownership; reset() and unmount revoke anything still here).
-  const ownedBlobRef = useRef<string | null>(null);
+  const [bannerUploading, setBannerUploading] = useState(false);
 
-  useEffect(() => () => {
-    if (ownedBlobRef.current) URL.revokeObjectURL(ownedBlobRef.current);
-    ownedBlobRef.current = null;
-  }, []);
-
-  const onPickBanner = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPickBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    // Revoke any previous blob we owned but haven't saved yet.
-    if (ownedBlobRef.current) URL.revokeObjectURL(ownedBlobRef.current);
-    const url = URL.createObjectURL(file);
-    ownedBlobRef.current = url;
-    setBannerUrl(url);
     e.target.value = '';
+    if (!file) return;
+    setBannerUploading(true);
+    try {
+      const { url } = await uploadApi.photo(file);
+      setBannerUrl(url);
+    } catch {
+      pushToast('Could not upload that photo', 'warn');
+    } finally {
+      setBannerUploading(false);
+    }
   };
 
-  const removeBanner = () => {
-    if (ownedBlobRef.current) {
-      URL.revokeObjectURL(ownedBlobRef.current);
-      ownedBlobRef.current = null;
-    }
-    setBannerUrl(undefined);
-  };
+  const removeBanner = () => setBannerUrl(undefined);
 
   const days = useMemo(buildDayOptions, []);
   const isCustom = category === 'custom';
@@ -125,9 +118,6 @@ export function PostSheet() {
     setRecurrence(undefined);
     setOpenInvite(true);
     setSelectedSquadIds([]);
-    // Don't revoke here — submit() may have just handed the URL off to the store.
-    // Unmount cleanup revokes anything still in-flight if the user backs out.
-    ownedBlobRef.current = null;
   };
 
   const toggleSquad = (id: string) =>
@@ -374,6 +364,7 @@ export function PostSheet() {
               <motion.button
                 whileTap={{ scale: 0.985 }}
                 onClick={() => fileRef.current?.click()}
+                disabled={bannerUploading}
                 className="relative w-full h-28 rounded-2xl overflow-hidden border border-white/10"
               >
                 <img src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
@@ -389,14 +380,24 @@ export function PostSheet() {
               <motion.button
                 whileTap={{ scale: 0.98 }}
                 onClick={() => fileRef.current?.click()}
+                disabled={bannerUploading}
                 className="w-full h-28 rounded-2xl border border-dashed border-white/20 bg-white/5 grid place-items-center text-zinc-300 hover:bg-white/10 transition"
               >
                 <div className="flex flex-col items-center gap-1.5">
-                  <Camera size={20} />
-                  <span className="text-sm font-semibold">Add a banner image</span>
-                  <span className="text-[11px] text-zinc-500">
-                    Replaces the category gradient on your event
-                  </span>
+                  {bannerUploading ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      <span className="text-sm font-semibold">Uploading…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera size={20} />
+                      <span className="text-sm font-semibold">Add a banner image</span>
+                      <span className="text-[11px] text-zinc-500">
+                        Replaces the category gradient on your event
+                      </span>
+                    </>
+                  )}
                 </div>
               </motion.button>
             )}

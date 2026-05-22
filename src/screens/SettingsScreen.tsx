@@ -1,6 +1,5 @@
-import { motion } from 'framer-motion';
-import { Bell, EyeOff, Globe2, HelpCircle, LogOut, Megaphone, Moon, Palette, Shield, Sun, Trash2, UserCircle } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { Bell, LogOut, Megaphone, Trash2, UserCircle } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 import { OverlayShell } from '../components/OverlayShell';
 import { Toggle } from '../components/Toggle';
 import { useApp, type AppSettings } from '../store';
@@ -10,7 +9,6 @@ export function SettingsScreen() {
   const closeOverlay = () => openOverlay(null);
   const settings = useApp(s => s.settings);
   const updateSettings = useApp(s => s.updateSettings);
-  const pushToast = useApp(s => s.pushToast);
   const signOut = useApp(s => s.signOut);
 
   const set = <K extends keyof AppSettings>(k: K) => (v: AppSettings[K]) =>
@@ -35,12 +33,6 @@ export function SettingsScreen() {
             label="Allow pings from friends"
             sub="Friends can ping you with 'WUD?'"
             right={<Toggle value={settings.pingsEnabled} onChange={set('pingsEnabled')} ariaLabel="Allow pings" />}
-          />
-          <Row
-            icon={<Shield size={16} />}
-            label="Host transfer offers"
-            sub="Get offered the host role when a host leaves"
-            right={<Toggle value={settings.hostTransferEnabled} onChange={set('hostTransferEnabled')} ariaLabel="Host transfer offers" />}
           />
         </Group>
 
@@ -77,66 +69,12 @@ export function SettingsScreen() {
           </div>
         </Group>
 
-        {/* Privacy */}
-        <Group title="Privacy">
-          <Row
-            icon={<EyeOff size={16} />}
-            label="Show me to friends-of-friends"
-            sub="When you join a friend's plan, their friends can see you"
-            right={<Toggle value={settings.showMeToFoF} onChange={set('showMeToFoF')} ariaLabel="Show to friends of friends" />}
-          />
-          <Row
-            icon={<Globe2 size={16} />}
-            label="Default new plans to Private"
-            sub="Only your direct friends can see — no FoF unlock"
-            right={<Toggle value={settings.defaultPrivate} onChange={set('defaultPrivate')} ariaLabel="Default private" />}
-          />
-        </Group>
-
-        {/* Appearance */}
-        <Group title="Appearance">
-          <div className="mx-4 mt-2 p-1 rounded-2xl bg-white/5 border border-white/10 grid grid-cols-3 gap-1 relative">
-            {(['system', 'dark', 'light'] as const).map(opt => {
-              const active = settings.appearance === opt;
-              const Icon = opt === 'system' ? Palette : opt === 'dark' ? Moon : Sun;
-              return (
-                <button
-                  key={opt}
-                  onClick={() => set('appearance')(opt)}
-                  className="relative py-2 rounded-xl text-sm font-semibold text-zinc-300 capitalize"
-                >
-                  {active && (
-                    <motion.div
-                      layoutId="appearancepill"
-                      className="absolute inset-0 bg-white rounded-xl"
-                      transition={{ type: 'spring', stiffness: 480, damping: 32 }}
-                    />
-                  )}
-                  <span className={`relative inline-flex items-center gap-1.5 ${active ? 'text-zinc-900' : ''}`}>
-                    <Icon size={13} />
-                    {opt}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mx-4 mt-2 text-[11px] text-zinc-500 px-1">
-            Mockup preview — visual setting only.
-          </div>
-        </Group>
-
         {/* About */}
         <Group title="About">
           <Row
-            icon={<HelpCircle size={16} />}
-            label="Help & support"
-            chevron
-            onClick={() => pushToast('Mockup — no support inbox yet', 'default')}
-          />
-          <Row
             icon={<UserCircle size={16} />}
             label="Version"
-            sub="WUD 0.1 · mockup build"
+            sub="WUD 0.1"
           />
         </Group>
 
@@ -148,15 +86,51 @@ export function SettingsScreen() {
             danger
             onClick={signOut}
           />
-          <Row
-            icon={<Trash2 size={16} className="text-rose-300" />}
-            label="Delete account"
-            danger
-            onClick={() => pushToast('Mockup only — account deletion not wired', 'warn')}
-          />
+          <DeleteAccountRow />
         </Group>
       </div>
     </OverlayShell>
+  );
+}
+
+/** Delete-account row with an inline two-step confirmation. */
+function DeleteAccountRow() {
+  const deleteAccount = useApp(s => s.deleteAccount);
+  const [confirming, setConfirming] = useState(false);
+
+  if (!confirming) {
+    return (
+      <Row
+        icon={<Trash2 size={16} className="text-rose-300" />}
+        label="Delete account"
+        danger
+        onClick={() => setConfirming(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="px-4 py-3.5">
+      <div className="text-sm font-bold text-rose-200">Delete your account?</div>
+      <div className="text-[11px] text-zinc-400 mt-1 leading-relaxed">
+        This permanently erases your profile, plans, squads, and messages.
+        It cannot be undone.
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={deleteAccount}
+          className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-rose-500 active:bg-rose-600"
+        >
+          Delete forever
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          className="flex-1 py-2.5 rounded-xl text-sm font-bold text-zinc-200 bg-white/5 border border-white/10"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

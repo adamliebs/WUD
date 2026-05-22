@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
-import { Camera, Trash2, Upload } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Camera, Loader2, Trash2, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { Avatar } from '../components/Avatar';
 import { OverlayShell } from '../components/OverlayShell';
 import { PulseButton } from '../components/PulseButton';
+import { uploadApi } from '../api/endpoints';
 import { useApp } from '../store';
 
 const AVATAR_OPTIONS = [
@@ -29,6 +30,7 @@ export function EditProfileScreen() {
   const me = useApp(s => s.me());
   const updateMe = useApp(s => s.updateMe);
   const openOverlay = useApp(s => s.openOverlay);
+  const pushToast = useApp(s => s.pushToast);
   const closeOverlay = () => openOverlay(null);
 
   const [name, setName] = useState(me.name);
@@ -36,17 +38,8 @@ export function EditProfileScreen() {
   const [avatar, setAvatar] = useState(me.avatar);
   const [color, setColor] = useState(me.color);
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(me.photoUrl);
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Track any blob: URL we own here so we can revoke it if the user picks another
-  // photo or removes it without saving.
-  const ownedBlobRef = useRef<string | null>(null);
-
-  useEffect(() => () => {
-    // On unmount: if we created a blob URL but never saved it, revoke it.
-    if (ownedBlobRef.current && ownedBlobRef.current !== me.photoUrl) {
-      URL.revokeObjectURL(ownedBlobRef.current);
-    }
-  }, [me.photoUrl]);
 
   const dirty =
     name.trim() !== me.name ||
@@ -57,26 +50,22 @@ export function EditProfileScreen() {
 
   const sanitize = (h: string) => h.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
 
-  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';   // allow re-selecting the same file
     if (!file) return;
-    if (ownedBlobRef.current && ownedBlobRef.current !== me.photoUrl) {
-      URL.revokeObjectURL(ownedBlobRef.current);
+    setUploading(true);
+    try {
+      const { url } = await uploadApi.photo(file);
+      setPhotoUrl(url);
+    } catch {
+      pushToast('Could not upload that photo', 'warn');
+    } finally {
+      setUploading(false);
     }
-    const url = URL.createObjectURL(file);
-    ownedBlobRef.current = url;
-    setPhotoUrl(url);
-    // Allow re-selecting the same file later
-    e.target.value = '';
   };
 
-  const onRemovePhoto = () => {
-    if (ownedBlobRef.current && ownedBlobRef.current !== me.photoUrl) {
-      URL.revokeObjectURL(ownedBlobRef.current);
-      ownedBlobRef.current = null;
-    }
-    setPhotoUrl(undefined);
-  };
+  const onRemovePhoto = () => setPhotoUrl(undefined);
 
   const save = () => {
     if (!dirty) return;
@@ -87,8 +76,6 @@ export function EditProfileScreen() {
       color,
       photoUrl,
     });
-    // Once saved, the blob URL is "owned" by the store — drop our cleanup claim.
-    ownedBlobRef.current = null;
     closeOverlay();
   };
 
@@ -130,12 +117,13 @@ export function EditProfileScreen() {
             <motion.button
               whileTap={{ scale: 0.88 }}
               onClick={() => fileRef.current?.click()}
+              disabled={uploading}
               aria-label="Upload a profile photo"
               className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full grid place-items-center
                          bg-gradient-to-br from-rose-500 to-orange-500 text-white
                          ring-2 ring-[#07060b] shadow-[0_10px_25px_-10px_rgba(244,63,94,0.7)]"
             >
-              <Camera size={14} />
+              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
             </motion.button>
           </div>
           <div className="mt-3">
@@ -159,12 +147,14 @@ export function EditProfileScreen() {
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={() => fileRef.current?.click()}
+              disabled={uploading}
               className="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-2xl
                          bg-gradient-to-br from-rose-500/15 to-orange-500/15 border border-rose-400/30
-                         text-white text-sm font-bold"
+                         text-white text-sm font-bold disabled:opacity-60"
             >
-              <Upload size={15} />
-              {photoUrl ? 'Replace photo' : 'Upload photo'}
+              {uploading
+                ? <><Loader2 size={15} className="animate-spin" /> Uploading…</>
+                : <><Upload size={15} /> {photoUrl ? 'Replace photo' : 'Upload photo'}</>}
             </motion.button>
             {photoUrl && (
               <motion.button

@@ -3,12 +3,13 @@ import { categoryFor } from './data/categories';
 import type { Activity, AppNotification, CategoryKey, Recurrence, Squad, User } from './types';
 import { ApiError, tokens } from './api/client';
 import {
-  activityApi, authApi, chatApi, getBootstrap, meApi, miscApi, socialApi,
+  activityApi, authApi, chatApi, getBootstrap, meApi, miscApi, socialApi, uploadApi,
 } from './api/endpoints';
 import {
   connectRealtime, disconnectRealtime, type RealtimeEvent,
   subscribeChannel,
 } from './api/socket';
+import { notify } from './native';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -20,19 +21,14 @@ export type AuthState = 'splash' | 'welcome' | 'auth' | 'onboarding' | 'app';
 /** A "For you" suggestion card shown above the Feed. Action = filter to apply on tap. */
 export type Suggestion =
   | { kind: 'starting_soon'; count: number; emoji: '⏰'; text: string; apply: { timeWindow: 'now' } }
-  | { kind: 'category_cluster'; category: CategoryKey; count: number; emoji: string; text: string; apply: { category: CategoryKey; timeWindow: 'today' } }
-  | { kind: 'near_me'; count: number; emoji: '📍'; text: string; apply: { nearMe: true } };
+  | { kind: 'category_cluster'; category: CategoryKey; count: number; emoji: string; text: string; apply: { category: CategoryKey; timeWindow: 'today' } };
 
 /** Discovery filters applied to the Feed (above the existing scope toggle). */
 export interface FeedFilters {
   category?: CategoryKey;
   timeWindow: 'now' | 'today' | 'week' | 'all';
-  nearMe: boolean;
 }
 
-/** Notional "you are here" point on the stylized abstract map (0..1). */
-export const YOU_MAP_XY: [number, number] = [0.5, 0.5];
-export const NEAR_ME_RADIUS = 0.3;
 type Overlay = 'settings' | 'editProfile' | 'friends' | 'history' | 'squads' | 'search' | null;
 /** A user's RSVP for an activity. 'none' = cleared. */
 export type RsvpState = 'going' | 'maybe' | 'cant' | 'none';
@@ -40,10 +36,6 @@ export type RsvpState = 'going' | 'maybe' | 'cant' | 'none';
 export interface AppSettings {
   pushEnabled: boolean;
   pingsEnabled: boolean;
-  hostTransferEnabled: boolean;
-  showMeToFoF: boolean;
-  defaultPrivate: boolean;
-  appearance: 'system' | 'dark' | 'light';
   defaultReminderMins: number | null;
 }
 
@@ -55,7 +47,6 @@ interface Toast {
 
 /** Auth credentials captured on the auth screen, consumed by completeSignup(). */
 interface PendingSignup {
-  method: 'email' | 'google' | 'apple' | 'facebook';
   email: string;
   password: string;
 }
@@ -99,19 +90,17 @@ interface State {
   pendingSignup: PendingSignup | null;
   /** Called once on app mount — resumes a saved session if a token exists. */
   init: () => void;
-  /** Auth-screen → onboarding: stash email/password for completeSignup(). */
+  /** Auth-screen → onboarding: stash email/password for signUp(). */
   beginEmailSignup: (email: string, password: string) => void;
-  /** Auth-screen → onboarding: mark a social signup. */
-  beginSocialSignup: (method: 'google' | 'apple' | 'facebook') => void;
-  /** Onboarding finish — registers the account (email or social) and enters the app. */
+  /** Onboarding finish — registers the account and enters the app. */
   signUp: (input: { name: string; handle: string; avatar?: string; color?: string }) => void;
   /** Email log in. */
   logIn: (email: string, password: string) => void;
-  /** Social log in (mockup — creates a fresh account). */
-  logInSocial: (method: 'google' | 'apple' | 'facebook') => void;
   /** Admin/demo login — loads the seeded sample dataset. */
   loadDemoData: () => void;
   signOut: () => void;
+  /** Permanently erase the account, then return to the welcome screen. */
+  deleteAccount: () => void;
 
   setTab: (t: Tab) => void;
   openActivity: (id: string | null) => void;
@@ -141,7 +130,7 @@ interface State {
   removeMemberFromSquad: (squadId: string, userId: string) => void;
   leaveSquad: (squadId: string) => void;
   sendSquadChat: (squadId: string, text: string) => void;
-  sendSquadChatPhoto: (squadId: string, photoUrl: string, caption?: string) => void;
+  sendSquadChatPhoto: (squadId: string, file: File, caption?: string) => void;
   isSquadHost: (squadId: string) => boolean;
   amInSquad: (squadId: string) => boolean;
 
@@ -175,7 +164,7 @@ interface State {
   setRsvp: (activityId: string, state: RsvpState) => void;
 
   sendChat: (activityId: string, text: string) => void;
-  sendChatPhoto: (activityId: string, photoUrl: string, caption?: string) => void;
+  sendChatPhoto: (activityId: string, file: File, caption?: string) => void;
   sendPoll: (activityId: string, question: string, optionTexts: string[]) => void;
   voteInPoll: (activityId: string, messageId: string, optionId: string) => void;
   toggleReaction: (activityId: string, emoji: string) => void;
@@ -318,9 +307,12 @@ export const useApp = create<State>((set, get) => {
     if (type === 'notification.created') {
       void refreshNotifications();
       const n = data as { text?: string; type?: string };
-      // Friend-request ('invite') alerts get a friendlier, named toast from the
-      // friend.changed handler below — don't double-toast them here.
-      if (n?.text && n.type !== 'invite') toast(n.text, 'success');
+      // Friend-request ('invite') alerts get a friendlier, named toast + OS
+      // notification from the friend.changed handler below.
+      if (n?.text && n.type !== 'invite') {
+        toast(n.text, 'success');
+        if (get().settings.pushEnabled) notify('WUD', n.text);
+      }
       return;
     }
     if (type === 'friend.changed') {
@@ -331,10 +323,11 @@ export const useApp = create<State>((set, get) => {
         void refreshFeed();
         if (d?.requestFrom) {
           const req = get().friendRequests.find(r => r.from.id === d.requestFrom);
-          toast(
-            req ? `${req.from.name} wants to be your friend 👋` : 'New friend request 👋',
-            'success',
-          );
+          const text = req
+            ? `${req.from.name} wants to be your friend 👋`
+            : 'New friend request 👋';
+          toast(text, 'success');
+          if (get().settings.pushEnabled) notify('WUD', text);
         }
       })();
       return;
@@ -403,16 +396,12 @@ export const useApp = create<State>((set, get) => {
     openLiveUserId: null,
     pollComposerActivityId: null,
     feedScope: 'fof',
-    feedFilters: { timeWindow: 'all', nearMe: false },
+    feedFilters: { timeWindow: 'all' },
     overlay: null,
     toasts: [],
     settings: {
       pushEnabled: true,
       pingsEnabled: true,
-      hostTransferEnabled: true,
-      showMeToFoF: true,
-      defaultPrivate: false,
-      appearance: 'dark',
       defaultReminderMins: 30,
     },
 
@@ -471,11 +460,6 @@ export const useApp = create<State>((set, get) => {
           if (f.timeWindow === 'week') return dt <= 7 * DAY;
           return true;
         })
-        .filter(a => {
-          if (!f.nearMe) return true;
-          if (a.mapX === undefined || a.mapY === undefined) return false;
-          return Math.hypot(a.mapX - YOU_MAP_XY[0], a.mapY - YOU_MAP_XY[1]) <= NEAR_ME_RADIUS;
-        })
         .sort((a, b) => a.startsAt - b.startsAt);
     },
     hasFoFAvailable: () => {
@@ -532,18 +516,6 @@ export const useApp = create<State>((set, get) => {
           apply: { category: top[0] as CategoryKey, timeWindow: 'today' },
         });
       }
-      if (!s.feedFilters.nearMe) {
-        const near = today.filter(a => {
-          if (a.mapX === undefined || a.mapY === undefined) return false;
-          return Math.hypot(a.mapX - YOU_MAP_XY[0], a.mapY - YOU_MAP_XY[1]) <= NEAR_ME_RADIUS;
-        });
-        if (near.length >= 2) {
-          out.push({
-            kind: 'near_me', count: near.length, emoji: '📍',
-            text: `${near.length} plans near you today`, apply: { nearMe: true },
-          });
-        }
-      }
       return out.slice(0, 2);
     },
 
@@ -566,10 +538,10 @@ export const useApp = create<State>((set, get) => {
     setShowPostSheet: (b) => set({ showPostSheet: b }),
     setFeedScope: (s) => set({ feedScope: s }),
     setFeedFilter: (patch) => set(state => ({ feedFilters: { ...state.feedFilters, ...patch } })),
-    clearFeedFilters: () => set({ feedFilters: { timeWindow: 'all', nearMe: false } }),
+    clearFeedFilters: () => set({ feedFilters: { timeWindow: 'all' } }),
     hasActiveFeedFilters: () => {
       const f = get().feedFilters;
-      return !!f.category || f.timeWindow !== 'all' || f.nearMe;
+      return !!f.category || f.timeWindow !== 'all';
     },
     openOverlay: (o) => {
       set({ overlay: o });
@@ -602,32 +574,18 @@ export const useApp = create<State>((set, get) => {
     },
 
     beginEmailSignup: (email, password) => {
-      set({ pendingSignup: { method: 'email', email, password }, authState: 'onboarding' });
-    },
-    beginSocialSignup: (method) => {
-      set({ pendingSignup: { method, email: '', password: '' }, authState: 'onboarding' });
+      set({ pendingSignup: { email, password }, authState: 'onboarding' });
     },
 
     signUp: ({ name, handle, avatar, color }) => {
       void guard(async () => {
-        const pending = get().pendingSignup ?? { method: 'email', email: '', password: '' };
-        if (pending.method === 'email') {
-          const r = await authApi.register({
-            email: pending.email || `${handle}-${uid()}@wud.app`,
-            password: pending.password || 'demo-password',
-            name, handle, avatar, color,
-          });
-          tokens.set(r.accessToken, r.refreshToken);
-        } else {
-          // Social signup — mockup OAuth with a generated subject.
-          const r = await authApi.oauth(pending.method, {
-            subject: `${pending.method}-${uid()}-${Date.now()}`,
-            name, handle,
-          });
-          tokens.set(r.accessToken, r.refreshToken);
-          // Apply the chosen avatar/color the onboarding screen collected.
-          await meApi.update({ name, handle, avatar, color });
-        }
+        const pending = get().pendingSignup ?? { email: '', password: '' };
+        const r = await authApi.register({
+          email: pending.email || `${handle}-${uid()}@wud.app`,
+          password: pending.password || 'demo-password',
+          name, handle, avatar, color,
+        });
+        tokens.set(r.accessToken, r.refreshToken);
         set({ pendingSignup: null });
         await doBootstrap();
       });
@@ -636,16 +594,6 @@ export const useApp = create<State>((set, get) => {
     logIn: (email, password) => {
       void guard(async () => {
         const r = await authApi.login(email, password);
-        tokens.set(r.accessToken, r.refreshToken);
-        await doBootstrap();
-      });
-    },
-
-    logInSocial: (method) => {
-      void guard(async () => {
-        const r = await authApi.oauth(method, {
-          subject: `${method}-${uid()}-${Date.now()}`,
-        });
         tokens.set(r.accessToken, r.refreshToken);
         await doBootstrap();
       });
@@ -674,8 +622,25 @@ export const useApp = create<State>((set, get) => {
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
         showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
-        feedFilters: { timeWindow: 'all', nearMe: false },
+        feedFilters: { timeWindow: 'all' },
         pendingSignup: null, authState: 'welcome',
+      });
+    },
+
+    deleteAccount: () => {
+      void guard(async () => {
+        await meApi.deleteAccount();
+        disconnectRealtime();
+        tokens.clear();
+        set({
+          meId: '', users: [], friendIds: [], friendRequests: [], activities: [],
+          notifications: [], squads: [],
+          tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
+          showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
+          feedFilters: { timeWindow: 'all' },
+          pendingSignup: null, authState: 'welcome',
+        });
+        toast('Your account has been deleted', 'default');
       });
     },
 
@@ -783,10 +748,10 @@ export const useApp = create<State>((set, get) => {
         await refreshSquad(squadId);
       });
     },
-    sendSquadChatPhoto: (squadId, photoUrl, caption) => {
-      if (!photoUrl) return;
+    sendSquadChatPhoto: (squadId, file, caption) => {
       void guard(async () => {
-        await chatApi.squadSendPhoto(squadId, photoUrl, caption);
+        const { url } = await uploadApi.photo(file);
+        await chatApi.squadSendPhoto(squadId, url, caption);
         await refreshSquad(squadId);
       });
     },
@@ -888,10 +853,10 @@ export const useApp = create<State>((set, get) => {
         await refreshActivity(activityId);
       });
     },
-    sendChatPhoto: (activityId, photoUrl, caption) => {
-      if (!photoUrl) return;
+    sendChatPhoto: (activityId, file, caption) => {
       void guard(async () => {
-        await chatApi.sendPhoto(activityId, photoUrl, caption);
+        const { url } = await uploadApi.photo(file);
+        await chatApi.sendPhoto(activityId, url, caption);
         await refreshActivity(activityId);
       });
     },

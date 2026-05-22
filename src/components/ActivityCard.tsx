@@ -3,6 +3,7 @@ import { Clock, Lock, MapPin, Repeat, Users } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { categoryFor } from '../data/categories';
 import { useApp, clockTime, isPast, recurrenceLabel, relTime } from '../store';
+import { mediaUrl } from '../api/client';
 import type { Activity } from '../types';
 import { Avatar, AvatarStack } from './Avatar';
 import { ReactionBar } from './ReactionBar';
@@ -49,7 +50,7 @@ export function ActivityCard({ activity }: Props) {
         {activity.bannerUrl ? (
           <>
             <img
-              src={activity.bannerUrl}
+              src={mediaUrl(activity.bannerUrl)}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
               draggable={false}

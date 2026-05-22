@@ -6,12 +6,17 @@
  */
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { useApp } from './store';
 
 /** True when running inside the native Capacitor shell. */
 export const isNative = Capacitor.isNativePlatform();
+
+/** Whether the app is foregrounded — gates notify() so we don't double-alert. */
+let appActive = true;
+let nextNotifId = 1;
 
 /**
  * Close the topmost dismissible layer (sheet / overlay). Returns true if
@@ -51,8 +56,10 @@ function handleDeepLink(url: string): void {
 export function initNative(): void {
   if (!isNative) return;
 
-  // Tag the document so CSS can target the native shell if ever needed.
-  document.documentElement.classList.add('native');
+  // Tag <html> with `native` + the platform ('ios' | 'android') so CSS can
+  // target the native shell — e.g. opaque glass fallbacks on Android, whose
+  // WebView doesn't render backdrop-filter reliably.
+  document.documentElement.classList.add('native', Capacitor.getPlatform());
 
   // Status bar: dark theme → light icons, overlaying the edge-to-edge webview.
   StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
@@ -71,9 +78,26 @@ export function initNative(): void {
   // Deep links — opened while the app is running or on cold start.
   void App.addListener('appUrlOpen', ({ url }) => handleDeepLink(url));
   void App.getLaunchUrl().then(res => { if (res?.url) handleDeepLink(res.url); });
+
+  // Local notifications — request permission, and track foreground state so an
+  // OS banner is only raised while the app is backgrounded.
+  void LocalNotifications.requestPermissions().catch(() => {});
+  void App.addListener('appStateChange', ({ isActive }) => { appActive = isActive; });
 }
 
 /** Hide the native splash screen — call once the first screen has painted. */
 export function hideSplash(): void {
   if (isNative) SplashScreen.hide().catch(() => {});
+}
+
+/**
+ * Raise an OS notification for an incoming alert. No-op on web, and skipped
+ * while the app is foregrounded (the in-app toast already covers that).
+ * Delivery while the app is fully closed needs APNs/FCM — see MOBILE.md.
+ */
+export function notify(title: string, body: string): void {
+  if (!isNative || appActive) return;
+  void LocalNotifications.schedule({
+    notifications: [{ id: nextNotifId++, title, body }],
+  }).catch(() => {});
 }

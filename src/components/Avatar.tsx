@@ -1,3 +1,4 @@
+import { mediaUrl } from '../api/client';
 import { isLive } from '../store';
 import type { LiveStatus, User } from '../types';
 
@@ -15,7 +16,7 @@ export function Avatar({ user, size = 40, ring, liveRing = true }: Props) {
 
   const inner = user.photoUrl ? (
     <img
-      src={user.photoUrl}
+      src={mediaUrl(user.photoUrl)}
       alt={user.name}
       className={`rounded-full object-cover ${ringCls}`}
       style={{ width: size, height: size }}

@@ -53,11 +53,12 @@ Phasing: **A–C** = make it actually work · **D–E** = approval gates · **F�
 - [ ] **Sign in with Apple** — mandatory if any other social login is offered (App Store rule)
 - [ ] Email verification flow
 - [ ] Forgot-password / password-reset flow
-- [ ] **In-app account deletion** — required by both stores
+- [x] **In-app account deletion** — wired to `DELETE /v1/account` with a confirm step
 - [ ] Store tokens in native secure storage (Keychain / Keystore), not `localStorage`
-- [ ] Replace the **push stub** (`dispatchPush`) with real **APNs + FCM**
-- [ ] Push permission priming + prompts
-- [ ] Device-token registration wired to the existing `devices` table
+- [x] **Local OS notifications** — Capacitor Local Notifications: real banners for
+      alerts/reminders while the app is running (`src/native.ts` → `notify()`)
+- [ ] **Remote push** when the app is fully closed — replace the `dispatchPush`
+      stub with APNs + FCM (needs a Firebase project + Apple Developer account)
 - [ ] Background / closed-app notification handling
 - [ ] Deep links from notifications
 
@@ -87,9 +88,12 @@ Phasing: **A–C** = make it actually work · **D–E** = approval gates · **F�
 
 ## F. Media, maps & quality hardening
 
-- [ ] Verify photo storage — the mockup likely uses data URLs; move to real object storage (S3 / R2 / Cloudinary) with image resizing + CDN
-- [ ] Image upload pipeline + content moderation on uploads
-- [ ] Decide on the **map**: the current "stylized abstract map" uses notional coordinates — if "near me" / places imply real location, integrate Apple MapKit / Google Maps / Mapbox + geolocation permissions and privacy strings
+- [x] Real photo uploads — multipart `POST /v1/uploads`, stored on the server's
+      persistent volume, served at `/uploads/*` (profile, banner, chat photos)
+- [ ] (Optional) move uploads to object storage (S3 / R2 / Cloudinary) + CDN +
+      image resizing — the volume-backed store is fine for launch scale
+- [ ] Content moderation on uploaded images
+- [x] The **map** / "near me" was removed — WUD has no real-location feature
 - [ ] Add **React error boundaries** (none currently exist)
 - [ ] Offline / network-error states + retry UX
 - [ ] Loading skeletons / empty-state audit across all screens

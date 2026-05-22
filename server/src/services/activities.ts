@@ -8,10 +8,6 @@ import { createNotification } from './notifications.js';
 import { areFriends, isInSquad } from './social.js';
 import { getUserRow } from './users.js';
 
-/* ----- "you are here" point for the Near-me filter (matches the client) ---- */
-const YOU_XY: [number, number] = [0.5, 0.5];
-const NEAR_RADIUS = 0.3;
-
 interface ActivityRow {
   id: string;
   host_id: string;
@@ -23,8 +19,6 @@ interface ActivityRow {
   place: string;
   lat: number | null;
   lng: number | null;
-  map_x: number | null;
-  map_y: number | null;
   starts_at: number;
   max_size: number | null;
   is_private: number;
@@ -82,8 +76,6 @@ export function toActivity(row: ActivityRow): Activity {
       : row.reminder_minutes,
     reactions: reactionsFor(row.id),
     bannerUrl: row.banner_url ?? undefined,
-    mapX: row.map_x ?? undefined,
-    mapY: row.map_y ?? undefined,
     recurrence: row.recurrence ? (JSON.parse(row.recurrence) as Recurrence) : undefined,
     createdAt: row.created_at,
     chat: messagesForActivity(row.id),
@@ -138,7 +130,6 @@ export interface FeedFilters {
   scope?: 'friends' | 'fof';
   category?: CategoryKey;
   timeWindow?: 'now' | 'today' | 'week' | 'all';
-  nearMe?: boolean;
 }
 
 /** Visible, upcoming activities for the feed, with discovery filters applied. */
@@ -159,11 +150,6 @@ export function feedFor(userId: string, filters: FeedFilters = {}): Activity[] {
       if (filters.timeWindow === 'today') return dt <= DAY;
       if (filters.timeWindow === 'week') return dt <= 7 * DAY;
       return true;
-    })
-    .filter(r => {
-      if (!filters.nearMe) return true;
-      if (r.map_x == null || r.map_y == null) return false;
-      return Math.hypot(r.map_x - YOU_XY[0], r.map_y - YOU_XY[1]) <= NEAR_RADIUS;
     })
     .map(toActivity);
 }
@@ -204,8 +190,6 @@ export function createActivity(hostId: string, input: {
   recurrence?: Recurrence;
   reminderMins?: number | null;
   squadIds?: string[];
-  mapX?: number;
-  mapY?: number;
 }): Activity {
   const id = newId();
   const ts = now();
@@ -219,16 +203,15 @@ export function createActivity(hostId: string, input: {
     q.run(
       `INSERT INTO activities
         (id, host_id, category, custom_emoji, custom_label, title, description, place,
-         map_x, map_y, starts_at, max_size, is_private, is_open_invite, banner_url,
+         starts_at, max_size, is_private, is_open_invite, banner_url,
          recurrence, reminder_minutes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, hostId, input.category,
       isCustom ? (input.customEmoji?.trim() || '✨') : null,
       isCustom ? (input.customLabel?.trim() || 'Custom') : null,
       input.title.trim() || 'Doing a thing',
       input.description?.trim() ?? '',
       input.place?.trim() ?? '',
-      input.mapX ?? null, input.mapY ?? null,
       input.startsAt,
       input.maxSize ?? null,
       input.isPrivate ? 1 : 0,

@@ -88,14 +88,14 @@ function run(): void {
     // A few upcoming activities.
     const mkActivity = (
       id: string, host: string, category: string, title: string, place: string,
-      inMins: number, opts: { joiners?: string[]; maybe?: string[]; mapX?: number; mapY?: number } = {},
+      inMins: number, opts: { joiners?: string[]; maybe?: string[] } = {},
     ) => {
       q.run(
         `INSERT INTO activities
-          (id, host_id, category, title, description, place, map_x, map_y, starts_at,
+          (id, host_id, category, title, description, place, starts_at,
            is_private, is_open_invite, created_at, updated_at)
-         VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, 0, 1, ?, ?)`,
-        id, host, category, title, place, opts.mapX ?? 0.5, opts.mapY ?? 0.5,
+         VALUES (?, ?, ?, ?, '', ?, ?, 0, 1, ?, ?)`,
+        id, host, category, title, place,
         ts + min(inMins), ts, ts,
       );
       let order = 0;
@@ -115,11 +115,11 @@ function run(): void {
       }
     };
 
-    mkActivity('a1', 'u_mike', 'gym', 'Hitting the gym', 'Equinox SoHo', 30, { joiners: ['u_josh'], mapX: 0.42, mapY: 0.58 });
-    mkActivity('a2', 'u_sam', 'run', '5k jog along the river', 'West Side Greenway', 15, { mapX: 0.3, mapY: 0.4 });
+    mkActivity('a1', 'u_mike', 'gym', 'Hitting the gym', 'Equinox SoHo', 30, { joiners: ['u_josh'] });
+    mkActivity('a2', 'u_sam', 'run', '5k jog along the river', 'West Side Greenway', 15);
     mkActivity('a3', 'u_josh', 'gaming', 'Fortnite squad up', 'Online · PS5', 5, { joiners: ['u_ravi'] });
-    mkActivity('a4', 'u_maya', 'coffee', 'Coffee + work session', 'Devoción Williamsburg', 60, { maybe: ['u_sam', 'u_priya'], mapX: 0.55, mapY: 0.5 });
-    mkActivity('a5', 'u_priya', 'drinks', 'Drinks @ rooftop', 'Westlight', 180, { joiners: ['u_ravi', 'u_maya'], mapX: 0.6, mapY: 0.62 });
+    mkActivity('a4', 'u_maya', 'coffee', 'Coffee + work session', 'Devoción Williamsburg', 60, { maybe: ['u_sam', 'u_priya'] });
+    mkActivity('a5', 'u_priya', 'drinks', 'Drinks @ rooftop', 'Westlight', 180, { joiners: ['u_ravi', 'u_maya'] });
 
     // Tag the gym session for the BFFs squad.
     q.run('INSERT INTO activity_squads (activity_id, squad_id) VALUES (?, ?)', 'a1', 's_bff');

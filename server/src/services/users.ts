@@ -119,10 +119,6 @@ export function updateUser(
 interface SettingsRow {
   push_enabled: number;
   pings_enabled: number;
-  host_transfer_enabled: number;
-  show_me_to_fof: number;
-  default_private: number;
-  appearance: string;
   default_reminder_minutes: number | null;
 }
 
@@ -136,10 +132,6 @@ export function getSettings(userId: string): AppSettings {
   return {
     pushEnabled: !!r.push_enabled,
     pingsEnabled: !!r.pings_enabled,
-    hostTransferEnabled: !!r.host_transfer_enabled,
-    showMeToFoF: !!r.show_me_to_fof,
-    defaultPrivate: !!r.default_private,
-    appearance: r.appearance as AppSettings['appearance'],
     defaultReminderMins: r.default_reminder_minutes,
   };
 }
@@ -149,15 +141,10 @@ export function updateSettings(userId: string, patch: Partial<AppSettings>): App
   const next = { ...cur, ...patch };
   q.run(
     `UPDATE user_settings SET
-       push_enabled = ?, pings_enabled = ?, host_transfer_enabled = ?,
-       show_me_to_fof = ?, default_private = ?, appearance = ?, default_reminder_minutes = ?
+       push_enabled = ?, pings_enabled = ?, default_reminder_minutes = ?
      WHERE user_id = ?`,
     next.pushEnabled ? 1 : 0,
     next.pingsEnabled ? 1 : 0,
-    next.hostTransferEnabled ? 1 : 0,
-    next.showMeToFoF ? 1 : 0,
-    next.defaultPrivate ? 1 : 0,
-    next.appearance,
     next.defaultReminderMins,
     userId,
   );

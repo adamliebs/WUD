@@ -25,11 +25,6 @@ export const authApi = {
   login: (email: string, password: string) =>
     api.post<AuthResult>('/auth/email/login', { email, password }, true),
 
-  /** Mockup OAuth — `subject` stands in for the verified provider id. */
-  oauth: (provider: 'google' | 'apple' | 'facebook', b: {
-    subject: string; email?: string; name?: string; handle?: string;
-  }) => api.post<AuthResult>(`/auth/oauth/${provider}`, b, true),
-
   logout: (refreshToken: string) => api.post('/auth/logout', { refreshToken }, true),
 
   /** Live handle-availability check (handles are unique; names are not). */
@@ -64,6 +59,8 @@ export const meApi = {
     api.patch<{ user: User }>('/me', patch),
   updateSettings: (patch: Partial<AppSettings>) =>
     api.patch<{ settings: AppSettings }>('/me/settings', patch),
+  /** Permanently erase the account and all owned data. */
+  deleteAccount: () => api.del('/account'),
 };
 
 /* ---- feed / activities ---- */
@@ -81,7 +78,7 @@ export const activityApi = {
     title: string; place?: string; description?: string; startsAt: number;
     maxSize?: number; isPrivate?: boolean; isOpenInvite?: boolean;
     bannerUrl?: string; recurrence?: Recurrence; reminderMins?: number | null;
-    squadIds?: string[]; mapX?: number; mapY?: number;
+    squadIds?: string[];
   }) => api.post<ActivityResp>('/activities', b),
 
   patch: (id: string, b: Record<string, unknown>) =>
@@ -143,6 +140,17 @@ export const socialApi = {
   removeSquadMember: (id: string, userId: string) =>
     api.del<{ squad: Squad }>(`/squads/${id}/members/${userId}`),
   leaveSquad: (id: string) => api.post(`/squads/${id}/leave`),
+};
+
+/* ---- uploads ---- */
+
+export const uploadApi = {
+  /** Upload a photo file to the server; resolves to its absolute URL. */
+  photo: (file: File) => {
+    const form = new FormData();
+    form.append('photo', file);
+    return api.upload<{ url: string }>('/uploads', form);
+  },
 };
 
 /* ---- notifications / presence / discovery ---- */

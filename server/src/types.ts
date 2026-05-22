@@ -75,8 +75,6 @@ export interface Activity {
   reminderMins?: number | null;
   reactions: Reaction[];
   bannerUrl?: string;
-  mapX?: number;
-  mapY?: number;
   recurrence?: Recurrence;
   createdAt: number;
   chat: ChatMessage[];
@@ -109,9 +107,5 @@ export interface AppNotification {
 export interface AppSettings {
   pushEnabled: boolean;
   pingsEnabled: boolean;
-  hostTransferEnabled: boolean;
-  showMeToFoF: boolean;
-  defaultPrivate: boolean;
-  appearance: 'system' | 'dark' | 'light';
   defaultReminderMins: number | null;
 }

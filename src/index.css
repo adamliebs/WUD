@@ -57,6 +57,17 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Android's WebView renders backdrop-filter unreliably — without the blur the
+   glass surfaces look too see-through. On Android, fall back to a near-opaque
+   background so the panels still read as solid frosted surfaces. (iOS's
+   WebView blurs fine, so it keeps the real translucent glass.) */
+html.android .glass {
+  background: rgba(20, 18, 28, 0.93);
+}
+html.android .glass-strong {
+  background: rgba(15, 13, 22, 0.97);
+}
+
 /* Brand gradient text */
 .text-grad {
   background: linear-gradient(120deg, #fb7185 0%, #f472b6 40%, #fb923c 100%);

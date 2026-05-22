@@ -9,6 +9,7 @@ import { PollBubble } from '../components/PollBubble';
 import { ReactionBar } from '../components/ReactionBar';
 import { categoryFor } from '../data/categories';
 import { clockTime, isPast, recurrenceLabel, relTime, useApp } from '../store';
+import { mediaUrl } from '../api/client';
 
 export function ActivityDetailSheet() {
   const openId = useApp(s => s.openActivityId);
@@ -73,7 +74,7 @@ function Inner({ activityId }: { activityId: string }) {
         {activity.bannerUrl ? (
           <>
             <img
-              src={activity.bannerUrl}
+              src={mediaUrl(activity.bannerUrl)}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
               draggable={false}
@@ -568,13 +569,11 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
 
   const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    // The draft text (if any) becomes the caption; blob: URL is owned by the
-    // store for the lifetime of the page (chat photos are mockup-only).
-    const url = URL.createObjectURL(file);
-    sendChatPhoto(activityId, url, draft);
-    setDraft('');
     e.target.value = '';
+    if (!file) return;
+    // The draft text (if any) rides along as the caption; the store uploads.
+    sendChatPhoto(activityId, file, draft);
+    setDraft('');
   };
 
   return (
@@ -635,7 +634,7 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
                       <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
                     )}
                     <img
-                      src={m.photoUrl}
+                      src={mediaUrl(m.photoUrl)}
                       alt={m.text ?? 'shared photo'}
                       className="block max-h-64 w-full object-cover"
                       draggable={false}

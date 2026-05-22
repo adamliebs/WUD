@@ -80,6 +80,11 @@ export const config = {
   /** Max JSON request body size. */
   bodyLimit: process.env.BODY_LIMIT ?? '2mb',
 
+  /** Directory for uploaded photos — must live on a persistent volume. */
+  uploadsDir: process.env.UPLOADS_DIR ?? 'uploads',
+  /** Max uploaded photo size, in bytes. */
+  maxUploadBytes: num('MAX_UPLOAD_BYTES', 8 * 1024 * 1024),
+
   /** Reverse proxies in front of the app (so client IPs / rate limits are correct). */
   trustProxy: num('TRUST_PROXY', isProd ? 1 : 0),
 
