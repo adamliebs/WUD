@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, Camera, ChevronRight, Crown, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Calendar, Camera, ChevronRight, Crown, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
@@ -8,7 +8,7 @@ import { OverlayShell } from '../components/OverlayShell';
 import { PulseButton } from '../components/PulseButton';
 import { categoryFor } from '../data/categories';
 import { clockTime, relTime, useApp } from '../store';
-import type { Activity, Squad, User } from '../types';
+import type { Activity, User } from '../types';
 
 type Mode =
   | { type: 'list' }
@@ -626,7 +626,7 @@ function SquadChatPane({ squadId }: { squadId: string }) {
         )}
       </div>
 
-      <div className="px-3 pb-5 pt-2 bg-gradient-to-t from-black/80 to-transparent">
+      <div className="px-3 pb-safe pt-2 bg-gradient-to-t from-black/80 to-transparent">
         <input
           ref={photoFileRef}
           type="file"

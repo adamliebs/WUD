@@ -1,0 +1,31 @@
+# Local run of the production image.
+#
+#   docker compose up --build
+#
+# Boots in production mode against a persistent named volume. Litestream is
+# disabled (no LITESTREAM_REPLICA_URL) so it runs without a backup target.
+#
+# Seed demo data once the container is up:
+#   docker compose exec api node dist/db/seed.js
+
+services:
+  api:
+    build: .
+    init: true
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      WUD_DB: /data/wud.db
+      # Local-only secret — production injects a real one. Min 32 chars.
+      JWT_SECRET: ${JWT_SECRET:-local-compose-insecure-secret-change-me-please}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,capacitor://localhost,http://localhost}
+      LOG_LEVEL: info
+      TRUST_PROXY: "0"
+    volumes:
+      - wud-data:/data
+    restart: unless-stopped
+
+volumes:
+  wud-data:

@@ -17,6 +17,9 @@
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Top status-bar clearance — the real safe-area inset on devices; the
+     desktop phone-mockup frame simulates it (see .phone-screen below). */
+  --status-inset: env(safe-area-inset-top, 0px);
 }
 
 html, body, #root {
@@ -99,4 +102,18 @@ body {
     radial-gradient(800px 600px at 30% 10%, rgba(244, 63, 94, 0.25), transparent 60%),
     radial-gradient(800px 600px at 80% 90%, rgba(99, 102, 241, 0.22), transparent 60%),
     #050308;
+}
+
+/* The desktop phone-mockup frame simulates a 44px status bar. On real phones
+   (web or native, < 640px) .phone-screen inherits the env() inset from :root. */
+@media (min-width: 640px) {
+  .phone-screen { --status-inset: 44px; }
+}
+
+/* Safe-area utilities — keep headers below the status bar and footers above
+   the home indicator, on every device. */
+@layer utilities {
+  .pt-status    { padding-top: calc(var(--status-inset) + 0.25rem); }
+  .pt-status-lg { padding-top: calc(var(--status-inset) + 0.75rem); }
+  .pb-safe      { padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem)); }
 }

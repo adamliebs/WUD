@@ -15,17 +15,31 @@ export function AuthScreen() {
   const intent = useApp(s => s.authIntent);
   const setIntent = useApp(s => s.setAuthIntent);
   const logIn = useApp(s => s.logIn);
+  const logInSocial = useApp(s => s.logInSocial);
+  const beginEmailSignup = useApp(s => s.beginEmailSignup);
+  const beginSocialSignup = useApp(s => s.beginSocialSignup);
+  const pushToast = useApp(s => s.pushToast);
 
   const isSignup = intent === 'signup';
 
-  // Where "continue" goes: sign up → onboarding, log in → straight into the app.
-  const proceed = () => {
-    if (isSignup) setAuthState('onboarding');
-    else logIn();
-  };
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Email path: sign up → onboarding step; log in → straight into the app.
+  const proceedEmail = () => {
+    if (!email.trim() || !password) {
+      pushToast('Enter your email and password', 'warn');
+      return;
+    }
+    if (isSignup) beginEmailSignup(email.trim(), password);
+    else logIn(email.trim(), password);
+  };
+
+  // Social path: sign up → onboarding step; log in → straight into the app.
+  const proceedSocial = (method: 'google' | 'apple' | 'facebook') => {
+    if (isSignup) beginSocialSignup(method);
+    else logInSocial(method);
+  };
 
   return (
     <motion.div
@@ -36,7 +50,7 @@ export function AuthScreen() {
       className="absolute inset-0 bg-[#07060b] flex flex-col"
     >
       {/* Header */}
-      <div className="pt-12 px-3 pb-3 flex items-center justify-between border-b border-white/5">
+      <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5">
         <button
           onClick={() => setAuthState('welcome')}
           className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-white hover:bg-white/5"
@@ -87,19 +101,19 @@ export function AuthScreen() {
         {/* Social providers */}
         <div className="flex flex-col gap-2.5">
           <SocialButton
-            onClick={proceed}
+            onClick={() => proceedSocial('google')}
             className="bg-white text-zinc-900 hover:bg-white/90"
             icon={<GoogleIcon />}
             label={`Continue with Google`}
           />
           <SocialButton
-            onClick={proceed}
+            onClick={() => proceedSocial('apple')}
             className="bg-black text-white border border-white/15 hover:bg-zinc-900"
             icon={<AppleIcon size={18} />}
             label={`Continue with Apple`}
           />
           <SocialButton
-            onClick={proceed}
+            onClick={() => proceedSocial('facebook')}
             className="bg-[#1877F2] text-white hover:brightness-110"
             icon={<FacebookIcon />}
             label={`Continue with Facebook`}
@@ -143,7 +157,7 @@ export function AuthScreen() {
 
         {/* Primary CTA */}
         <div className="mt-5">
-          <PulseButton onClick={proceed}>
+          <PulseButton onClick={proceedEmail}>
             {isSignup ? 'Continue' : 'Log in'}
           </PulseButton>
         </div>
@@ -153,7 +167,7 @@ export function AuthScreen() {
           {isSignup ? (
             <>By continuing you agree to WUD's Terms &amp; Privacy Policy.</>
           ) : (
-            <>Mockup — any email and password will log you in.</>
+            <>Demo: <span className="text-zinc-400">admin@wud.app</span> / <span className="text-zinc-400">admin1234</span></>
           )}
         </div>
 

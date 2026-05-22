@@ -1,10 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Search, UserMinus, UserPlus, Users } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
 import { OverlayShell } from '../components/OverlayShell';
-import { FOF_VIA } from '../data/seed';
+import { socialApi } from '../api/endpoints';
 import { useApp } from '../store';
 import type { User } from '../types';
 
@@ -13,27 +13,38 @@ type Tab = 'friends' | 'discover';
 export function FriendsScreen() {
   const openOverlay = useApp(s => s.openOverlay);
   const closeOverlay = () => openOverlay(null);
-  const meId = useApp(s => s.meId);
   const friends = useApp(useShallow(s => s.friendIds.map(id => s.userById(id))));
-  const allUsers = useApp(s => s.users);
-  const friendIds = useApp(s => s.friendIds);
-
-  const discoverable = useMemo(
-    () => allUsers.filter(u => u.id !== meId && !friendIds.includes(u.id)),
-    [allUsers, meId, friendIds],
-  );
 
   const [tab, setTab] = useState<Tab>('friends');
   const [q, setQ] = useState('');
+  // Discover results come from the server (the store only caches known users).
+  const [discoverResults, setDiscoverResults] = useState<User[]>([]);
+
+  // Fetch the discover list whenever the Discover tab is active and the query
+  // changes (lightly debounced).
+  useEffect(() => {
+    if (tab !== 'discover') return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      socialApi.discover(q.trim())
+        .then(r => { if (!cancelled) setDiscoverResults(r.users); })
+        .catch(() => { if (!cancelled) setDiscoverResults([]); });
+    }, 180);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [tab, q]);
+
+  // Discover shows "people you may know" until 2+ chars are typed, at which
+  // point it becomes an explicit handle/name search (matches the server).
+  const discoverSearching = tab === 'discover' && q.trim().length >= 2;
 
   const filtered = useMemo(() => {
-    const list = tab === 'friends' ? friends : discoverable;
-    if (!q.trim()) return list;
-    const needle = q.toLowerCase();
-    return list.filter(u =>
+    if (tab === 'discover') return discoverResults;
+    const needle = q.trim().toLowerCase();
+    if (!needle) return friends;
+    return friends.filter(u =>
       u.name.toLowerCase().includes(needle) || u.handle.toLowerCase().includes(needle),
     );
-  }, [tab, friends, discoverable, q]);
+  }, [tab, friends, discoverResults, q]);
 
   return (
     <OverlayShell title="Friends" onClose={closeOverlay}>
@@ -44,7 +55,7 @@ export function FriendsScreen() {
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder={tab === 'friends' ? 'Search your friends' : 'Find people to add'}
+            placeholder={tab === 'friends' ? 'Search your friends' : 'Search a @handle to add someone'}
             className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white text-sm placeholder:text-zinc-500
                        focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30"
           />
@@ -76,6 +87,9 @@ export function FriendsScreen() {
           })}
         </div>
 
+        {/* Incoming friend requests — shown on the Friends tab. */}
+        {tab === 'friends' && <FriendRequests />}
+
         {/* List — outer div is keyed by `tab` so swapping tabs cleanly remounts the
             list (no per-row exit/enter cascading from the old tab). Within a tab,
             AnimatePresence still gives a soft fade when a row is added/removed
@@ -87,6 +101,14 @@ export function FriendsScreen() {
           transition={{ duration: 0.18 }}
           className="mt-4 flex flex-col gap-2"
         >
+          {/* Discover header — distinguishes "people you may know" (no query)
+              from explicit handle-search results. */}
+          {tab === 'discover' && filtered.length > 0 && (
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 px-1 -mb-0.5">
+              {discoverSearching ? `Results · ${filtered.length}` : 'People you may know'}
+            </div>
+          )}
+
           <AnimatePresence initial={false}>
             {filtered.map(u => (
               <motion.div
@@ -102,10 +124,12 @@ export function FriendsScreen() {
           </AnimatePresence>
 
           {filtered.length === 0 && (
-            <div className="text-center text-zinc-500 text-sm mt-12">
+            <div className="text-center text-zinc-500 text-sm mt-12 px-6 leading-relaxed">
               {tab === 'friends'
                 ? (q ? 'No friends match.' : 'You haven\'t added any friends yet.')
-                : (q ? 'No one to add by that name.' : 'No new people to discover.')}
+                : (discoverSearching
+                    ? 'No one with that handle. Check the exact @handle and try again.'
+                    : 'Search a friend’s @handle above to add them. People you may know show up here too.')}
             </div>
           )}
         </motion.div>
@@ -114,30 +138,70 @@ export function FriendsScreen() {
   );
 }
 
+/** Incoming friend-request cards with Accept / Decline. */
+function FriendRequests() {
+  const requests = useApp(useShallow(s => s.friendRequests));
+  const accept = useApp(s => s.acceptFriendRequest);
+  const decline = useApp(s => s.declineFriendRequest);
+  if (requests.length === 0) return null;
+
+  return (
+    <div className="mt-4">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2 px-1">
+        Friend requests · {requests.length}
+      </div>
+      <div className="flex flex-col gap-2">
+        <AnimatePresence initial={false}>
+          {requests.map(r => (
+            <motion.div
+              key={r.id}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="flex items-center gap-3 p-2.5 rounded-2xl bg-rose-500/10 border border-rose-400/25"
+            >
+              <Avatar user={r.from} size={42} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white truncate">{r.from.name}</div>
+                <div className="text-[11px] text-zinc-400 truncate">@{r.from.handle} · wants to be friends</div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => accept(r.id)}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-br from-emerald-500 to-teal-600"
+                >
+                  Accept
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => decline(r.id)}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold text-zinc-300 bg-white/5 border border-white/10"
+                >
+                  Decline
+                </motion.button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
 function PersonRow({ user, mode }: { user: User; mode: Tab }) {
   const addFriend = useApp(s => s.addFriend);
   const removeFriend = useApp(s => s.removeFriend);
   const friendIds = useApp(s => s.friendIds);
-  const isFriendOfFriend = useApp(s => s.isFriendOfFriend);
-  const userById = useApp(s => s.userById);
 
   const isFriend = friendIds.includes(user.id);
-  const isFoF = isFriendOfFriend(user.id);
-  const viaId = FOF_VIA[user.id];
-  const via = viaId ? userById(viaId) : null;
 
   return (
     <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-white/5 border border-white/10">
       <Avatar user={user} size={42} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-white truncate flex items-center gap-1.5">
-          {user.name}
-          {mode === 'discover' && isFoF && via && (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/20">
-              via {via.name}
-            </span>
-          )}
-        </div>
+        <div className="text-sm font-semibold text-white truncate">{user.name}</div>
         <div className="text-[11px] text-zinc-400 truncate">@{user.handle}</div>
       </div>
 
@@ -155,10 +219,18 @@ function PersonRow({ user, mode }: { user: User; mode: Tab }) {
 }
 
 function AddButton({ onClick }: { onClick: () => void }) {
+  const [sent, setSent] = useState(false);
+  if (sent) {
+    return (
+      <span className="text-[10.5px] font-bold uppercase tracking-widest text-zinc-300 bg-white/5 border border-white/10 px-2 py-1 rounded-full">
+        Requested
+      </span>
+    );
+  }
   return (
     <motion.button
       whileTap={{ scale: 0.92 }}
-      onClick={onClick}
+      onClick={() => { onClick(); setSent(true); }}
       className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white bg-gradient-to-br from-rose-500 to-orange-500 shadow-[0_8px_24px_-12px_rgba(244,63,94,0.7)]"
     >
       <UserPlus size={12} />

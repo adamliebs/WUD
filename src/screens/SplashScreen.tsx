@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useEffect } from 'react';
+import { tokens } from '../api/client';
 import { useApp } from '../store';
 
 /**
@@ -26,6 +27,9 @@ export function SplashScreen() {
   const setAuthState = useApp(s => s.setAuthState);
 
   useEffect(() => {
+    // If a saved session exists, App.init() is resuming it — don't auto-advance
+    // to Welcome (it would flash before bootstrap lands on the app).
+    if (tokens.hasSession) return;
     const t = setTimeout(() => setAuthState('welcome'), 2400);
     return () => clearTimeout(t);
   }, [setAuthState]);

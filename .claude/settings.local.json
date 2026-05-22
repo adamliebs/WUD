@@ -9,7 +9,11 @@
       "Bash(npm run *)",
       "Bash(grep -nE \"^  \\\\{$\" /Users/adamlieberman/Documents/APPS/WUD/src/data/seed.ts)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/)",
-      "Bash(curl -s http://localhost:5173/src/screens/SplashScreen.tsx)"
+      "Bash(curl -s http://localhost:5173/src/screens/SplashScreen.tsx)",
+      "Bash(git checkout *)",
+      "Bash(npm start *)",
+      "Bash(curl -s -X POST localhost:4000/v1/auth/email/login -H 'content-type: application/json' -d '{\"email\":\"admin@wud.app\",\"password\":\"admin1234\"}')",
+      "Bash(node -e ' *)"
     ]
   }
 }

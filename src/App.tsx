@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect } from 'react';
 import { useApp } from './store';
 import { PhoneFrame } from './components/PhoneFrame';
-import { ReminderEngine } from './components/ReminderEngine';
 import { TabBar } from './components/TabBar';
 import { Toaster } from './components/Toaster';
 import { FeedScreen } from './screens/FeedScreen';
@@ -21,6 +21,10 @@ import { WelcomeScreen } from './screens/WelcomeScreen';
 
 function App() {
   const authState = useApp(s => s.authState);
+  const init = useApp(s => s.init);
+
+  // On mount, resume a saved session (if a token is in localStorage).
+  useEffect(() => { init(); }, [init]);
 
   return (
     <PhoneFrame>
@@ -69,7 +73,6 @@ function MainApp() {
       </AnimatePresence>
 
       <TabBar />
-      <ReminderEngine />
       <PostSheet />
       <GoLiveSheet />
       <ActivityDetailSheet />

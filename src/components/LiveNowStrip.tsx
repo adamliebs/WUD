@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Radio } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { isLive, useApp } from '../store';
+import type { User } from '../types';
 import { Avatar } from './Avatar';
 
 /**
@@ -119,7 +120,7 @@ function YouCard({ live, onTap }: { live: boolean; onTap: () => void }) {
 function FriendLiveCard({
   user, onTap,
 }: {
-  user: { id: string; name: string; handle: string; avatar: string; color: string; photoUrl?: string; liveStatus?: { emoji: string; text: string; expiresAt: number } };
+  user: User;
   onTap: () => void;
 }) {
   return (

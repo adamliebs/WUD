@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
+  <defs>
+    <linearGradient id="brand" x1="986" y1="1106" x2="1746" y2="1626" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fb7185"/>
+      <stop offset="0.5" stop-color="#f472b6"/>
+      <stop offset="1" stop-color="#fb923c"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="620" cy="420" r="1600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fb7185" stop-opacity="0.32"/>
+      <stop offset="0.7" stop-color="#fb7185" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="2200" cy="2320" r="1600" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a855f7" stop-opacity="0.26"/>
+      <stop offset="0.7" stop-color="#a855f7" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="#07060b"/>
+  <rect width="2732" height="2732" fill="url(#glowA)"/>
+  <rect width="2732" height="2732" fill="url(#glowB)"/>
+  <!-- centered "W" wordmark, kept within the safe central third -->
+  <polyline points="986,1106 1236,1626 1366,1456 1496,1626 1746,1106"
+    fill="none" stroke="url(#brand)" stroke-width="150"
+    stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

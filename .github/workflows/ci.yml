@@ -1,0 +1,45 @@
+name: CI
+
+# Validates every pull request and every push to a non-production branch.
+# Pushes to `production` are handled by deploy.yml (which verifies + ships).
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - production
+
+jobs:
+  backend:
+    name: Backend — typecheck & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  frontend:
+    name: Frontend — lint & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # Non-blocking: surfaces pre-existing react-hooks findings (DEPLOYMENT.md
+      # phase F) without gating deploys. The build below is the hard gate.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+      - run: npm run build
