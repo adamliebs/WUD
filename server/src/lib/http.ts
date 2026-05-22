@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from './errors.js';
+import { logger } from './logger.js';
 
 /**
  * Wrap an async route handler so thrown errors land in the error middleware
@@ -27,7 +28,7 @@ export function errorMiddleware(
     return;
   }
   // Unexpected — log and return a generic 500 (never leak internals).
-  console.error('[unhandled]', err);
+  logger.error({ err }, 'unhandled error');
   res.status(500).json({
     error: { code: 'INTERNAL', message: 'Something went wrong.', field: null },
   });

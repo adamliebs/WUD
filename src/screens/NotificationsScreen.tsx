@@ -36,7 +36,7 @@ export function NotificationsScreen() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="pt-14 pb-3 px-5">
+      <div className="pt-status-lg pb-3 px-5">
         <div className="text-xs uppercase tracking-[0.2em] text-zinc-400">Inbox</div>
         <h1 className="text-[34px] font-black leading-none mt-1">
           <span className="text-grad">Alerts</span>

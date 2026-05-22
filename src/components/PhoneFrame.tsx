@@ -28,8 +28,9 @@ export function PhoneFrame({ children }: Props) {
         {/* Notch (only on framed view) */}
         <div className="hidden sm:block absolute top-2 left-1/2 -translate-x-1/2 z-50
                         h-[28px] w-[110px] rounded-full bg-black" />
-        {/* Status bar */}
-        <div className="absolute top-0 left-0 right-0 h-11 z-40 flex items-end justify-between px-7 pb-1 text-[13px] font-semibold text-white pointer-events-none">
+        {/* Simulated status bar — desktop mockup frame only. On real phones the
+            OS (native) or browser draws the status bar. */}
+        <div className="absolute top-0 left-0 right-0 h-11 z-40 hidden sm:flex items-end justify-between px-7 pb-1 text-[13px] font-semibold text-white pointer-events-none">
           <span>9:41</span>
           <span className="flex items-center gap-1">
             <span className="inline-block w-4 h-2.5 rounded-[2px] border border-white/80 relative">
@@ -39,8 +40,8 @@ export function PhoneFrame({ children }: Props) {
           </span>
         </div>
 
-        {/* Screen content */}
-        <div className="relative h-full w-full">
+        {/* Screen content — `phone-screen` carries the --status-inset variable. */}
+        <div className="phone-screen relative h-full w-full">
           {children}
         </div>
 

@@ -20,7 +20,7 @@ export function TabBar() {
   // Position the "+" button between Ping and Notifications visually,
   // but in our layout we render it as a floating center button.
   return (
-    <div className="absolute bottom-0 left-0 right-0 pb-5 pt-3 px-4 z-30 pointer-events-none">
+    <div className="absolute bottom-0 left-0 right-0 pb-safe pt-3 px-4 z-30 pointer-events-none">
       <div className="relative pointer-events-auto">
         {/* Floating create button */}
         <div className="absolute left-1/2 -translate-x-1/2 -top-8 z-10">

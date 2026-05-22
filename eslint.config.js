@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // dist build output, the backend (its own toolchain), and the generated
+  // native projects are all out of scope for the web-app lint.
+  globalIgnores(['dist', 'server', 'ios', 'android', 'assets']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

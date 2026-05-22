@@ -7,8 +7,7 @@
  * - Surfaces the server's `{ error: { code, message } }` shape as an ApiError.
  */
 
-const API_BASE =
-  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:4000';
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 const ACCESS_KEY = 'wud_access';
 const REFRESH_KEY = 'wud_refresh';

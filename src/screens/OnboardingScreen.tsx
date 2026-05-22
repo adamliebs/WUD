@@ -74,7 +74,7 @@ export function OnboardingScreen() {
       className="absolute inset-0 bg-[#07060b] flex flex-col"
     >
       {/* Header */}
-      <div className="pt-12 px-3 pb-3 flex items-center justify-between border-b border-white/5">
+      <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5">
         <button
           onClick={() => setAuthState('auth')}
           className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-white hover:bg-white/5"
@@ -202,7 +202,7 @@ export function OnboardingScreen() {
       </div>
 
       {/* Sticky finish */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-5
+      <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-safe
                       bg-[#0a070f]/95 backdrop-blur-md border-t border-white/10">
         <PulseButton onClick={finish} disabled={!canFinish}>
           {canFinish ? 'Enter WUD' : 'Add your name to continue'}

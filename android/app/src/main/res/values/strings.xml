@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">WUD</string>
+    <string name="title_activity_main">WUD</string>
+    <string name="package_name">com.wud.app</string>
+    <string name="custom_url_scheme">com.wud.app</string>
+</resources>

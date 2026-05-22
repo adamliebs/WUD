@@ -626,7 +626,7 @@ function SquadChatPane({ squadId }: { squadId: string }) {
         )}
       </div>
 
-      <div className="px-3 pb-5 pt-2 bg-gradient-to-t from-black/80 to-transparent">
+      <div className="px-3 pb-safe pt-2 bg-gradient-to-t from-black/80 to-transparent">
         <input
           ref={photoFileRef}
           type="file"

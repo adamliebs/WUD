@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="brand" x1="300" y1="372" x2="724" y2="660" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fb7185"/>
+      <stop offset="0.5" stop-color="#f472b6"/>
+      <stop offset="1" stop-color="#fb923c"/>
+    </linearGradient>
+  </defs>
+  <!-- Android adaptive foreground — "W" kept inside the safe zone. -->
+  <polyline points="300,372 440,652 512,540 584,652 724,372"
+    fill="none" stroke="url(#brand)" stroke-width="96"
+    stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

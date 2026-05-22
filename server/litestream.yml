@@ -1,0 +1,22 @@
+# Litestream — continuous streaming replication of the SQLite database to
+# S3-compatible object storage. https://litestream.io
+#
+# Every value comes from an environment variable (see .env.example). When
+# LITESTREAM_REPLICA_URL is empty the container entrypoint skips Litestream
+# entirely and runs the app directly — handy for local Docker runs.
+#
+# WAL mode (set in src/db/index.ts) is what makes streaming replication
+# possible: Litestream ships each WAL frame to the replica as it is written.
+
+dbs:
+  - path: ${WUD_DB}
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        # Take a full snapshot daily and keep 30 days of history, so the
+        # database can be restored to any point in the last month.
+        snapshot-interval: 24h
+        retention: 720h
+        # Validate replication integrity once a day.
+        validation-interval: 24h

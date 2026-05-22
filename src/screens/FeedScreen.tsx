@@ -21,7 +21,7 @@ export function FeedScreen() {
   return (
     <div className="h-full w-full flex flex-col">
       {/* Header */}
-      <div className="pt-14 pb-3 px-5">
+      <div className="pt-status-lg pb-3 px-5">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}

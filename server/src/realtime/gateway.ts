@@ -1,6 +1,7 @@
 import type { Server } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken } from '../lib/jwt.js';
+import { logger } from '../lib/logger.js';
 import { onEvent } from './bus.js';
 
 /**
@@ -22,11 +23,13 @@ interface Client {
 }
 
 const clients = new Set<Client>();
+let wss: WebSocketServer | null = null;
 
 export function attachRealtime(httpServer: Server): void {
-  const wss = new WebSocketServer({ server: httpServer, path: '/v1/realtime' });
+  const server = new WebSocketServer({ server: httpServer, path: '/v1/realtime' });
+  wss = server;
 
-  wss.on('connection', (socket, req) => {
+  server.on('connection', (socket, req) => {
     // Authenticate from the ?token= query param.
     const url = new URL(req.url ?? '', 'http://localhost');
     const userId = verifyAccessToken(url.searchParams.get('token') ?? '');
@@ -91,12 +94,23 @@ export function attachRealtime(httpServer: Server): void {
       client.socket.ping();
     }
   }, 30_000);
-  wss.on('close', () => clearInterval(heartbeat));
+  server.on('close', () => clearInterval(heartbeat));
 
-  console.log('[realtime] WebSocket gateway listening at /v1/realtime');
+  logger.info('[realtime] WebSocket gateway listening at /v1/realtime');
 }
 
 /** Current connected-client count (for the health endpoint). */
 export function realtimeClientCount(): number {
   return clients.size;
+}
+
+/** Close the realtime gateway — terminates every client socket. */
+export function closeRealtime(): Promise<void> {
+  return new Promise(resolve => {
+    if (!wss) return resolve();
+    for (const client of clients) client.socket.terminate();
+    clients.clear();
+    wss.close(() => resolve());
+    wss = null;
+  });
 }

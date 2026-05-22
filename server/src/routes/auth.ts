@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { badRequest } from '../lib/errors.js';
 import { handler, requireString, optionalString } from '../lib/http.js';
+import { authLimiter } from '../middleware/rateLimit.js';
 import {
   loginEmail, oauthUpsert, refreshSession, registerEmail, revokeRefreshToken,
 } from '../services/auth.js';
@@ -15,7 +16,7 @@ authRouter.get('/handle-available', handler((req, res) => {
 }));
 
 /** POST /v1/auth/email/register */
-authRouter.post('/email/register', handler((req, res) => {
+authRouter.post('/email/register', authLimiter, handler((req, res) => {
   const result = registerEmail({
     email: requireString(req.body, 'email'),
     password: requireString(req.body, 'password'),
@@ -28,7 +29,7 @@ authRouter.post('/email/register', handler((req, res) => {
 }));
 
 /** POST /v1/auth/email/login */
-authRouter.post('/email/login', handler((req, res) => {
+authRouter.post('/email/login', authLimiter, handler((req, res) => {
   res.json(loginEmail(
     requireString(req.body, 'email'),
     requireString(req.body, 'password'),
@@ -41,7 +42,7 @@ authRouter.post('/email/login', handler((req, res) => {
  * server verifies it with the provider and extracts `(subject, email, name)`.
  * Here the client supplies an already-trusted `subject` for the mockup.
  */
-authRouter.post('/oauth/:provider', handler((req, res) => {
+authRouter.post('/oauth/:provider', authLimiter, handler((req, res) => {
   const provider = req.params.provider;
   if (provider !== 'google' && provider !== 'apple' && provider !== 'facebook') {
     throw badRequest('UNKNOWN_PROVIDER', 'Unsupported OAuth provider', 'provider');
@@ -57,7 +58,7 @@ authRouter.post('/oauth/:provider', handler((req, res) => {
 }));
 
 /** POST /v1/auth/token/refresh */
-authRouter.post('/token/refresh', handler((req, res) => {
+authRouter.post('/token/refresh', authLimiter, handler((req, res) => {
   res.json(refreshSession(requireString(req.body, 'refreshToken')));
 }));
 

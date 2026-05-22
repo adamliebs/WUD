@@ -1,9 +1,6 @@
--- WUD database schema (SQLite dialect).
--- Mirrors SRS §4. SQLite is the dev datastore; the SQL is largely Postgres-portable.
--- All *_at columns are epoch milliseconds (INTEGER) for cheap comparison.
-
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+-- 0001_init — WUD base schema (SQLite dialect).
+-- Mirrors SRS §4. All *_at columns are epoch milliseconds (INTEGER).
+-- Connection pragmas (WAL, foreign_keys) are set in db/index.ts.
 
 ------------------------------------------------------------------- users + auth
 CREATE TABLE IF NOT EXISTS users (

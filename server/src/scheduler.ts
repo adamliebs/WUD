@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { q } from './db/index.js';
+import { logger } from './lib/logger.js';
 import { newId, now } from './lib/ids.js';
 import { createNotification } from './services/notifications.js';
 import { purgeExpiredLiveStatuses } from './services/presence.js';
@@ -149,12 +150,12 @@ export function startScheduler(): void {
       purgeExpiredLiveStatuses();
       runRecurrence();
     } catch (err) {
-      console.error('[scheduler] tick failed', err);
+      logger.error({ err }, '[scheduler] tick failed');
     }
   };
   tick(); // run once at startup
   timer = setInterval(tick, config.schedulerIntervalMs);
-  console.log(`[scheduler] running every ${config.schedulerIntervalMs / 1000}s`);
+  logger.info(`[scheduler] running every ${config.schedulerIntervalMs / 1000}s`);
 }
 
 export function stopScheduler(): void {

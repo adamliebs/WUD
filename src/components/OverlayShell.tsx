@@ -24,7 +24,7 @@ export function OverlayShell({ title, onClose, trailing, children }: Props) {
       className="absolute inset-0 z-40 bg-[#07060b] flex flex-col"
     >
       {/* Header */}
-      <div className="pt-12 px-3 pb-3 flex items-center justify-between border-b border-white/5">
+      <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5">
         <button
           onClick={onClose}
           className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-white hover:bg-white/5"
