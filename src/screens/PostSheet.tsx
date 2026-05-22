@@ -6,6 +6,7 @@ import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
 import { BottomSheet } from '../components/BottomSheet';
 import { PulseButton } from '../components/PulseButton';
 import { uploadApi } from '../api/endpoints';
+import { mediaUrl } from '../api/client';
 import { useApp } from '../store';
 import type { CategoryKey, Recurrence } from '../types';
 import { recurrenceLabel } from '../store';
@@ -367,7 +368,7 @@ export function PostSheet() {
                 disabled={bannerUploading}
                 className="relative w-full h-28 rounded-2xl overflow-hidden border border-white/10"
               >
-                <img src={bannerUrl} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                <img src={mediaUrl(bannerUrl)} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-black/30" />
                 <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
                   <span className="text-[11px] uppercase tracking-widest font-bold text-white bg-black/45 backdrop-blur px-2 py-1 rounded-full inline-flex items-center gap-1.5">

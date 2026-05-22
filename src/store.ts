@@ -348,8 +348,16 @@ export const useApp = create<State>((set, get) => {
 
   /* ---- bootstrap: load the whole world after auth ---- */
 
-  const doBootstrap = async () => {
+  const doBootstrap = async (opts?: { holdSplashMs?: number }) => {
+    const startedAt = Date.now();
     const b = await getBootstrap();
+    // Cold start: hold the animated splash for a moment so it actually plays,
+    // rather than flashing for a fraction of a second behind the native splash.
+    const hold = opts?.holdSplashMs ?? 0;
+    const elapsed = Date.now() - startedAt;
+    if (hold > elapsed) {
+      await new Promise(r => setTimeout(r, hold - elapsed));
+    }
     set({
       meId: b.user.id,
       users: dedupeUsers([b.user, ...b.users, ...b.live]),
@@ -567,7 +575,7 @@ export const useApp = create<State>((set, get) => {
 
     init: () => {
       if (!tokens.hasSession) return;   // no session → splash advances to welcome
-      void doBootstrap().catch(() => {
+      void doBootstrap({ holdSplashMs: 1800 }).catch(() => {
         tokens.clear();
         set({ authState: 'welcome' });
       });

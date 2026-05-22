@@ -551,6 +551,7 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
   const sendChatPhoto = useApp(s => s.sendChatPhoto);
   const openPollComposer = useApp(s => s.setPollComposerActivityId);
   const [draft, setDraft] = useState('');
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = activity?.chat.length ?? 0;
@@ -559,21 +560,34 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [chatLen]);
 
+  // Revoke the staged photo's preview URL when it's replaced or the pane closes.
+  useEffect(() => () => {
+    if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.preview);
+  }, [pendingPhoto]);
+
   if (!activity) return null;
 
+  const hasContent = !!draft.trim() || !!pendingPhoto;
+
   const submit = () => {
+    if (pendingPhoto) {
+      // Send the staged photo, with the draft text as an optional caption.
+      sendChatPhoto(activityId, pendingPhoto.file, draft.trim() || undefined);
+      setPendingPhoto(null);
+      setDraft('');
+      return;
+    }
     if (!draft.trim()) return;
     sendChat(activityId, draft);
     setDraft('');
   };
 
+  // Picking a photo stages it for review — it isn't sent until the user taps send.
   const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    // The draft text (if any) rides along as the caption; the store uploads.
-    sendChatPhoto(activityId, file, draft);
-    setDraft('');
+    setPendingPhoto({ file, preview: URL.createObjectURL(file) });
   };
 
   return (
@@ -668,6 +682,22 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
           onChange={onPickPhoto}
           className="hidden"
         />
+        {pendingPhoto && (
+          <div className="mb-2 flex items-center gap-2.5 bg-white/8 border border-white/10 rounded-2xl p-2">
+            <img src={pendingPhoto.preview} alt="" className="h-14 w-14 rounded-xl object-cover" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white">Photo ready</div>
+              <div className="text-[11px] text-zinc-400">Add a caption if you like, then tap send</div>
+            </div>
+            <button
+              onClick={() => setPendingPhoto(null)}
+              aria-label="Remove photo"
+              className="h-8 w-8 rounded-full grid place-items-center text-zinc-200 bg-white/10 hover:bg-white/15 shrink-0"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-1 bg-white/8 border border-white/10 rounded-full pl-1.5 pr-1.5 py-1.5">
           <motion.button
             whileTap={{ scale: 0.9 }}
@@ -693,16 +723,16 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-            placeholder={canSend ? 'Message the squad...' : 'Join to chat'}
+            placeholder={!canSend ? 'Join to chat' : pendingPhoto ? 'Add a caption…' : 'Message the squad...'}
             disabled={!canSend}
             className="flex-1 bg-transparent text-white placeholder:text-zinc-500 focus:outline-none text-sm"
           />
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={submit}
-            disabled={!canSend || !draft.trim()}
+            disabled={!canSend || !hasContent}
             className={`h-9 w-9 rounded-full grid place-items-center
-                       ${canSend && draft.trim()
+                       ${canSend && hasContent
                          ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white'
                          : 'bg-white/10 text-zinc-500'}`}
           >

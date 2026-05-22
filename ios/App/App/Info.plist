@@ -56,5 +56,18 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allow cleartext HTTP to local-network addresses (the dev backend on
+		     your Mac's LAN IP). Production https traffic is unaffected. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WUD connects to a development server on your local network.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>WUD uses the camera so you can add photos to your profile, plans and chats.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>WUD lets you choose photos from your library for your profile, plans and chats.</string>
 </dict>
 </plist>
