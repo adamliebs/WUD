@@ -61,6 +61,9 @@ export const meApi = {
     api.patch<{ settings: AppSettings }>('/me/settings', patch),
   /** Permanently erase the account and all owned data. */
   deleteAccount: () => api.del('/account'),
+  /** Register an FCM push token for the current user's device. */
+  registerDevice: (platform: 'ios' | 'android' | 'web', pushToken: string) =>
+    api.post<{ deviceId: string }>('/me/devices', { platform, pushToken }),
 };
 
 /* ---- feed / activities ---- */

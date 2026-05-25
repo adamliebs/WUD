@@ -81,6 +81,10 @@ export function FeedScreen() {
         <LiveNowStrip />
         <SmartSuggestions />
         <TrendingStrip />
+        {/* Anchor target for For You "tap to filter" jumps — when the For You
+            rail fills the viewport, tapping a digest scrolls past it to this
+            point so the filtered results are immediately visible. */}
+        <div id="feed-results-anchor" />
         <FeedFilters />
         <motion.div
           className="flex flex-col gap-3 px-4"

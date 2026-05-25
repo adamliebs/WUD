@@ -9,7 +9,7 @@ import {
   connectRealtime, disconnectRealtime, type RealtimeEvent,
   subscribeChannel,
 } from './api/socket';
-import { notify } from './native';
+import { notify, registerPushAfterAuth } from './native';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -18,15 +18,56 @@ type FeedScope = 'friends' | 'fof';
 /** Top-level app screen — splash → welcome → auth → onboarding → main app. */
 export type AuthState = 'splash' | 'welcome' | 'auth' | 'onboarding' | 'app';
 
-/** A "For you" suggestion card shown above the Feed. Action = filter to apply on tap. */
+/**
+ * What happens when a For You digest is tapped. Filter cards apply a feed
+ * filter and scroll the user to the results; "open" cards jump straight into
+ * a specific activity — used when the card is really about one concrete plan
+ * (or a single primary plan that the digest is built around).
+ */
+export type SuggestionTap =
+  | { action: 'filter'; apply: Partial<FeedFilters> }
+  | { action: 'open';   activityId: string };
+
+/**
+ * A "For you" digest card shown above the Feed. Kinds are ordered by priority
+ * in smartSuggestions() — earlier kinds win when the strip is full.
+ */
 export type Suggestion =
-  | { kind: 'starting_soon'; count: number; emoji: '⏰'; text: string; apply: { timeWindow: 'now' } }
-  | { kind: 'category_cluster'; category: CategoryKey; count: number; emoji: string; text: string; apply: { category: CategoryKey; timeWindow: 'today' } };
+  | { kind: 'morning_pulse';    count: number; friendsGoing: number; emoji: '🌅'; text: string; tap: SuggestionTap }
+  | { kind: 'big_night';        nightLabel: string; friendsGoing: number; emoji: '🔥'; text: string; tap: SuggestionTap }
+  | { kind: 'starting_soon';    count: number; emoji: '⏰'; text: string; tap: SuggestionTap }
+  | { kind: 'category_cluster'; category: CategoryKey; count: number; emoji: string; text: string; tap: SuggestionTap };
 
 /** Discovery filters applied to the Feed (above the existing scope toggle). */
 export interface FeedFilters {
   category?: CategoryKey;
+  /**
+   * When category is 'custom', optionally narrow further to a specific
+   * customLabel — lets the dropdown surface each user-defined category
+   * (e.g. "Pickleball") as its own filter, instead of one bucket called
+   * "Custom" that matches every user-defined activity.
+   */
+  customLabel?: string;
   timeWindow: 'now' | 'today' | 'week' | 'all';
+  /**
+   * Result ordering. 'soonest' is the default chronological list; 'popular'
+   * promotes plans with the most people going (host + joiners), tiebreaking
+   * back to soonest so two equally-popular plans stay ordered by start time.
+   */
+  sort: 'soonest' | 'popular';
+}
+
+/** A category entry derived from the visible feed pool — used to populate the
+ *  Category dropdown so it only ever offers options that have plans. */
+export interface AvailableCategory {
+  /** Filter key — 'custom' for user-defined entries, the CategoryKey otherwise. */
+  key: CategoryKey;
+  /** When key === 'custom', the specific custom label this entry stands for. */
+  customLabel?: string;
+  emoji: string;
+  label: string;
+  /** Plan count behind this entry — drives sort order in the dropdown. */
+  count: number;
 }
 
 type Overlay = 'settings' | 'editProfile' | 'friends' | 'history' | 'squads' | 'search' | null;
@@ -111,7 +152,11 @@ interface State {
   clearFeedFilters: () => void;
   hasActiveFeedFilters: () => boolean;
   trendingCategories: () => { key: CategoryKey; count: number; emoji: string; label: string }[];
+  /** Categories that currently have at least one visible upcoming plan. */
+  availableCategories: () => AvailableCategory[];
   smartSuggestions: () => Suggestion[];
+  /** Top 3 events picked for me — friend overlap × time proximity × category affinity. */
+  rankedForYouEvents: () => Activity[];
   openOverlay: (o: Overlay) => void;
 
   /** Incoming friend requests awaiting my response. */
@@ -372,6 +417,9 @@ export const useApp = create<State>((set, get) => {
     connectRealtime(handleRealtime);
     syncSubscriptions();
     void refreshFriendRequests();   // load any pending incoming requests
+    // The user is now authenticated — push the device's FCM token to the
+    // backend so we can target them with remote pushes. No-op on web.
+    registerPushAfterAuth();
   };
 
   /** Wrap an async action: surface ApiErrors as toasts, never throw to the UI. */
@@ -404,7 +452,7 @@ export const useApp = create<State>((set, get) => {
     openLiveUserId: null,
     pollComposerActivityId: null,
     feedScope: 'fof',
-    feedFilters: { timeWindow: 'all' },
+    feedFilters: { timeWindow: 'all', sort: 'soonest' },
     overlay: null,
     toasts: [],
     settings: {
@@ -457,18 +505,29 @@ export const useApp = create<State>((set, get) => {
       const f = s.feedFilters;
       const HOUR = 60 * 60 * 1000;
       const DAY = 24 * HOUR;
-      return s.activities
+      const filtered = s.activities
         .filter(a => a.startsAt >= now)
         .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a))
         .filter(a => !f.category || a.category === f.category)
+        // When a specific custom label is selected (e.g. "Pickleball"),
+        // narrow further so the filter behaves like its own category.
+        .filter(a => !f.customLabel || (a.customLabel?.trim() ?? '') === f.customLabel)
         .filter(a => {
           const dt = a.startsAt - now;
           if (f.timeWindow === 'now') return dt <= HOUR;
           if (f.timeWindow === 'today') return dt <= DAY;
           if (f.timeWindow === 'week') return dt <= 7 * DAY;
           return true;
-        })
-        .sort((a, b) => a.startsAt - b.startsAt);
+        });
+      // Popular = headcount desc (host always counts), tiebreak by soonest.
+      if (f.sort === 'popular') {
+        return filtered.sort((a, b) => {
+          const ha = 1 + a.joinerIds.length;
+          const hb = 1 + b.joinerIds.length;
+          return hb - ha || a.startsAt - b.startsAt;
+        });
+      }
+      return filtered.sort((a, b) => a.startsAt - b.startsAt);
     },
     hasFoFAvailable: () => {
       const s = get();
@@ -476,11 +535,57 @@ export const useApp = create<State>((set, get) => {
     },
     unreadCount: () => get().notifications.filter(n => !n.read).length,
 
+    availableCategories: () => {
+      // Powers the Category dropdown — only offer keys that have at least one
+      // visible upcoming plan in the current scope, so users can't pick a
+      // filter that would always return zero results. Sorted by plan count
+      // desc (popular categories surface first) with stable name tiebreak.
+      // Custom plans contribute one entry per distinct customLabel so each
+      // user-defined category behaves like a first-class option.
+      const s = get();
+      const now = Date.now();
+      const pool = s.activities
+        .filter(a => a.startsAt >= now)
+        .filter(a => s.canSeeActivity(a))
+        .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a));
+
+      const entries = new Map<string, AvailableCategory>();
+      for (const a of pool) {
+        const cat = categoryFor(a);
+        // Custom plans key by label so "Pickleball" and "Pottery" stay
+        // distinct in the dropdown. Standard plans key by their stable key.
+        const dedupeKey = a.category === 'custom'
+          ? `custom:${cat.label.toLowerCase()}`
+          : a.category;
+        const existing = entries.get(dedupeKey);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          entries.set(dedupeKey, {
+            key: a.category as CategoryKey,
+            customLabel: a.category === 'custom' ? cat.label : undefined,
+            emoji: cat.emoji,
+            label: cat.label,
+            count: 1,
+          });
+        }
+      }
+      return [...entries.values()].sort((a, b) =>
+        b.count - a.count || a.label.localeCompare(b.label),
+      );
+    },
+
     trendingCategories: () => {
+      // Trending should reflect the same world the user is currently looking
+      // at — counting FoF plans when the scope is "Friends + FoF" inflates
+      // the trend in ways that don't match the feed below.
       const s = get();
       const now = Date.now();
       const WEEK = 7 * 24 * 60 * 60 * 1000;
-      const pool = s.activities.filter(a => Math.abs(a.startsAt - now) <= WEEK);
+      const pool = s.activities
+        .filter(a => Math.abs(a.startsAt - now) <= WEEK)
+        .filter(a => s.canSeeActivity(a))
+        .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a));
       const tally = new Map<string, number>();
       for (const a of pool) tally.set(a.category, (tally.get(a.category) ?? 0) + 1);
       return [...tally.entries()]
@@ -498,9 +603,87 @@ export const useApp = create<State>((set, get) => {
       const now = Date.now();
       const HOUR = 60 * 60 * 1000;
       const DAY = 24 * HOUR;
+      const WEEK = 7 * DAY;
       const out: Suggestion[] = [];
-      const upcoming = s.activities.filter(a => a.startsAt >= now);
+      // Mirror the feed's visibility logic so the digests match what the user
+      // can actually scroll to below — including the friends-vs-FoF toggle.
+      const upcoming = s.activities
+        .filter(a => a.startsAt >= now)
+        .filter(a => s.canSeeActivity(a))
+        .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a));
 
+      // -- Morning pulse — only shown in the morning, only when something
+      //    actually looks worth highlighting (2+ plans today). The "today"
+      //    cutoff is end-of-local-day so an 11pm plan still counts as today.
+      const nowDate = new Date(now);
+      const hour = nowDate.getHours();
+      const isMorning = hour >= 6 && hour < 12;
+      const endOfToday = new Date(nowDate); endOfToday.setHours(23, 59, 59, 999);
+      const todayPlans = upcoming.filter(a => a.startsAt <= endOfToday.getTime());
+      // Reusable per-activity friend-count — drives "primary plan" picking
+      // for big_night and saves recomputing inside loops.
+      const friendCount = (a: Activity): number =>
+        (s.isFriend(a.hostId) ? 1 : 0) +
+        a.joinerIds.filter(id => s.isFriend(id)).length;
+
+      if (isMorning && todayPlans.length >= 2) {
+        const friendsToday = new Set<string>();
+        for (const a of todayPlans) {
+          if (s.isFriend(a.hostId)) friendsToday.add(a.hostId);
+          for (const id of a.joinerIds) if (s.isFriend(id)) friendsToday.add(id);
+        }
+        out.push({
+          kind: 'morning_pulse',
+          count: todayPlans.length,
+          friendsGoing: friendsToday.size,
+          emoji: '🌅',
+          text: friendsToday.size > 0
+            ? `Good morning — ${todayPlans.length} plans today, ${friendsToday.size} friend${friendsToday.size === 1 ? '' : 's'} out`
+            : `Good morning — ${todayPlans.length} plans today`,
+          tap: { action: 'filter', apply: { timeWindow: 'today' } },
+        });
+      }
+
+      // -- Big night — find the evening (5pm–2am window) in the next week with
+      //    the most distinct friends going. Bucketed by *evening date* — an
+      //    11pm plan and a 1am plan on the next calendar day belong together.
+      const nightBuckets = new Map<string, { friends: Set<string>; activities: Activity[]; refMs: number }>();
+      for (const a of upcoming.filter(a => a.startsAt - now <= WEEK)) {
+        const d = new Date(a.startsAt);
+        const h = d.getHours();
+        if (h < 17 && h >= 2) continue; // not an evening plan
+        // After-midnight plans belong to the previous evening's bucket.
+        const eveningDate = new Date(d);
+        if (h < 2) eveningDate.setDate(eveningDate.getDate() - 1);
+        const key = eveningDate.toISOString().slice(0, 10);
+        const bucket = nightBuckets.get(key) ?? { friends: new Set(), activities: [], refMs: a.startsAt };
+        bucket.activities.push(a);
+        if (s.isFriend(a.hostId)) bucket.friends.add(a.hostId);
+        for (const id of a.joinerIds) if (s.isFriend(id)) bucket.friends.add(id);
+        bucket.refMs = Math.min(bucket.refMs, a.startsAt);
+        nightBuckets.set(key, bucket);
+      }
+      const biggest = [...nightBuckets.values()].sort((a, b) => b.friends.size - a.friends.size)[0];
+      if (biggest && biggest.friends.size >= 3) {
+        const label = relDayLabel(biggest.refMs);
+        // Primary plan of that night = most friends going, soonest first as
+        // tiebreak. Tapping the card opens that single plan instead of
+        // dumping the user into a week-wide filter where they have to hunt.
+        const primary = [...biggest.activities].sort((a, b) =>
+          friendCount(b) - friendCount(a) || a.startsAt - b.startsAt,
+        )[0];
+        out.push({
+          kind: 'big_night',
+          nightLabel: label,
+          friendsGoing: biggest.friends.size,
+          emoji: '🔥',
+          text: `Big night ${label.toLowerCase()} — ${biggest.friends.size} friends are out`,
+          tap: { action: 'open', activityId: primary.id },
+        });
+      }
+
+      // -- Starting soon. With one plan we open it directly — no point making
+      //    the user filter to a list of one. With more, fall back to a filter.
       const soon = upcoming.filter(a => a.startsAt - now <= HOUR);
       if (soon.length >= 1) {
         out.push({
@@ -508,23 +691,71 @@ export const useApp = create<State>((set, get) => {
           text: soon.length === 1
             ? '1 plan starting in the next hour'
             : `${soon.length} plans starting in the next hour`,
-          apply: { timeWindow: 'now' },
+          tap: soon.length === 1
+            ? { action: 'open', activityId: soon[0].id }
+            : { action: 'filter', apply: { timeWindow: 'now' } },
         });
       }
-      const today = upcoming.filter(a => a.startsAt - now <= DAY);
+
+      // -- Category cluster — filter is the right action (the card's whole job
+      //    is to surface a worth-scanning group of plans).
       const tally = new Map<string, number>();
-      for (const a of today) tally.set(a.category, (tally.get(a.category) ?? 0) + 1);
+      for (const a of todayPlans) tally.set(a.category, (tally.get(a.category) ?? 0) + 1);
       const top = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
       if (top && top[1] >= 2) {
-        const sample = today.find(a => a.category === top[0])!;
+        const sample = todayPlans.find(a => a.category === top[0])!;
         const c = categoryFor(sample);
         out.push({
           kind: 'category_cluster', category: top[0] as CategoryKey, count: top[1], emoji: c.emoji,
           text: `${top[1]} ${c.label.toLowerCase()} plan${top[1] === 1 ? '' : 's'} today — tap to see them all`,
-          apply: { category: top[0] as CategoryKey, timeWindow: 'today' },
+          tap: { action: 'filter', apply: { category: top[0] as CategoryKey, timeWindow: 'today' } },
         });
       }
-      return out.slice(0, 2);
+
+      // Hard cap so the For You strip never grows beyond a glanceable size.
+      return out.slice(0, 3);
+    },
+
+    rankedForYouEvents: () => {
+      // Top 3 events ranked for me. Scoring stays intentionally simple so it
+      // stays explainable: friends going > time proximity > category affinity.
+      const s = get();
+      const now = Date.now();
+      const myId = s.meId;
+      const HOUR = 60 * 60 * 1000;
+
+      // Affinity = how many past plans I joined in this category. Cheap proxy
+      // for "what I'm into," capped so a single power-category can't dominate.
+      const myCategoryAffinity = new Map<string, number>();
+      for (const a of s.activities) {
+        if (a.hostId === myId || a.joinerIds.includes(myId)) {
+          myCategoryAffinity.set(a.category, (myCategoryAffinity.get(a.category) ?? 0) + 1);
+        }
+      }
+
+      const scored = s.activities
+        .filter(a => a.startsAt >= now)
+        .filter(a => a.hostId !== myId)
+        .filter(a => !a.joinerIds.includes(myId))
+        .filter(a => s.canSeeActivity(a))
+        // Match the current feed scope so Suggestions don't surface FoF picks
+        // the user has chosen to hide from their feed.
+        .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a))
+        .map(a => {
+          const friendsGoing =
+            (s.isFriend(a.hostId) ? 1 : 0) +
+            a.joinerIds.filter(id => s.isFriend(id)).length;
+          const affinity = Math.min(myCategoryAffinity.get(a.category) ?? 0, 3);
+          const hoursAway = Math.max(1, (a.startsAt - now) / HOUR);
+          // Recency bonus: 1.0 within an hour, decaying linearly to 0 at 7d.
+          const recency = Math.max(0, 1 - hoursAway / (7 * 24));
+          const score = friendsGoing * 4 + affinity * 2 + recency * 3;
+          return { a, score };
+        })
+        .filter(x => x.score > 0)
+        .sort((a, b) => b.score - a.score || a.a.startsAt - b.a.startsAt)
+        .slice(0, 3);
+      return scored.map(x => x.a);
     },
 
     isSquadHost: (squadId) => {
@@ -545,11 +776,18 @@ export const useApp = create<State>((set, get) => {
     setTab: (t) => set({ tab: t }),
     setShowPostSheet: (b) => set({ showPostSheet: b }),
     setFeedScope: (s) => set({ feedScope: s }),
-    setFeedFilter: (patch) => set(state => ({ feedFilters: { ...state.feedFilters, ...patch } })),
-    clearFeedFilters: () => set({ feedFilters: { timeWindow: 'all' } }),
+    setFeedFilter: (patch) => set(state => {
+      const next = { ...state.feedFilters, ...patch };
+      // A customLabel only makes sense alongside category='custom'. Drop it
+      // if the user picks a non-custom category in the same patch so stale
+      // narrowing doesn't silently apply.
+      if ('category' in patch && patch.category !== 'custom') next.customLabel = undefined;
+      return { feedFilters: next };
+    }),
+    clearFeedFilters: () => set({ feedFilters: { timeWindow: 'all', sort: 'soonest' } }),
     hasActiveFeedFilters: () => {
       const f = get().feedFilters;
-      return !!f.category || f.timeWindow !== 'all';
+      return !!f.category || !!f.customLabel || f.timeWindow !== 'all' || f.sort !== 'soonest';
     },
     openOverlay: (o) => {
       set({ overlay: o });
@@ -630,7 +868,7 @@ export const useApp = create<State>((set, get) => {
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
         showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
-        feedFilters: { timeWindow: 'all' },
+        feedFilters: { timeWindow: 'all', sort: 'soonest' },
         pendingSignup: null, authState: 'welcome',
       });
     },
@@ -645,7 +883,7 @@ export const useApp = create<State>((set, get) => {
           notifications: [], squads: [],
           tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
           showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
-          feedFilters: { timeWindow: 'all' },
+          feedFilters: { timeWindow: 'all', sort: 'soonest' },
           pendingSignup: null, authState: 'welcome',
         });
         toast('Your account has been deleted', 'default');
@@ -1044,4 +1282,24 @@ export function relTime(ms: number): string {
 export function clockTime(ms: number): string {
   const d = new Date(ms);
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/**
+ * Friendly day label for a future timestamp — "Tonight" / "Tomorrow" /
+ * weekday name within a week / fallback short date.
+ *
+ *   Today's evening   → "Tonight"
+ *   Tomorrow          → "Tomorrow"
+ *   Within 7 days     → "Friday"
+ *   Further out       → "Mar 12"
+ */
+export function relDayLabel(ms: number): string {
+  const d = new Date(ms);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const target = new Date(d); target.setHours(0, 0, 0, 0);
+  const dayDiff = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  if (dayDiff === 0) return 'Tonight';
+  if (dayDiff === 1) return 'Tomorrow';
+  if (dayDiff > 1 && dayDiff < 7) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }

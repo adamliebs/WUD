@@ -69,5 +69,16 @@
 	<string>WUD uses the camera so you can add photos to your profile, plans and chats.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>WUD lets you choose photos from your library for your profile, plans and chats.</string>
+	<!-- Lets iOS wake the app briefly to deliver a remote push payload.
+	     Required for background push delivery on iOS. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<!-- Disable Firebase's automatic AppDelegate swizzling. The @capacitor-firebase
+	     /messaging plugin owns the APNs ↔ FCM token handoff; letting Firebase
+	     swizzle on top causes duplicate listener registration on iOS 17+. -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 </dict>
 </plist>
