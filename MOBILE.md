@@ -126,8 +126,11 @@ to populate `ios/` and `android/`.
 ### Before App Store / Play Store launch
 
 **Remote push notifications** — notifications when the app is fully closed
-- [ ] APNs (iOS) + FCM (Android) — needs a Firebase project + an APNs key
-- [ ] `@capacitor/push-notifications` plugin + real `dispatchPush` backend send
+- [x] `@capacitor-firebase/{app,messaging}` plugins + real `dispatchPush` via
+      `firebase-admin` (deep-link payload, invalid-token cleanup)
+- [ ] Apple Developer + Firebase Console setup — see `PUSH.md` for the
+      step-by-step (create APNs key, Firebase project, drop two credential
+      files into the repo)
 
 **Signing & release builds**
 - [ ] iOS distribution certificate + provisioning profile
@@ -138,16 +141,28 @@ to populate `ios/` and `android/`.
 - [x] Apple Developer account
 - [ ] Google Play Developer account
 - [ ] Screenshots, descriptions, keywords per platform
-- [ ] Privacy nutrition labels (Apple) / Data Safety form (Google)
-- [ ] Hosted Privacy Policy + Terms of Service
+- [ ] Privacy nutrition labels (Apple) / Data Safety form (Google) — filled in
+      App Store Connect / Play Console (no code)
+- [ ] Hosted Privacy Policy URL (the in-app pages exist; you still need a
+      publicly hosted copy linked from your App Store Connect listing)
 
-**Trust & safety (Apple requires these for a social/UGC app)**
-- [ ] Report / block users
-- [ ] Content moderation for chat / photos / profiles
-- [ ] Age-rating questionnaire
+**Trust & safety (Apple Review Guideline 1.2 — UGC)**
+- [x] Block users — bidirectional, removes friendship + hides content both ways
+      (Settings → Blocked users to manage)
+- [x] Report users / plans / messages — three reason lists, optional note,
+      stored in `reports` table for moderator review
+- [x] Age gate at signup — DOB required, ≥13 enforced client + server (COPPA)
+- [x] Account deletion in-app (Settings → Delete account)
+- [x] In-app Privacy Policy + Terms of Service (placeholder copy — replace
+      with legally-reviewed text before submission)
+- [x] Terms / Privacy acknowledgement at signup
+- [ ] Age-rating questionnaire — filled in App Store Connect (no code)
+- [ ] Moderator workflow — currently the `reports` table fills up; decide on
+      review cadence (admin SQL dashboard / email digest / dedicated UI)
 
 **Production hardening**
+- [x] Error boundary wrapping the app (no white screens on render crashes)
 - [ ] Deploy the backend over HTTPS; point `.env.production` at it
 - [ ] Store auth tokens in Keychain / Keystore (currently WebView `localStorage`)
 - [ ] Universal / App Links (needs your domain)
-- [ ] Error boundaries + crash reporting
+- [ ] Crash reporting wired up (Sentry hook is in `config.ts`)

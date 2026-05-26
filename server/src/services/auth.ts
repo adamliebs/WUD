@@ -76,6 +76,8 @@ export function registerEmail(input: {
   handle: string;
   avatar?: string;
   color?: string;
+  /** Epoch ms — required for new signups (Apple Guideline 1.3 / COPPA). */
+  dateOfBirth?: number;
 }): AuthResult {
   const email = input.email.trim().toLowerCase();
   if (!email.includes('@')) throw badRequest('INVALID_EMAIL', 'Enter a valid email', 'email');
@@ -87,7 +89,9 @@ export function registerEmail(input: {
   }
   return tx(() => {
     const user = createUser({
-      name: input.name, handle: input.handle, avatar: input.avatar, color: input.color,
+      name: input.name, handle: input.handle,
+      avatar: input.avatar, color: input.color,
+      dateOfBirth: input.dateOfBirth,
     });
     q.run(
       `INSERT INTO auth_identities (id, user_id, provider, provider_subject, email, password_hash, created_at)

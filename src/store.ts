@@ -3,7 +3,7 @@ import { categoryFor } from './data/categories';
 import type { Activity, AppNotification, CategoryKey, Recurrence, Squad, User } from './types';
 import { ApiError, tokens } from './api/client';
 import {
-  activityApi, authApi, chatApi, getBootstrap, meApi, miscApi, socialApi, uploadApi,
+  activityApi, authApi, chatApi, getBootstrap, meApi, miscApi, safetyApi, socialApi, uploadApi,
 } from './api/endpoints';
 import {
   connectRealtime, disconnectRealtime, type RealtimeEvent,
@@ -134,7 +134,7 @@ interface State {
   /** Auth-screen → onboarding: stash email/password for signUp(). */
   beginEmailSignup: (email: string, password: string) => void;
   /** Onboarding finish — registers the account and enters the app. */
-  signUp: (input: { name: string; handle: string; avatar?: string; color?: string }) => void;
+  signUp: (input: { name: string; handle: string; avatar?: string; color?: string; dateOfBirth: number }) => void;
   /** Email log in. */
   logIn: (email: string, password: string) => void;
   /** Admin/demo login — loads the seeded sample dataset. */
@@ -167,6 +167,28 @@ interface State {
   declineFriendRequest: (requestId: string) => void;
   updateMe: (patch: Partial<Pick<User, 'name' | 'handle' | 'avatar' | 'color' | 'photoUrl'>>) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
+
+  /* ---- trust & safety ---- */
+  /** User IDs I've blocked. Used for client-side hiding too (defence-in-depth
+   *  on top of server filtering). */
+  blockedIds: string[];
+  /** Hydrated User objects for the Blocked Users settings screen. */
+  blockedUsers: User[];
+  refreshBlocks: () => Promise<void>;
+  blockUser: (userId: string) => Promise<void>;
+  unblockUser: (userId: string) => Promise<void>;
+  /** True if either party has blocked the other — use for visibility checks. */
+  isBlocked: (userId: string) => boolean;
+  /** File an abuse report. Resolves on success; toasts on failure. */
+  reportTarget: (input: {
+    targetKind: 'user' | 'activity' | 'message';
+    targetId: string;
+    reason: string;
+    note?: string;
+  }) => Promise<boolean>;
+  /** Open the Report sheet aimed at a specific target. UI state only. */
+  reportSheet: { kind: 'user' | 'activity' | 'message'; targetId: string; label?: string } | null;
+  openReportSheet: (target: { kind: 'user' | 'activity' | 'message'; targetId: string; label?: string } | null) => void;
 
   createSquad: (input: { name: string; emoji: string; memberIds: string[] }) => void;
   updateSquad: (squadId: string, patch: Partial<Pick<Squad, 'name' | 'emoji'>>) => void;
@@ -417,6 +439,7 @@ export const useApp = create<State>((set, get) => {
     connectRealtime(handleRealtime);
     syncSubscriptions();
     void refreshFriendRequests();   // load any pending incoming requests
+    void get().refreshBlocks();     // load my block list (T&S — Apple 1.2)
     // The user is now authenticated — push the device's FCM token to the
     // backend so we can target them with remote pushes. No-op on web.
     registerPushAfterAuth();
@@ -438,6 +461,9 @@ export const useApp = create<State>((set, get) => {
     users: [],
     friendIds: [],
     friendRequests: [],
+    blockedIds: [],
+    blockedUsers: [],
+    reportSheet: null,
     activities: [],
     notifications: [],
     squads: [],
@@ -823,13 +849,13 @@ export const useApp = create<State>((set, get) => {
       set({ pendingSignup: { email, password }, authState: 'onboarding' });
     },
 
-    signUp: ({ name, handle, avatar, color }) => {
+    signUp: ({ name, handle, avatar, color, dateOfBirth }) => {
       void guard(async () => {
         const pending = get().pendingSignup ?? { email: '', password: '' };
         const r = await authApi.register({
           email: pending.email || `${handle}-${uid()}@wud.app`,
           password: pending.password || 'demo-password',
-          name, handle, avatar, color,
+          name, handle, avatar, color, dateOfBirth,
         });
         tokens.set(r.accessToken, r.refreshToken);
         set({ pendingSignup: null });
@@ -864,7 +890,7 @@ export const useApp = create<State>((set, get) => {
       disconnectRealtime();
       tokens.clear();
       set({
-        meId: '', users: [], friendIds: [], friendRequests: [], activities: [],
+        meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
         showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
@@ -879,7 +905,7 @@ export const useApp = create<State>((set, get) => {
         disconnectRealtime();
         tokens.clear();
         set({
-          meId: '', users: [], friendIds: [], friendRequests: [], activities: [],
+          meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],
           notifications: [], squads: [],
           tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
           showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
@@ -906,6 +932,57 @@ export const useApp = create<State>((set, get) => {
         await refreshFriends();
         toast(`Removed ${name}`, 'warn');
       });
+    },
+
+    /* ---- trust & safety ---- */
+
+    refreshBlocks: async () => {
+      const { blocked } = await meApi.listBlocks();
+      mergeUsers(blocked);
+      set({ blockedIds: blocked.map(u => u.id), blockedUsers: blocked });
+    },
+    blockUser: async (userId) => {
+      const name = get().userById(userId).name;
+      try {
+        await meApi.block(userId);
+        // Server also removes the friendship; mirror locally so UI updates
+        // immediately without waiting for a bootstrap refresh.
+        set(state => ({
+          blockedIds: state.blockedIds.includes(userId)
+            ? state.blockedIds
+            : [...state.blockedIds, userId],
+          friendIds: state.friendIds.filter(id => id !== userId),
+        }));
+        await get().refreshBlocks();
+        toast(`Blocked ${name}`, 'warn');
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : 'Could not block user', 'warn');
+      }
+    },
+    unblockUser: async (userId) => {
+      const name = get().userById(userId).name;
+      try {
+        await meApi.unblock(userId);
+        set(state => ({
+          blockedIds: state.blockedIds.filter(id => id !== userId),
+          blockedUsers: state.blockedUsers.filter(u => u.id !== userId),
+        }));
+        toast(`Unblocked ${name}`, 'success');
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : 'Could not unblock user', 'warn');
+      }
+    },
+    isBlocked: (userId) => get().blockedIds.includes(userId),
+    openReportSheet: (target) => set({ reportSheet: target }),
+    reportTarget: async (input) => {
+      try {
+        await safetyApi.report(input);
+        toast('Report sent — thanks for letting us know', 'success');
+        return true;
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : 'Could not send report', 'warn');
+        return false;
+      }
     },
     acceptFriendRequest: (requestId) => {
       const req = get().friendRequests.find(r => r.id === requestId);

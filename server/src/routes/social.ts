@@ -6,6 +6,7 @@ import {
   discoverUsers, getSquad, incomingRequests, leaveSquad, listFriends, listSquadsForUser,
   removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
 } from '../services/social.js';
+import { blockUser, listBlockedByMe, unblockUser } from '../services/safety.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
 import type { Squad } from '../types.js';
 
@@ -26,6 +27,22 @@ socialRouter.get('/friends/discover', handler((req, res) => {
 
 socialRouter.delete('/friends/:userId', handler((req, res) => {
   removeFriend(uid(req), req.params.userId);
+  res.json({ ok: true });
+}));
+
+/* ---- blocks (Apple Guideline 1.2) ---- */
+
+socialRouter.get('/me/blocks', handler((req, res) => {
+  res.json({ blocked: listBlockedByMe(uid(req)) });
+}));
+
+socialRouter.post('/me/blocks', handler((req, res) => {
+  blockUser(uid(req), requireString(req.body, 'userId'));
+  res.status(201).json({ ok: true });
+}));
+
+socialRouter.delete('/me/blocks/:userId', handler((req, res) => {
+  unblockUser(uid(req), req.params.userId);
   res.json({ ok: true });
 }));
 

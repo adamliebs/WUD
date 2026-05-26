@@ -7,6 +7,20 @@ import { messagesForSquad } from './chat.js';
 import { createNotification } from './notifications.js';
 import { getUserRow, toPublicUser } from './users.js';
 
+/* ===================== BLOCKS (helper) =====================
+ * Inlined here (not imported from safety.ts) to avoid a circular import —
+ * safety.ts needs removeFriend from social.ts. Single-purpose helper; the
+ * full block API lives in services/safety.ts.
+ */
+function blockedUserIds(userId: string): string[] {
+  return q.all<{ other: string }>(
+    `SELECT blocked_id AS other FROM user_blocks WHERE blocker_id = ?
+     UNION
+     SELECT blocker_id AS other FROM user_blocks WHERE blocked_id = ?`,
+    userId, userId,
+  ).map(r => r.other);
+}
+
 /* ===================== FRIENDS ===================== */
 
 /** Friendships are stored once with an ordered pair; this normalizes inputs. */
@@ -158,7 +172,11 @@ function pendingRequestPeers(userId: string): Set<string> {
  */
 export function suggestedUsers(userId: string): PublicUser[] {
   const mine = friendIds(userId);
-  const exclude = new Set<string>([userId, ...mine, ...pendingRequestPeers(userId)]);
+  // Blocked-in-either-direction users are silently excluded from any people-
+  // suggestion surface (Apple Guideline 1.2 — block must hide the user from
+  // discovery, not just RSVPs).
+  const blocked = blockedUserIds(userId);
+  const exclude = new Set<string>([userId, ...mine, ...pendingRequestPeers(userId), ...blocked]);
   const mutuals = new Map<string, number>();
   for (const friend of mine) {
     for (const fof of friendIds(friend)) {
@@ -184,7 +202,7 @@ export function discoverUsers(userId: string, query: string): PublicUser[] {
   const needle = query.trim().toLowerCase();
   if (needle.length < 2) return suggestedUsers(userId);
 
-  const exclude = new Set<string>([userId, ...friendIds(userId)]);
+  const exclude = new Set<string>([userId, ...friendIds(userId), ...blockedUserIds(userId)]);
   return q.all<{ id: string }>('SELECT id FROM users WHERE id != ?', userId)
     .filter(r => !exclude.has(r.id))
     .map(r => getUserRow(r.id))

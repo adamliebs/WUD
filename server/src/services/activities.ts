@@ -5,6 +5,7 @@ import { publish } from '../realtime/bus.js';
 import type { Activity, CategoryKey, Reaction, Recurrence, RsvpState } from '../types.js';
 import { messagesForActivity, sendSystem } from './chat.js';
 import { createNotification } from './notifications.js';
+import { isBlockedEither } from './safety.js';
 import { areFriends, isInSquad } from './social.js';
 import { getUserRow } from './users.js';
 
@@ -103,6 +104,9 @@ const isPast = (row: ActivityRow): boolean => row.starts_at < now();
  */
 export function canSeeActivity(userId: string, row: ActivityRow): boolean {
   if (row.host_id === userId) return true;
+  // Blocks hide both directions — if either party has blocked the other, the
+  // host's plans must disappear from the viewer's world (Apple Guideline 1.2).
+  if (isBlockedEither(userId, row.host_id)) return false;
 
   const tagged = squadIdsFor(row.id);
   if (tagged.some(sid => isInSquad(sid, userId))) return true;

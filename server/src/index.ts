@@ -23,6 +23,7 @@ import { socialRouter } from './routes/social.js';
 import { activitiesRouter } from './routes/activities.js';
 import { chatRouter } from './routes/chat.js';
 import { miscRouter } from './routes/misc.js';
+import { safetyRouter } from './routes/safety.js';
 import { uploadsRouter } from './routes/uploads.js';
 
 /* --- database ------------------------------------------------------------- */
@@ -105,6 +106,7 @@ api.use(socialRouter);
 api.use(activitiesRouter);
 api.use(chatRouter);
 api.use(miscRouter);
+api.use(safetyRouter);
 api.use(uploadsRouter);
 app.use('/v1', api);
 

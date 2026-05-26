@@ -17,6 +17,12 @@ authRouter.get('/handle-available', handler((req, res) => {
 
 /** POST /v1/auth/email/register */
 authRouter.post('/email/register', authLimiter, handler((req, res) => {
+  // dateOfBirth is required for new signups (Apple Guideline 1.3, COPPA) and
+  // arrives as epoch ms. registerEmail / createUser enforce the ≥13 floor.
+  const dob = (req.body as { dateOfBirth?: unknown })?.dateOfBirth;
+  if (typeof dob !== 'number') {
+    throw badRequest('MISSING_DOB', 'dateOfBirth is required', 'dateOfBirth');
+  }
   const result = registerEmail({
     email: requireString(req.body, 'email'),
     password: requireString(req.body, 'password'),
@@ -24,6 +30,7 @@ authRouter.post('/email/register', authLimiter, handler((req, res) => {
     handle: requireString(req.body, 'handle'),
     avatar: optionalString(req.body, 'avatar'),
     color: optionalString(req.body, 'color'),
+    dateOfBirth: dob,
   });
   res.status(201).json(result);
 }));

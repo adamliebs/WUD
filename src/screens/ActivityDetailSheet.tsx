@@ -1,6 +1,6 @@
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, Repeat, Send, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Repeat, Send, ShieldOff, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -32,7 +32,29 @@ function Inner({ activityId }: { activityId: string }) {
   const setRsvp = useApp(s => s.setRsvp);
   const leave = useApp(s => s.leaveActivity);
   const close = useApp(s => s.openActivity);
+  // T&S — only relevant when the viewer isn't the host (you can't block/report
+  // your own plan; you'd delete it instead).
+  const blockUserAction = useApp(s => s.blockUser);
+  const openReport = useApp(s => s.openReportSheet);
   const [tab, setTab] = useState<'details' | 'chat'>('details');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  // Outside-click + Escape close for the More popover.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoreOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
 
   if (!activity) return null;
 
@@ -91,6 +113,75 @@ function Inner({ activityId }: { activityId: string }) {
         >
           <X size={16} />
         </button>
+        {/* "More" menu — exposes Report plan + Block host. Hidden when I'm the
+            host (you can't report/block yourself). Required surface for Apple
+            Guideline 1.2 review. */}
+        {!isHost && (
+          <div ref={moreRef} className="absolute top-2 right-12">
+            <button
+              onClick={() => setMoreOpen(o => !o)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More"
+              className="h-8 w-8 rounded-full grid place-items-center bg-black/30 text-white backdrop-blur"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <AnimatePresence>
+              {moreOpen && (
+                <motion.div
+                  role="menu"
+                  initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                  transition={{ duration: 0.14 }}
+                  className="absolute right-0 mt-1.5 min-w-[180px] rounded-2xl bg-[#15121b]
+                             border border-white/10 shadow-2xl shadow-black/60 p-1 z-10"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      openReport({ kind: 'activity', targetId: activity.id, label: activity.title });
+                    }}
+                    className="w-full text-left text-[13px] font-medium text-zinc-100 px-2.5 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2"
+                  >
+                    <AlertTriangle size={14} className="text-amber-300" />
+                    Report plan
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      openReport({ kind: 'user', targetId: host.id, label: host.name });
+                    }}
+                    className="w-full text-left text-[13px] font-medium text-zinc-100 px-2.5 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2"
+                  >
+                    <AlertTriangle size={14} className="text-amber-300" />
+                    Report {host.name}
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      // Confirm before blocking — blocks remove the friendship
+                      // and aren't trivially reversible (an unblock doesn't
+                      // restore it). A native confirm keeps this lean.
+                      if (confirm(`Block ${host.name}? You won't see each other's plans or messages.`)) {
+                        void blockUserAction(host.id);
+                        close(null);
+                      }
+                    }}
+                    className="w-full text-left text-[13px] font-medium text-rose-200 px-2.5 py-2 rounded-xl hover:bg-rose-500/10 flex items-center gap-2"
+                  >
+                    <ShieldOff size={14} />
+                    Block {host.name}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
         <div className="absolute top-3 left-4 flex items-center gap-2">
           <span className="text-2xl drop-shadow">{cat.emoji}</span>
           <span className="text-white/90 text-xs font-semibold uppercase tracking-widest">

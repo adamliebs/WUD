@@ -20,6 +20,8 @@ export const authApi = {
   register: (b: {
     email: string; password: string; name: string; handle: string;
     avatar?: string; color?: string;
+    /** Epoch ms — required by the server (Apple Guideline 1.3 / COPPA, ≥13). */
+    dateOfBirth: number;
   }) => api.post<AuthResult>('/auth/email/register', b, true),
 
   login: (email: string, password: string) =>
@@ -64,6 +66,20 @@ export const meApi = {
   /** Register an FCM push token for the current user's device. */
   registerDevice: (platform: 'ios' | 'android' | 'web', pushToken: string) =>
     api.post<{ deviceId: string }>('/me/devices', { platform, pushToken }),
+  /** Users I've blocked. */
+  listBlocks: () => api.get<{ blocked: User[] }>('/me/blocks'),
+  /** Block someone — removes friendship + hides both ways. */
+  block: (userId: string) => api.post<{ ok: true }>('/me/blocks', { userId }),
+  /** Unblock — does NOT restore the prior friendship. */
+  unblock: (userId: string) => api.del(`/me/blocks/${userId}`),
+};
+
+/* ---- safety / abuse reports ---- */
+
+export const safetyApi = {
+  /** File an abuse report. `targetKind` ∈ 'user' | 'activity' | 'message'. */
+  report: (b: { targetKind: 'user' | 'activity' | 'message'; targetId: string; reason: string; note?: string }) =>
+    api.post<{ reportId: string }>('/reports', b),
 };
 
 /* ---- feed / activities ---- */

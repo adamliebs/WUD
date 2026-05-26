@@ -12,6 +12,7 @@ import { EventEmitter } from 'node:events';
 export type RealtimeEvent =
   | { channel: `user:${string}`;     type: 'notification.created'; data: unknown }
   | { channel: `user:${string}`;     type: 'friend.changed';       data: unknown }
+  | { channel: `user:${string}`;     type: 'block.changed';        data: unknown }
   | { channel: `activity:${string}`; type: 'message.created';      data: unknown }
   | { channel: `activity:${string}`; type: 'poll.updated';         data: unknown }
   | { channel: `activity:${string}`; type: 'rsvp.changed';         data: unknown }

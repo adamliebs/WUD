@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { useApp } from './store';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { PhoneFrame } from './components/PhoneFrame';
 import { TabBar } from './components/TabBar';
 import { Toaster } from './components/Toaster';
@@ -16,6 +17,7 @@ import { LiveDetailSheet } from './screens/LiveDetailSheet';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { OverlayHost } from './screens/OverlayHost';
 import { PollComposerSheet } from './screens/PollComposerSheet';
+import { ReportSheet } from './screens/ReportSheet';
 import { SplashScreen } from './screens/SplashScreen';
 import { WelcomeScreen } from './screens/WelcomeScreen';
 
@@ -28,18 +30,20 @@ function App() {
 
   return (
     <PhoneFrame>
-      <div className="absolute inset-0 overflow-hidden">
-        <AnimatePresence mode="wait">
-          {authState === 'splash'     && <SplashScreen     key="splash" />}
-          {authState === 'welcome'    && <WelcomeScreen    key="welcome" />}
-          {authState === 'auth'       && <AuthScreen       key="auth" />}
-          {authState === 'onboarding' && <OnboardingScreen key="onboarding" />}
-          {authState === 'app'        && <MainApp          key="main" />}
-        </AnimatePresence>
+      <ErrorBoundary>
+        <div className="absolute inset-0 overflow-hidden">
+          <AnimatePresence mode="wait">
+            {authState === 'splash'     && <SplashScreen     key="splash" />}
+            {authState === 'welcome'    && <WelcomeScreen    key="welcome" />}
+            {authState === 'auth'       && <AuthScreen       key="auth" />}
+            {authState === 'onboarding' && <OnboardingScreen key="onboarding" />}
+            {authState === 'app'        && <MainApp          key="main" />}
+          </AnimatePresence>
 
-        {/* Toaster is global so auth flows can use it too. */}
-        <Toaster />
-      </div>
+          {/* Toaster is global so auth flows can use it too. */}
+          <Toaster />
+        </div>
+      </ErrorBoundary>
     </PhoneFrame>
   );
 }
@@ -78,6 +82,7 @@ function MainApp() {
       <ActivityDetailSheet />
       <LiveDetailSheet />
       <PollComposerSheet />
+      <ReportSheet />
       <OverlayHost />
     </motion.div>
   );
