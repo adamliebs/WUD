@@ -3,6 +3,7 @@ import { Search, Sparkles, Users, UsersRound } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
+import { EmailVerificationBanner } from '../components/EmailVerificationBanner';
 import { FeedFilters } from '../components/FeedFilters';
 import { LiveNowStrip } from '../components/LiveNowStrip';
 import { SmartSuggestions } from '../components/SmartSuggestions';
@@ -78,6 +79,7 @@ export function FeedScreen() {
 
       {/* Scroll list */}
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
+        <EmailVerificationBanner />
         <LiveNowStrip />
         <SmartSuggestions />
         <TrendingStrip />

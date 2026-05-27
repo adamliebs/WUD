@@ -16,6 +16,10 @@ export interface PublicUser {
   avatar: string;          // emoji avatar
   color: string;
   photoUrl?: string;
+  /** True once Firebase Auth has confirmed the user owns their email. Always
+   *  true for OAuth (Apple/Google) signups; false for new email signups until
+   *  they click the verification link. */
+  emailVerified?: boolean;
   liveStatus?: LiveStatus;
 }
 

@@ -51,12 +51,17 @@ const fullYearsBetween = (dobIso: string, refDate = new Date()): number => {
 export function OnboardingScreen() {
   const setAuthState = useApp(s => s.setAuthState);
   const signUp = useApp(s => s.signUp);
+  // Pending signup carries either email/password credentials OR a Firebase
+  // ID token. For OAuth (Apple/Google) users we prefill the name from the
+  // provider's profile so they don't have to retype it.
+  const pendingSignup = useApp(s => s.pendingSignup);
+  const isOauthSignup = pendingSignup?.kind === 'firebase';
   // Privacy / Terms in onboarding are NOT routed through openOverlay() — the
   // global OverlayHost is mounted inside MainApp, which doesn't exist until
   // authState === 'app'. We render them inline with a local modal instead.
   const [legal, setLegal] = useState<null | 'privacy' | 'terms'>(null);
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState(pendingSignup?.kind === 'firebase' ? pendingSignup.suggestedName ?? '' : '');
   const [handle, setHandle] = useState('');
   // Birthday stored as ISO date string (the format the native picker emits).
   const [dob, setDob] = useState('');
@@ -116,13 +121,21 @@ export function OnboardingScreen() {
       {/* Header */}
       <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5">
         <button
-          onClick={() => setAuthState('auth')}
+          onClick={() => {
+            // Backing out abandons the in-flight signup. For OAuth pendings
+            // we go back to welcome (where they came from); for email we go
+            // back to the email screen so they can edit credentials.
+            useApp.setState({ pendingSignup: null });
+            setAuthState(isOauthSignup ? 'welcome' : 'auth');
+          }}
           className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-white hover:bg-white/5"
           aria-label="Back"
         >
           <ChevronLeft size={22} />
         </button>
-        <div className="text-base font-bold text-white">Set up your profile</div>
+        <div className="text-base font-bold text-white">
+          {isOauthSignup ? 'Finish your profile' : 'Set up your profile'}
+        </div>
         <div className="w-9" />
       </div>
 

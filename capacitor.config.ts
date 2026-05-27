@@ -7,7 +7,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * before submitting to the stores.
  */
 const config: CapacitorConfig = {
-  appId: 'com.wud.app',
+  appId: 'app.wud.app',
   appName: 'WUD',
   webDir: 'dist',
   backgroundColor: '#07060b',
@@ -49,6 +49,13 @@ const config: CapacitorConfig = {
     },
     Keyboard: {
       resize: 'native',
+    },
+    FirebaseAuthentication: {
+      // Tell the plugin which providers to load natively. Without this list
+      // the default is [] (no providers loaded), so signInWithApple() and
+      // signInWithGoogle() fail with cryptic errors at runtime. Add a value
+      // here if you ever wire up a new provider on the welcome screen.
+      providers: ['apple.com', 'google.com'],
     },
   },
 };

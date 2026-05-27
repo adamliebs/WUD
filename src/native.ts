@@ -16,6 +16,10 @@ import { useApp } from './store';
 /** True when running inside the native Capacitor shell. */
 export const isNative = Capacitor.isNativePlatform();
 
+/** 'ios' | 'android' | 'web' — the platform the app is currently running on.
+ *  Use this for OS-specific UX (e.g. Apple Sign In only on iOS). */
+export const platform = Capacitor.getPlatform() as 'ios' | 'android' | 'web';
+
 /** Whether the app is foregrounded — gates notify() so we don't double-alert. */
 let appActive = true;
 let nextNotifId = 1;

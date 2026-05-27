@@ -41,6 +41,9 @@ export interface User {
   avatar: string;     // emoji avatar — used when no photo is set
   color: string;      // tailwind bg gradient — backdrop for emoji avatars
   photoUrl?: string;  // optional uploaded photo — absolute URL served by the API
+  /** Firebase Auth has verified the user owns their email. Always true for
+   *  OAuth signups; false for new email signups until they click the link. */
+  emailVerified?: boolean;
   liveStatus?: LiveStatus;
 }
 

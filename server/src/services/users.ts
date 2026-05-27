@@ -11,6 +11,8 @@ interface UserRow {
   avatar_emoji: string;
   color: string;
   photo_url: string | null;
+  /** 1 once Firebase Auth confirms the user clicked the verification link. */
+  email_verified: number;
   created_at: number;
   updated_at: number;
 }
@@ -36,8 +38,17 @@ export function toPublicUser(row: UserRow): PublicUser {
     avatar: row.avatar_emoji,
     color: row.color,
     photoUrl: row.photo_url ?? undefined,
+    emailVerified: !!row.email_verified,
     liveStatus: live ?? undefined,
   };
+}
+
+/** Update the email-verified flag from a Firebase ID-token claim. Idempotent. */
+export function setEmailVerified(userId: string, verified: boolean): void {
+  q.run(
+    'UPDATE users SET email_verified = ?, updated_at = ? WHERE id = ?',
+    verified ? 1 : 0, now(), userId,
+  );
 }
 
 export function getUserRow(id: string): UserRow | undefined {

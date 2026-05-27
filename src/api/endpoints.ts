@@ -34,6 +34,31 @@ export const authApi = {
     api.get<{ handle: string; available: boolean }>(
       `/auth/handle-available?handle=${encodeURIComponent(handle)}`,
     ),
+
+  /**
+   * Sign in with a Firebase ID token (Apple / Google / Email-via-Firebase).
+   *
+   * Returns:
+   *   • AuthResult — existing user, session minted
+   *   • { needsOnboarding: true, ... } — first signin; client must collect
+   *     DOB + handle and call again with the same idToken + payload
+   *
+   * The endpoint replies 200 for the session case, 422 for needsOnboarding;
+   * api.post throws on 422 so we catch it specifically in the store.
+   */
+  firebase: (b: {
+    idToken: string;
+    dateOfBirth?: number;
+    handle?: string;
+    name?: string;
+    avatar?: string;
+    color?: string;
+  }) => api.post<AuthResult>('/auth/firebase', b, true),
+
+  /** Request a Firebase-driven password reset email. Always resolves 200 — the
+   *  server hides whether the email is actually registered (anti-enumeration). */
+  requestPasswordReset: (email: string) =>
+    api.post<{ ok: true }>('/auth/email/reset', { email }, true),
 };
 
 /* ---- bootstrap ---- */
