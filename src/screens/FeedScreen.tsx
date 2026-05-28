@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Radio, Search, Sparkles, Users, UsersRound } from 'lucide-react';
-import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
@@ -8,16 +7,16 @@ import { EmailVerificationBanner } from '../components/EmailVerificationBanner';
 import { FeedFilters } from '../components/FeedFilters';
 import { LiveNowStrip } from '../components/LiveNowStrip';
 import { SmartSuggestions } from '../components/SmartSuggestions';
-import { TrendingStrip } from '../components/TrendingStrip';
 
 export function FeedScreen() {
   const me = useApp(s => s.me());
   const allActivities = useApp(useShallow(s => s.visibleActivities()));
   // Live activities are surfaced in the LiveNowStrip above, so hide them from
   // the main scrolling feed by default to avoid showing the same plan twice.
-  // The toggle below the strip flips this — useful when a user wants the full
-  // list in one place.
-  const [showLiveInFeed, setShowLiveInFeed] = useState(false);
+  // The toggle is a feed filter so Clear filters resets it, and so a For You
+  // filter shortcut can flip it on automatically.
+  const showLiveInFeed = useApp(s => !!s.feedFilters.includeLive);
+  const setFilter = useApp(s => s.setFeedFilter);
   const liveCount = allActivities.filter(isLiveActivity).length;
   const activities = showLiveInFeed
     ? allActivities
@@ -92,7 +91,6 @@ export function FeedScreen() {
         <EmailVerificationBanner />
         <LiveNowStrip />
         <SmartSuggestions />
-        <TrendingStrip />
         {/* Anchor target for For You "tap to filter" jumps — when the For You
             rail fills the viewport, tapping a digest scrolls past it to this
             point so the filtered results are immediately visible. */}
@@ -102,7 +100,7 @@ export function FeedScreen() {
           <div className="px-4 mb-2">
             <motion.button
               whileTap={{ scale: 0.96 }}
-              onClick={() => setShowLiveInFeed(v => !v)}
+              onClick={() => setFilter({ includeLive: !showLiveInFeed })}
               className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.16em]
                           px-3 py-1.5 rounded-full border transition
                           ${showLiveInFeed

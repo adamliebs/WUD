@@ -55,6 +55,14 @@ export interface FeedFilters {
    * back to soonest so two equally-popular plans stay ordered by start time.
    */
   sort: 'soonest' | 'popular';
+  /**
+   * Include currently-live activities in the main feed list. False by default
+   * — they're already in the LiveNowStrip above, so listing them twice is
+   * redundant. Toggled on by the "Show live in feed" pill, and also flipped
+   * on automatically when a For You filter shortcut fires so a "3 coffee
+   * plans today" tap reveals every matching plan, live or not.
+   */
+  includeLive?: boolean;
 }
 
 /** A category entry derived from the visible feed pool — used to populate the
@@ -978,7 +986,7 @@ export const useApp = create<State>((set, get) => {
     clearFeedFilters: () => set({ feedFilters: { timeWindow: 'all', sort: 'soonest' } }),
     hasActiveFeedFilters: () => {
       const f = get().feedFilters;
-      return !!f.category || !!f.customLabel || f.timeWindow !== 'all' || f.sort !== 'soonest';
+      return !!f.category || !!f.customLabel || f.timeWindow !== 'all' || f.sort !== 'soonest' || !!f.includeLive;
     },
     openOverlay: (o) => {
       set({ overlay: o });
