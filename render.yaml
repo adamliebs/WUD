@@ -20,8 +20,8 @@ services:
     runtime: docker
     plan: starter           # $7/mo; the free tier disables disks
     region: oregon          # any region — keep all WUD services co-located
-    branch: production
-    autoDeploy: true        # push to `production` → auto-deploys
+    branch: main
+    autoDeploy: true        # push to `main` → auto-deploys
     dockerfilePath: ./server/Dockerfile
     dockerContext: ./server
 
