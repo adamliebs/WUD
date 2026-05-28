@@ -91,8 +91,15 @@ export function FeedScreen() {
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
         <EmailVerificationBanner />
         <LiveNowStrip />
+        <SmartSuggestions />
+        <TrendingStrip />
+        {/* Anchor target for For You "tap to filter" jumps — when the For You
+            rail fills the viewport, tapping a digest scrolls past it to this
+            point so the filtered results are immediately visible. */}
+        <div id="feed-results-anchor" />
+        <FeedFilters />
         {liveCount > 0 && (
-          <div className="px-4 -mt-1 mb-3">
+          <div className="px-4 mb-2">
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={() => setShowLiveInFeed(v => !v)}
@@ -111,13 +118,6 @@ export function FeedScreen() {
             </motion.button>
           </div>
         )}
-        <SmartSuggestions />
-        <TrendingStrip />
-        {/* Anchor target for For You "tap to filter" jumps — when the For You
-            rail fills the viewport, tapping a digest scrolls past it to this
-            point so the filtered results are immediately visible. */}
-        <div id="feed-results-anchor" />
-        <FeedFilters />
         <motion.div
           className="flex flex-col gap-3 px-4"
           initial="hidden"
