@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
-import { Search, Sparkles, Users, UsersRound } from 'lucide-react';
+import { Eye, EyeOff, Radio, Search, Sparkles, Users, UsersRound } from 'lucide-react';
+import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useApp } from '../store';
+import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
 import { EmailVerificationBanner } from '../components/EmailVerificationBanner';
 import { FeedFilters } from '../components/FeedFilters';
@@ -11,7 +12,16 @@ import { TrendingStrip } from '../components/TrendingStrip';
 
 export function FeedScreen() {
   const me = useApp(s => s.me());
-  const activities = useApp(useShallow(s => s.visibleActivities()));
+  const allActivities = useApp(useShallow(s => s.visibleActivities()));
+  // Live activities are surfaced in the LiveNowStrip above, so hide them from
+  // the main scrolling feed by default to avoid showing the same plan twice.
+  // The toggle below the strip flips this — useful when a user wants the full
+  // list in one place.
+  const [showLiveInFeed, setShowLiveInFeed] = useState(false);
+  const liveCount = allActivities.filter(isLiveActivity).length;
+  const activities = showLiveInFeed
+    ? allActivities
+    : allActivities.filter(a => !isLiveActivity(a));
   const feedScope = useApp(s => s.feedScope);
   const setFeedScope = useApp(s => s.setFeedScope);
   const hasFoF = useApp(s => s.hasFoFAvailable());
@@ -81,6 +91,26 @@ export function FeedScreen() {
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
         <EmailVerificationBanner />
         <LiveNowStrip />
+        {liveCount > 0 && (
+          <div className="px-4 -mt-1 mb-3">
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setShowLiveInFeed(v => !v)}
+              className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.16em]
+                          px-3 py-1.5 rounded-full border transition
+                          ${showLiveInFeed
+                            ? 'bg-rose-500/15 text-rose-200 border-rose-400/40 hover:bg-rose-500/25'
+                            : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
+            >
+              {showLiveInFeed ? <EyeOff size={12} /> : <Eye size={12} />}
+              {showLiveInFeed ? 'Hide live from feed' : 'Show live in feed'}
+              <span className="ml-0.5 inline-flex items-center gap-1 normal-case tracking-normal text-rose-300">
+                <Radio size={11} />
+                {liveCount}
+              </span>
+            </motion.button>
+          </div>
+        )}
         <SmartSuggestions />
         <TrendingStrip />
         {/* Anchor target for For You "tap to filter" jumps — when the For You
