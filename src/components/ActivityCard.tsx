@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Clock, Lock, MapPin, Repeat, Users } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { categoryFor } from '../data/categories';
-import { useApp, clockTime, isPast, recurrenceLabel, relTime } from '../store';
+import { useApp, clockTime, isLiveActivity, isPast, recurrenceLabel, relTime } from '../store';
 import { mediaUrl } from '../api/client';
 import type { Activity } from '../types';
 import { Avatar, AvatarStack } from './Avatar';
@@ -25,7 +25,10 @@ export function ActivityCard({ activity }: Props) {
   const isFoF = useApp(s => !s.isFriend(activity.hostId));
   const startsInMs = activity.startsAt - Date.now();
   const over = isPast(activity);
-  const isLive = !over && startsInMs <= 15 * 60 * 1000; // <= 15 min and not over => "Soon"
+  const live = isLiveActivity(activity);
+  // "Soon" is the pre-window warning: the plan hasn't started yet and is
+  // within 15 minutes. Once it crosses startsAt it becomes "Live" instead.
+  const soon = !over && !live && startsInMs <= 15 * 60 * 1000 && startsInMs > 0;
 
   const total = 1 + activity.joinerIds.length;
   const full = activity.maxSize ? total >= activity.maxSize : false;
@@ -80,7 +83,13 @@ export function ActivityCard({ activity }: Props) {
           )}
           <SquadChip squadIds={activity.squadIds} />
         </div>
-        {isLive && (
+        {live && (
+          <div className="absolute top-3 right-4 flex items-center gap-1.5 text-white text-[10px] font-bold uppercase tracking-widest bg-rose-500/85 backdrop-blur px-2 py-1 rounded-full shadow-[0_4px_14px_-4px_rgba(244,63,94,0.7)]">
+            <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-white text-white live-dot" />
+            Live
+          </div>
+        )}
+        {soon && (
           <div className="absolute top-3 right-4 flex items-center gap-1.5 text-white text-xs font-semibold bg-black/30 backdrop-blur px-2 py-1 rounded-full">
             <span className="relative inline-block w-1.5 h-1.5 rounded-full bg-rose-300 text-rose-300 live-dot" />
             Soon
