@@ -11,6 +11,8 @@ interface UserRow {
   avatar_emoji: string;
   color: string;
   photo_url: string | null;
+  /** 1 once Firebase Auth confirms the user clicked the verification link. */
+  email_verified: number;
   created_at: number;
   updated_at: number;
 }
@@ -36,8 +38,17 @@ export function toPublicUser(row: UserRow): PublicUser {
     avatar: row.avatar_emoji,
     color: row.color,
     photoUrl: row.photo_url ?? undefined,
+    emailVerified: !!row.email_verified,
     liveStatus: live ?? undefined,
   };
+}
+
+/** Update the email-verified flag from a Firebase ID-token claim. Idempotent. */
+export function setEmailVerified(userId: string, verified: boolean): void {
+  q.run(
+    'UPDATE users SET email_verified = ?, updated_at = ? WHERE id = ?',
+    verified ? 1 : 0, now(), userId,
+  );
 }
 
 export function getUserRow(id: string): UserRow | undefined {
@@ -50,6 +61,22 @@ export function getPublicUser(id: string): PublicUser {
   return toPublicUser(row);
 }
 
+/** Minimum age (years) — Apple/COPPA gate on a social/UGC app. */
+const MIN_AGE_YEARS = 13;
+
+/** Returns the user's age in full years on a given reference date. */
+function ageInYears(dobMs: number, refMs: number): number {
+  const dob = new Date(dobMs);
+  const ref = new Date(refMs);
+  let age = ref.getUTCFullYear() - dob.getUTCFullYear();
+  // Hasn't had this year's birthday yet — drop a year.
+  const monthDelta = ref.getUTCMonth() - dob.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && ref.getUTCDate() < dob.getUTCDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
 /** Create a user + default settings row. Throws on handle conflict. */
 export function createUser(input: {
   id?: string;
@@ -57,6 +84,9 @@ export function createUser(input: {
   handle: string;
   avatar?: string;
   color?: string;
+  /** Epoch ms. Required for new signups via auth; service-internal callers
+   *  (seed, demo) may omit it. */
+  dateOfBirth?: number;
 }): PublicUser {
   const handle = normalizeHandle(input.handle) || 'user' + shortId().slice(0, 4);
   if (!HANDLE_RE.test(handle)) {
@@ -65,16 +95,27 @@ export function createUser(input: {
   if (!handleAvailable(handle)) {
     throw conflict('HANDLE_TAKEN', 'That handle is already taken', 'handle');
   }
+  // Age gate — refuse accounts under 13 (COPPA). Apple won't accept a social
+  // app without this on Guideline 1.3 / 5.1.4 review.
+  if (input.dateOfBirth !== undefined) {
+    if (!Number.isFinite(input.dateOfBirth) || input.dateOfBirth > Date.now()) {
+      throw badRequest('INVALID_DOB', 'Enter a valid date of birth', 'dateOfBirth');
+    }
+    if (ageInYears(input.dateOfBirth, Date.now()) < MIN_AGE_YEARS) {
+      throw badRequest('TOO_YOUNG', `You must be at least ${MIN_AGE_YEARS} to sign up`, 'dateOfBirth');
+    }
+  }
   const id = input.id ?? newId();
   const ts = now();
   q.run(
-    `INSERT INTO users (id, name, handle, avatar_emoji, color, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO users (id, name, handle, avatar_emoji, color, date_of_birth, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     input.name.trim() || 'You',
     handle,
     input.avatar ?? '✨',
     input.color ?? 'from-rose-400 to-orange-500',
+    input.dateOfBirth ?? null,
     ts,
     ts,
   );
@@ -119,10 +160,6 @@ export function updateUser(
 interface SettingsRow {
   push_enabled: number;
   pings_enabled: number;
-  host_transfer_enabled: number;
-  show_me_to_fof: number;
-  default_private: number;
-  appearance: string;
   default_reminder_minutes: number | null;
 }
 
@@ -136,10 +173,6 @@ export function getSettings(userId: string): AppSettings {
   return {
     pushEnabled: !!r.push_enabled,
     pingsEnabled: !!r.pings_enabled,
-    hostTransferEnabled: !!r.host_transfer_enabled,
-    showMeToFoF: !!r.show_me_to_fof,
-    defaultPrivate: !!r.default_private,
-    appearance: r.appearance as AppSettings['appearance'],
     defaultReminderMins: r.default_reminder_minutes,
   };
 }
@@ -149,15 +182,10 @@ export function updateSettings(userId: string, patch: Partial<AppSettings>): App
   const next = { ...cur, ...patch };
   q.run(
     `UPDATE user_settings SET
-       push_enabled = ?, pings_enabled = ?, host_transfer_enabled = ?,
-       show_me_to_fof = ?, default_private = ?, appearance = ?, default_reminder_minutes = ?
+       push_enabled = ?, pings_enabled = ?, default_reminder_minutes = ?
      WHERE user_id = ?`,
     next.pushEnabled ? 1 : 0,
     next.pingsEnabled ? 1 : 0,
-    next.hostTransferEnabled ? 1 : 0,
-    next.showMeToFoF ? 1 : 0,
-    next.defaultPrivate ? 1 : 0,
-    next.appearance,
     next.defaultReminderMins,
     userId,
   );

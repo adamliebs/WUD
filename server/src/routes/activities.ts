@@ -19,7 +19,7 @@ export const activitiesRouter = Router();
 
 const RSVP_STATES = new Set<RsvpState | 'none'>(['going', 'maybe', 'cant', 'none']);
 
-/** GET /v1/feed?scope=&category=&timeWindow=&nearMe= */
+/** GET /v1/feed?scope=&category=&timeWindow= */
 activitiesRouter.get('/feed', handler((req, res) => {
   const id = uid(req);
   const activities = feedFor(id, {
@@ -27,7 +27,6 @@ activitiesRouter.get('/feed', handler((req, res) => {
     category: req.query.category ? (String(req.query.category) as CategoryKey) : undefined,
     timeWindow: ['now', 'today', 'week', 'all'].includes(String(req.query.timeWindow))
       ? (String(req.query.timeWindow) as 'now' | 'today' | 'week' | 'all') : undefined,
-    nearMe: req.query.nearMe === 'true',
   });
   res.json({ activities, hasFoF: hasFoFAvailable(id), ...withUsers(activities) });
 }));
@@ -59,8 +58,6 @@ activitiesRouter.post('/activities', handler((req, res) => {
     recurrence: b.recurrence ?? undefined,
     reminderMins: b.reminderMins === undefined ? undefined : b.reminderMins,
     squadIds: Array.isArray(b.squadIds) ? b.squadIds : [],
-    mapX: typeof b.mapX === 'number' ? b.mapX : undefined,
-    mapY: typeof b.mapY === 'number' ? b.mapY : undefined,
   });
   res.status(201).json({ activity, ...withUsers([activity]) });
 }));

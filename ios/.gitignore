@@ -11,3 +11,10 @@ capacitor-cordova-ios-plugins
 # Generated Config files
 App/App/capacitor.config.json
 App/App/config.xml
+
+# Firebase config — MUST NOT be committed (contains your Firebase project's
+# API keys). Re-download from Firebase Console → iOS app → GoogleService-Info.plist
+# if lost. Canonical location is ios/App/App/GoogleService-Info.plist but the
+# pattern matches ANY GoogleService-Info.plist under ios/ so accidental copies
+# at other paths can't sneak past.
+**/GoogleService-Info.plist

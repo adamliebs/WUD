@@ -7,7 +7,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Firebase is initialised by the @capacitor-firebase/app plugin's load() —
+        // see node_modules/@capacitor-firebase/app/ios/Plugin/FirebaseAppPlugin.swift.
+        // The plugin reads GoogleService-Info.plist from the app bundle automatically.
+        // (We don't import FirebaseCore here because the App target doesn't have it
+        // as a direct SPM dependency; it's transitively pulled via the plugin only.)
         return true
     }
 

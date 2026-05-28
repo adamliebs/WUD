@@ -61,8 +61,9 @@ captures/
 .externalNativeBuild
 .cxx/
 
-# Google Services (e.g. APIs or Firebase)
-# google-services.json
+# Google Services (e.g. APIs or Firebase) — MUST NOT be committed (contains
+# your Firebase project's API keys). Re-download from Firebase Console if lost.
+google-services.json
 
 # Freeline
 freeline.py

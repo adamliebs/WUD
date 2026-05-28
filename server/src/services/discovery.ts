@@ -15,9 +15,6 @@ const CATEGORY_META: Record<string, { label: string; emoji: string }> = {
   party: { label: 'Party', emoji: '🎉' },    other: { label: 'Other', emoji: '✨' },
 };
 
-const YOU_XY: [number, number] = [0.5, 0.5];
-const NEAR_RADIUS = 0.3;
-
 /* ===================== search ===================== */
 
 export interface SearchResults {
@@ -92,8 +89,7 @@ export function trending(userId: string): { key: CategoryKey; count: number; emo
 export type Suggestion =
   | { kind: 'starting_soon'; count: number; emoji: string; text: string; apply: { timeWindow: 'now' } }
   | { kind: 'category_cluster'; category: CategoryKey; count: number; emoji: string; text: string;
-      apply: { category: CategoryKey; timeWindow: 'today' } }
-  | { kind: 'near_me'; count: number; emoji: string; text: string; apply: { nearMe: true } };
+      apply: { category: CategoryKey; timeWindow: 'today' } };
 
 /** Up to two heuristic "For you" suggestions. */
 export function suggestions(userId: string): Suggestion[] {
@@ -126,17 +122,6 @@ export function suggestions(userId: string): Suggestion[] {
       kind: 'category_cluster', category: top[0] as CategoryKey, count: top[1], emoji: meta.emoji,
       text: `${top[1]} ${meta.label.toLowerCase()} plans today — tap to see them all`,
       apply: { category: top[0] as CategoryKey, timeWindow: 'today' },
-    });
-  }
-
-  const near = today.filter(r => {
-    if (r.map_x == null || r.map_y == null) return false;
-    return Math.hypot(r.map_x - YOU_XY[0], r.map_y - YOU_XY[1]) <= NEAR_RADIUS;
-  });
-  if (near.length >= 2) {
-    out.push({
-      kind: 'near_me', count: near.length, emoji: '📍',
-      text: `${near.length} plans near you today`, apply: { nearMe: true },
     });
   }
 

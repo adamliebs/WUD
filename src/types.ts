@@ -40,7 +40,10 @@ export interface User {
   handle: string;
   avatar: string;     // emoji avatar — used when no photo is set
   color: string;      // tailwind bg gradient — backdrop for emoji avatars
-  photoUrl?: string;  // optional uploaded photo (blob: URL in the mockup)
+  photoUrl?: string;  // optional uploaded photo — absolute URL served by the API
+  /** Firebase Auth has verified the user owns their email. Always true for
+   *  OAuth signups; false for new email signups until they click the link. */
+  emailVerified?: boolean;
   liveStatus?: LiveStatus;
 }
 
@@ -90,10 +93,6 @@ export interface Activity {
   reactions: Reaction[];
   /** Optional event banner — replaces the category gradient in card + detail hero. */
   bannerUrl?: string;
-  // Stylized-map coordinates (normalized 0..1). Optional — activities without
-  // coords are hidden from the Map view but still show in the List view.
-  mapX?: number;
-  mapY?: number;
   startsAt: number;     // epoch ms
   description: string;
   // RSVPs (none of these include the host). A user appears in at most one list.

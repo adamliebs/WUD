@@ -15,17 +15,28 @@ export function TrendingStrip() {
   const activities = useApp(s => s.activities);
   const squads = useApp(s => s.squads);
   const friendIds = useApp(s => s.friendIds);
+  // Re-tally when the scope flips so "trending" matches the visible feed.
+  const scope = useApp(s => s.feedScope);
 
   const items = useMemo(
     () => useApp.getState().trendingCategories(),
-    [activities, squads, friendIds],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activities, squads, friendIds, scope],
   );
   const setFilter = useApp(s => s.setFeedFilter);
   const activeCategory = useApp(s => s.feedFilters.category);
 
   if (items.length === 0) return null;
 
-  const apply = (k: CategoryKey) => setFilter({ category: activeCategory === k ? undefined : k });
+  const apply = (k: CategoryKey) => {
+    setFilter({ category: activeCategory === k ? undefined : k });
+    // Same scroll nudge as For You — if the strip pushed the feed off-screen
+    // the user should see the filtered results land right under their tap.
+    requestAnimationFrame(() => {
+      document.getElementById('feed-results-anchor')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   return (
     <div className="px-4 mt-1 mb-2">

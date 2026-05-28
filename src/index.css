@@ -20,6 +20,9 @@
   /* Top status-bar clearance — the real safe-area inset on devices; the
      desktop phone-mockup frame simulates it (see .phone-screen below). */
   --status-inset: env(safe-area-inset-top, 0px);
+  /* Stop iOS from "helpfully" rescaling text on orientation change. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html, body, #root {
@@ -27,6 +30,17 @@ html, body, #root {
   margin: 0;
   padding: 0;
   overscroll-behavior: none;
+  /* Disable double-tap-to-zoom and the 300ms tap delay across the whole app.
+     Buttons keep feeling instant + iOS stops trying to zoom on quick taps. */
+  touch-action: manipulation;
+}
+
+/* iOS auto-zooms into any focused <input>/<textarea>/<select> whose computed
+   font-size is < 16px. That's what caused the onboarding name field to zoom
+   in. Force the minimum so the focus zoom never triggers — Tailwind size
+   utilities applied to inputs (text-sm etc.) get clamped here. */
+input, textarea, select {
+  font-size: 16px;
 }
 
 body {
@@ -55,6 +69,17 @@ body {
   backdrop-filter: saturate(160%) blur(22px);
   -webkit-backdrop-filter: saturate(160%) blur(22px);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Android's WebView renders backdrop-filter unreliably — without the blur the
+   glass surfaces look too see-through. On Android, fall back to a near-opaque
+   background so the panels still read as solid frosted surfaces. (iOS's
+   WebView blurs fine, so it keeps the real translucent glass.) */
+html.android .glass {
+  background: rgba(20, 18, 28, 0.93);
+}
+html.android .glass-strong {
+  background: rgba(15, 13, 22, 0.97);
 }
 
 /* Brand gradient text */

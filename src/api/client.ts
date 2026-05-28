@@ -111,6 +111,35 @@ async function rawRequest<T>(path: string, opts: ReqOptions, retrying = false): 
   return data as T;
 }
 
+/** Multipart upload — same bearer auth + refresh-on-401 behavior as rawRequest. */
+async function uploadRequest<T>(path: string, form: FormData, retrying = false): Promise<T> {
+  const headers: Record<string, string> = {};
+  // No content-type — the browser sets the multipart boundary itself.
+  if (tokens.access) headers.authorization = `Bearer ${tokens.access}`;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/v1${path}`, { method: 'POST', headers, body: form });
+  } catch {
+    throw new ApiError(0, 'NETWORK', 'Cannot reach the server. Is the backend running?');
+  }
+
+  if (res.status === 401 && !retrying) {
+    const ok = await tryRefresh();
+    if (ok) return uploadRequest<T>(path, form, true);
+    tokens.clear();
+    throw new ApiError(401, 'UNAUTHORIZED', 'Your session expired. Please sign in again.');
+  }
+
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    const err = (data as { error?: { code?: string; message?: string } }).error;
+    throw new ApiError(res.status, err?.code ?? 'ERROR', err?.message ?? 'Upload failed');
+  }
+  return data as T;
+}
+
 /* ----- verb helpers ------------------------------------------------------- */
 
 export const api = {
@@ -120,6 +149,17 @@ export const api = {
   put:   <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PUT', body }),
   patch: <T>(path: string, body?: unknown) => rawRequest<T>(path, { method: 'PATCH', body }),
   del:   <T>(path: string) => rawRequest<T>(path, { method: 'DELETE' }),
+  upload: <T>(path: string, form: FormData) => uploadRequest<T>(path, form),
 };
 
 export const apiBaseUrl = API_BASE;
+
+/**
+ * Resolve a server media path to a loadable URL. Uploads are stored as
+ * relative paths ("/uploads/x.png") so each client (web / iOS / Android)
+ * resolves them against its own API base. Non-server URLs pass through.
+ */
+export function mediaUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  return url.startsWith('/') ? `${API_BASE}${url}` : url;
+}

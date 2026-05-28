@@ -1,6 +1,6 @@
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, Repeat, Send, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Repeat, Send, ShieldOff, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -9,6 +9,7 @@ import { PollBubble } from '../components/PollBubble';
 import { ReactionBar } from '../components/ReactionBar';
 import { categoryFor } from '../data/categories';
 import { clockTime, isPast, recurrenceLabel, relTime, useApp } from '../store';
+import { mediaUrl } from '../api/client';
 
 export function ActivityDetailSheet() {
   const openId = useApp(s => s.openActivityId);
@@ -31,7 +32,29 @@ function Inner({ activityId }: { activityId: string }) {
   const setRsvp = useApp(s => s.setRsvp);
   const leave = useApp(s => s.leaveActivity);
   const close = useApp(s => s.openActivity);
+  // T&S — only relevant when the viewer isn't the host (you can't block/report
+  // your own plan; you'd delete it instead).
+  const blockUserAction = useApp(s => s.blockUser);
+  const openReport = useApp(s => s.openReportSheet);
   const [tab, setTab] = useState<'details' | 'chat'>('details');
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  // Outside-click + Escape close for the More popover.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoreOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
 
   if (!activity) return null;
 
@@ -73,7 +96,7 @@ function Inner({ activityId }: { activityId: string }) {
         {activity.bannerUrl ? (
           <>
             <img
-              src={activity.bannerUrl}
+              src={mediaUrl(activity.bannerUrl)}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
               draggable={false}
@@ -90,6 +113,75 @@ function Inner({ activityId }: { activityId: string }) {
         >
           <X size={16} />
         </button>
+        {/* "More" menu — exposes Report plan + Block host. Hidden when I'm the
+            host (you can't report/block yourself). Required surface for Apple
+            Guideline 1.2 review. */}
+        {!isHost && (
+          <div ref={moreRef} className="absolute top-2 right-12">
+            <button
+              onClick={() => setMoreOpen(o => !o)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More"
+              className="h-8 w-8 rounded-full grid place-items-center bg-black/30 text-white backdrop-blur"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <AnimatePresence>
+              {moreOpen && (
+                <motion.div
+                  role="menu"
+                  initial={{ opacity: 0, y: -4, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                  transition={{ duration: 0.14 }}
+                  className="absolute right-0 mt-1.5 min-w-[180px] rounded-2xl bg-[#15121b]
+                             border border-white/10 shadow-2xl shadow-black/60 p-1 z-10"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      openReport({ kind: 'activity', targetId: activity.id, label: activity.title });
+                    }}
+                    className="w-full text-left text-[13px] font-medium text-zinc-100 px-2.5 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2"
+                  >
+                    <AlertTriangle size={14} className="text-amber-300" />
+                    Report plan
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      openReport({ kind: 'user', targetId: host.id, label: host.name });
+                    }}
+                    className="w-full text-left text-[13px] font-medium text-zinc-100 px-2.5 py-2 rounded-xl hover:bg-white/5 flex items-center gap-2"
+                  >
+                    <AlertTriangle size={14} className="text-amber-300" />
+                    Report {host.name}
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreOpen(false);
+                      // Confirm before blocking — blocks remove the friendship
+                      // and aren't trivially reversible (an unblock doesn't
+                      // restore it). A native confirm keeps this lean.
+                      if (confirm(`Block ${host.name}? You won't see each other's plans or messages.`)) {
+                        void blockUserAction(host.id);
+                        close(null);
+                      }
+                    }}
+                    className="w-full text-left text-[13px] font-medium text-rose-200 px-2.5 py-2 rounded-xl hover:bg-rose-500/10 flex items-center gap-2"
+                  >
+                    <ShieldOff size={14} />
+                    Block {host.name}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
         <div className="absolute top-3 left-4 flex items-center gap-2">
           <span className="text-2xl drop-shadow">{cat.emoji}</span>
           <span className="text-white/90 text-xs font-semibold uppercase tracking-widest">
@@ -550,6 +642,7 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
   const sendChatPhoto = useApp(s => s.sendChatPhoto);
   const openPollComposer = useApp(s => s.setPollComposerActivityId);
   const [draft, setDraft] = useState('');
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = activity?.chat.length ?? 0;
@@ -558,23 +651,34 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [chatLen]);
 
+  // Revoke the staged photo's preview URL when it's replaced or the pane closes.
+  useEffect(() => () => {
+    if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.preview);
+  }, [pendingPhoto]);
+
   if (!activity) return null;
 
+  const hasContent = !!draft.trim() || !!pendingPhoto;
+
   const submit = () => {
+    if (pendingPhoto) {
+      // Send the staged photo, with the draft text as an optional caption.
+      sendChatPhoto(activityId, pendingPhoto.file, draft.trim() || undefined);
+      setPendingPhoto(null);
+      setDraft('');
+      return;
+    }
     if (!draft.trim()) return;
     sendChat(activityId, draft);
     setDraft('');
   };
 
+  // Picking a photo stages it for review — it isn't sent until the user taps send.
   const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    // The draft text (if any) becomes the caption; blob: URL is owned by the
-    // store for the lifetime of the page (chat photos are mockup-only).
-    const url = URL.createObjectURL(file);
-    sendChatPhoto(activityId, url, draft);
-    setDraft('');
     e.target.value = '';
+    if (!file) return;
+    setPendingPhoto({ file, preview: URL.createObjectURL(file) });
   };
 
   return (
@@ -635,7 +739,7 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
                       <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
                     )}
                     <img
-                      src={m.photoUrl}
+                      src={mediaUrl(m.photoUrl)}
                       alt={m.text ?? 'shared photo'}
                       className="block max-h-64 w-full object-cover"
                       draggable={false}
@@ -669,6 +773,22 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
           onChange={onPickPhoto}
           className="hidden"
         />
+        {pendingPhoto && (
+          <div className="mb-2 flex items-center gap-2.5 bg-white/8 border border-white/10 rounded-2xl p-2">
+            <img src={pendingPhoto.preview} alt="" className="h-14 w-14 rounded-xl object-cover" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white">Photo ready</div>
+              <div className="text-[11px] text-zinc-400">Add a caption if you like, then tap send</div>
+            </div>
+            <button
+              onClick={() => setPendingPhoto(null)}
+              aria-label="Remove photo"
+              className="h-8 w-8 rounded-full grid place-items-center text-zinc-200 bg-white/10 hover:bg-white/15 shrink-0"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-1 bg-white/8 border border-white/10 rounded-full pl-1.5 pr-1.5 py-1.5">
           <motion.button
             whileTap={{ scale: 0.9 }}
@@ -694,16 +814,16 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-            placeholder={canSend ? 'Message the squad...' : 'Join to chat'}
+            placeholder={!canSend ? 'Join to chat' : pendingPhoto ? 'Add a caption…' : 'Message the squad...'}
             disabled={!canSend}
             className="flex-1 bg-transparent text-white placeholder:text-zinc-500 focus:outline-none text-sm"
           />
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={submit}
-            disabled={!canSend || !draft.trim()}
+            disabled={!canSend || !hasContent}
             className={`h-9 w-9 rounded-full grid place-items-center
-                       ${canSend && draft.trim()
+                       ${canSend && hasContent
                          ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white'
                          : 'bg-white/10 text-zinc-500'}`}
           >

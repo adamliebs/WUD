@@ -20,15 +20,12 @@ export const authApi = {
   register: (b: {
     email: string; password: string; name: string; handle: string;
     avatar?: string; color?: string;
+    /** Epoch ms — required by the server (Apple Guideline 1.3 / COPPA, ≥13). */
+    dateOfBirth: number;
   }) => api.post<AuthResult>('/auth/email/register', b, true),
 
   login: (email: string, password: string) =>
     api.post<AuthResult>('/auth/email/login', { email, password }, true),
-
-  /** Mockup OAuth — `subject` stands in for the verified provider id. */
-  oauth: (provider: 'google' | 'apple' | 'facebook', b: {
-    subject: string; email?: string; name?: string; handle?: string;
-  }) => api.post<AuthResult>(`/auth/oauth/${provider}`, b, true),
 
   logout: (refreshToken: string) => api.post('/auth/logout', { refreshToken }, true),
 
@@ -37,6 +34,31 @@ export const authApi = {
     api.get<{ handle: string; available: boolean }>(
       `/auth/handle-available?handle=${encodeURIComponent(handle)}`,
     ),
+
+  /**
+   * Sign in with a Firebase ID token (Apple / Google / Email-via-Firebase).
+   *
+   * Returns:
+   *   • AuthResult — existing user, session minted
+   *   • { needsOnboarding: true, ... } — first signin; client must collect
+   *     DOB + handle and call again with the same idToken + payload
+   *
+   * The endpoint replies 200 for the session case, 422 for needsOnboarding;
+   * api.post throws on 422 so we catch it specifically in the store.
+   */
+  firebase: (b: {
+    idToken: string;
+    dateOfBirth?: number;
+    handle?: string;
+    name?: string;
+    avatar?: string;
+    color?: string;
+  }) => api.post<AuthResult>('/auth/firebase', b, true),
+
+  /** Request a Firebase-driven password reset email. Always resolves 200 — the
+   *  server hides whether the email is actually registered (anti-enumeration). */
+  requestPasswordReset: (email: string) =>
+    api.post<{ ok: true }>('/auth/email/reset', { email }, true),
 };
 
 /* ---- bootstrap ---- */
@@ -64,6 +86,25 @@ export const meApi = {
     api.patch<{ user: User }>('/me', patch),
   updateSettings: (patch: Partial<AppSettings>) =>
     api.patch<{ settings: AppSettings }>('/me/settings', patch),
+  /** Permanently erase the account and all owned data. */
+  deleteAccount: () => api.del('/account'),
+  /** Register an FCM push token for the current user's device. */
+  registerDevice: (platform: 'ios' | 'android' | 'web', pushToken: string) =>
+    api.post<{ deviceId: string }>('/me/devices', { platform, pushToken }),
+  /** Users I've blocked. */
+  listBlocks: () => api.get<{ blocked: User[] }>('/me/blocks'),
+  /** Block someone — removes friendship + hides both ways. */
+  block: (userId: string) => api.post<{ ok: true }>('/me/blocks', { userId }),
+  /** Unblock — does NOT restore the prior friendship. */
+  unblock: (userId: string) => api.del(`/me/blocks/${userId}`),
+};
+
+/* ---- safety / abuse reports ---- */
+
+export const safetyApi = {
+  /** File an abuse report. `targetKind` ∈ 'user' | 'activity' | 'message'. */
+  report: (b: { targetKind: 'user' | 'activity' | 'message'; targetId: string; reason: string; note?: string }) =>
+    api.post<{ reportId: string }>('/reports', b),
 };
 
 /* ---- feed / activities ---- */
@@ -81,7 +122,7 @@ export const activityApi = {
     title: string; place?: string; description?: string; startsAt: number;
     maxSize?: number; isPrivate?: boolean; isOpenInvite?: boolean;
     bannerUrl?: string; recurrence?: Recurrence; reminderMins?: number | null;
-    squadIds?: string[]; mapX?: number; mapY?: number;
+    squadIds?: string[];
   }) => api.post<ActivityResp>('/activities', b),
 
   patch: (id: string, b: Record<string, unknown>) =>
@@ -143,6 +184,17 @@ export const socialApi = {
   removeSquadMember: (id: string, userId: string) =>
     api.del<{ squad: Squad }>(`/squads/${id}/members/${userId}`),
   leaveSquad: (id: string) => api.post(`/squads/${id}/leave`),
+};
+
+/* ---- uploads ---- */
+
+export const uploadApi = {
+  /** Upload a photo file to the server; resolves to its absolute URL. */
+  photo: (file: File) => {
+    const form = new FormData();
+    form.append('photo', file);
+    return api.upload<{ url: string }>('/uploads', form);
+  },
 };
 
 /* ---- notifications / presence / discovery ---- */

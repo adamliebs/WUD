@@ -7,14 +7,18 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * before submitting to the stores.
  */
 const config: CapacitorConfig = {
-  appId: 'com.wud.app',
+  appId: 'app.wud.app',
   appName: 'WUD',
   webDir: 'dist',
   backgroundColor: '#07060b',
 
   server: {
-    // Serve Android over https:// so there is no mixed-content / cleartext issue.
-    androidScheme: 'https',
+    // 'http' lets the bundled app reach an http backend with no mixed-content
+    // block. A production https API still works (http→https isn't mixed content).
+    androidScheme: 'http',
+    // Permit cleartext (http) requests — needed to reach a local dev backend
+    // such as http://10.0.2.2:4000 from the Android emulator.
+    cleartext: true,
   },
 
   ios: {
@@ -45,6 +49,13 @@ const config: CapacitorConfig = {
     },
     Keyboard: {
       resize: 'native',
+    },
+    FirebaseAuthentication: {
+      // Tell the plugin which providers to load natively. Without this list
+      // the default is [] (no providers loaded), so signInWithApple() and
+      // signInWithGoogle() fail with cryptic errors at runtime. Add a value
+      // here if you ever wire up a new provider on the welcome screen.
+      providers: ['apple.com', 'google.com'],
     },
   },
 };

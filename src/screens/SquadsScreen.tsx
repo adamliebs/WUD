@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, Camera, ChevronRight, Crown, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
 import { Avatar, AvatarStack } from '../components/Avatar';
-import { OverlayShell } from '../components/OverlayShell';
 import { PulseButton } from '../components/PulseButton';
 import { categoryFor } from '../data/categories';
 import { clockTime, relTime, useApp } from '../store';
+import { mediaUrl } from '../api/client';
 import type { Activity, User } from '../types';
 
 type Mode =
@@ -18,50 +18,155 @@ type Mode =
 
 type SquadTab = 'plans' | 'history' | 'members' | 'chat';
 
+// Each mode lives at a "depth." Deeper modes are pushed on top of shallower
+// ones (list=0, detail/create=1, edit=2). Going deeper is a forward push
+// (new slides in from right, on top); going shallower is a back-pop (old
+// slides off to the right, on top, revealing what was underneath).
+const depthOf = (m: Mode): number =>
+  m.type === 'list' ? 0
+  : m.type === 'detail' || m.type === 'create' ? 1
+  : 2;
+
+// Custom direction is +1 for push, -1 for pop. Variants give the entering
+// page top z-index on a push and the exiting page top z-index on a pop —
+// that's what makes the transition feel like a real stack instead of a
+// crossfade between two unrelated screens.
+const pageSlide = {
+  enter:  (dir: 1 | -1) => ({ x: dir > 0 ? '100%'  : '-100%', zIndex: dir > 0 ? 2 : 1 }),
+  center: (dir: 1 | -1) => ({ x: 0,                            zIndex: dir > 0 ? 2 : 1 }),
+  exit:   (dir: 1 | -1) => ({ x: dir > 0 ? '-100%' : '100%',  zIndex: dir > 0 ? 1 : 2 }),
+};
+const pageTransition = { type: 'spring' as const, stiffness: 360, damping: 36 };
+
 export function SquadsScreen() {
   const openOverlay = useApp(s => s.openOverlay);
   const closeOverlay = () => openOverlay(null);
   const [mode, setMode] = useState<Mode>({ type: 'list' });
+  const [direction, setDirection] = useState<1 | -1>(1);
 
+  // Direction is set at navigation time from the depth delta, so each
+  // transition slides the right way without any per-callsite plumbing.
+  const go = (next: Mode) => {
+    setDirection(depthOf(next) >= depthOf(mode) ? 1 : -1);
+    setMode(next);
+  };
+
+  // Resolve squad for header titles / host-only edit affordance.
+  const sqId = mode.type === 'detail' || mode.type === 'edit' ? mode.squadId : null;
+  const sq = useApp(s => (sqId ? s.squads.find(x => x.id === sqId) : undefined));
+  const isHostOfMode = useApp(s => (mode.type === 'detail' ? s.isSquadHost(mode.squadId) : false));
+
+  // Per-mode header bits.
+  let title: string;
+  let onClose: () => void;
+  let trailing: ReactNode = null;
   if (mode.type === 'create') {
-    return (
-      <OverlayShell title="New squad" onClose={() => setMode({ type: 'list' })}>
-        <SquadEditor onDone={() => setMode({ type: 'list' })} />
-      </OverlayShell>
-    );
-  }
-  if (mode.type === 'edit') {
-    return (
-      <OverlayShell title="Edit squad" onClose={() => setMode({ type: 'detail', squadId: mode.squadId, tab: 'members' })}>
-        <SquadEditor squadId={mode.squadId} onDone={() => setMode({ type: 'detail', squadId: mode.squadId, tab: 'members' })} />
-      </OverlayShell>
-    );
-  }
-  if (mode.type === 'detail') {
-    return (
-      <SquadDetail
-        squadId={mode.squadId}
-        initialTab={mode.tab}
-        onBack={() => setMode({ type: 'list' })}
-        onEdit={() => setMode({ type: 'edit', squadId: mode.squadId })}
-      />
+    title = 'New squad';
+    onClose = () => go({ type: 'list' });
+  } else if (mode.type === 'edit') {
+    title = 'Edit squad';
+    onClose = () => go({ type: 'detail', squadId: mode.squadId, tab: 'members' });
+  } else if (mode.type === 'detail') {
+    title = sq ? `${sq.emoji} ${sq.name}` : 'Squad';
+    onClose = () => go({ type: 'list' });
+    if (isHostOfMode) {
+      trailing = (
+        <button
+          onClick={() => go({ type: 'edit', squadId: mode.squadId })}
+          aria-label="Edit squad"
+          className="h-9 w-9 grid place-items-center rounded-full bg-white/10 text-white"
+        >
+          <Pencil size={16} />
+        </button>
+      );
+    }
+  } else {
+    title = 'Squads';
+    onClose = closeOverlay;
+    trailing = (
+      <button
+        onClick={() => go({ type: 'create' })}
+        aria-label="Create squad"
+        className="h-9 w-9 grid place-items-center rounded-full bg-white text-zinc-900"
+      >
+        <Plus size={18} />
+      </button>
     );
   }
 
-  return <SquadsList
-    onClose={closeOverlay}
-    onOpen={(id) => setMode({ type: 'detail', squadId: id, tab: 'plans' })}
-    onCreate={() => setMode({ type: 'create' })}
-  />;
+  // Distinct key per mode so AnimatePresence treats each as its own page.
+  const pageKey =
+    mode.type === 'detail' ? `detail-${mode.squadId}`
+    : mode.type === 'edit'  ? `edit-${mode.squadId}`
+    : mode.type;
+
+  return (
+    // Outer = overlay-level open/close (mirrors OverlayShell's spring).
+    // Kept inline (vs reusing OverlayShell) so the header can update across
+    // mode changes without remounting the shell — that's what stops the
+    // profile-page flash between list → detail.
+    <motion.div
+      initial={{ x: '100%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '100%' }}
+      transition={pageTransition}
+      className="absolute inset-0 z-40 bg-[#07060b] flex flex-col"
+    >
+      {/* Header — content swaps in place while the shell stays mounted. */}
+      <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5 relative z-10">
+        <button
+          onClick={onClose}
+          className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-white hover:bg-white/5"
+          aria-label="Back"
+        >
+          <ChevronLeft size={22} />
+        </button>
+        <div className="text-base font-bold text-white truncate px-2">{title}</div>
+        <div className="min-w-[36px] flex justify-end">{trailing}</div>
+      </div>
+
+      {/* Page stack — absolutely-positioned pages slide push/pop within. */}
+      <div className="flex-1 relative overflow-hidden">
+        <AnimatePresence initial={false} custom={direction}>
+          <motion.div
+            key={pageKey}
+            custom={direction}
+            variants={pageSlide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={pageTransition}
+            className="absolute inset-0 overflow-y-auto no-scrollbar bg-[#07060b]"
+          >
+            {mode.type === 'list' && (
+              <SquadsListBody onOpen={(id) => go({ type: 'detail', squadId: id, tab: 'plans' })} />
+            )}
+            {mode.type === 'detail' && (
+              <SquadDetailBody
+                squadId={mode.squadId}
+                initialTab={mode.tab}
+                onMissing={() => go({ type: 'list' })}
+              />
+            )}
+            {mode.type === 'edit' && (
+              <SquadEditor
+                squadId={mode.squadId}
+                onDone={() => go({ type: 'detail', squadId: mode.squadId, tab: 'members' })}
+              />
+            )}
+            {mode.type === 'create' && <SquadEditor onDone={() => go({ type: 'list' })} />}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
 }
 
 /* ─────────────────────────── List of squads ─────────────────────────── */
 
-function SquadsList({
-  onClose, onOpen, onCreate,
-}: {
-  onClose: () => void; onOpen: (id: string) => void; onCreate: () => void;
-}) {
+// Body-only — the surrounding shell/header live in SquadsScreen so the
+// shell stays mounted across mode changes (no profile-page flash).
+function SquadsListBody({ onOpen }: { onOpen: (id: string) => void }) {
   // Only show squads I'm in (host or member).
   const squads = useApp(useShallow(s =>
     s.squads.filter(sq => sq.hostId === s.meId || sq.memberIds.includes(s.meId))
@@ -70,20 +175,7 @@ function SquadsList({
   const userById = useApp(s => s.userById);
 
   return (
-    <OverlayShell
-      title="Squads"
-      onClose={onClose}
-      trailing={
-        <button
-          onClick={onCreate}
-          aria-label="Create squad"
-          className="h-9 w-9 grid place-items-center rounded-full bg-white text-zinc-900"
-        >
-          <Plus size={18} />
-        </button>
-      }
-    >
-      <div className="px-4 pt-4 pb-32">
+    <div className="px-4 pt-4 pb-32">
         <div className="text-[11px] text-zinc-500 mb-3 px-1">
           Squads are named subsets of friends. Share a plan or chat with just one group — events
           you share with a squad show up in its Plans tab.
@@ -134,50 +226,39 @@ function SquadsList({
           })}
         </div>
       </div>
-    </OverlayShell>
   );
 }
 
 /* ─────────────────────────── Detail (tabs) ─────────────────────────── */
 
-function SquadDetail({
-  squadId, initialTab, onBack, onEdit,
+// Body-only — header (title, back, edit) is rendered by SquadsScreen so the
+// shell can stay mounted across mode changes.
+function SquadDetailBody({
+  squadId, initialTab, onMissing,
 }: {
-  squadId: string; initialTab: SquadTab; onBack: () => void; onEdit: () => void;
+  squadId: string; initialTab: SquadTab;
+  onMissing: () => void;
 }) {
   const sq = useApp(s => s.squads.find(x => x.id === squadId));
-  const isHost = useApp(s => s.isSquadHost(squadId));
   const inSquad = useApp(s => s.amInSquad(squadId));
   const [tab, setTab] = useState<SquadTab>(initialTab);
 
+  // If the squad disappeared mid-view (deleted / I was removed), pop back to
+  // the list once on the next tick. Render a soft fallback in the meantime.
+  useEffect(() => {
+    if (!sq || !inSquad) onMissing();
+  }, [sq, inSquad, onMissing]);
+
   if (!sq || !inSquad) {
-    // Defensive — bail out cleanly if the squad was just deleted / I just left.
     return (
-      <OverlayShell title="Squad" onClose={onBack}>
-        <div className="px-5 py-12 text-center text-zinc-400 text-sm">
-          You're no longer in this squad.
-        </div>
-      </OverlayShell>
+      <div className="px-5 py-12 text-center text-zinc-400 text-sm">
+        You're no longer in this squad.
+      </div>
     );
   }
 
   return (
-    <OverlayShell
-      title={`${sq.emoji} ${sq.name}`}
-      onClose={onBack}
-      trailing={
-        isHost ? (
-          <button
-            onClick={onEdit}
-            aria-label="Edit squad"
-            className="h-9 w-9 grid place-items-center rounded-full bg-white/10 text-white"
-          >
-            <Pencil size={16} />
-          </button>
-        ) : null
-      }
-    >
-      <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full">
         {/* Tabs */}
         <div className="px-4 pt-3">
           <div className="grid grid-cols-4 bg-white/5 border border-white/10 rounded-2xl p-1 relative">
@@ -222,7 +303,6 @@ function SquadDetail({
           </AnimatePresence>
         </div>
       </div>
-    </OverlayShell>
   );
 }
 
@@ -539,6 +619,7 @@ function SquadChatPane({ squadId }: { squadId: string }) {
   const sendText = useApp(s => s.sendSquadChat);
   const sendPhoto = useApp(s => s.sendSquadChatPhoto);
   const [draft, setDraft] = useState('');
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = sq?.chat.length ?? 0;
@@ -547,20 +628,32 @@ function SquadChatPane({ squadId }: { squadId: string }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [chatLen]);
 
+  // Revoke the staged photo's preview URL when it's replaced or the pane closes.
+  useEffect(() => () => {
+    if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.preview);
+  }, [pendingPhoto]);
+
   if (!sq) return null;
 
+  const hasContent = !!draft.trim() || !!pendingPhoto;
+
   const submit = () => {
+    if (pendingPhoto) {
+      sendPhoto(squadId, pendingPhoto.file, draft.trim() || undefined);
+      setPendingPhoto(null);
+      setDraft('');
+      return;
+    }
     if (!draft.trim()) return;
     sendText(squadId, draft);
     setDraft('');
   };
+  // Picking a photo stages it for review — sent only when the user taps send.
   const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    sendPhoto(squadId, url, draft);
-    setDraft('');
     e.target.value = '';
+    if (!file) return;
+    setPendingPhoto({ file, preview: URL.createObjectURL(file) });
   };
 
   return (
@@ -599,7 +692,7 @@ function SquadChatPane({ squadId }: { squadId: string }) {
                         <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
                       )}
                       <img
-                        src={m.photoUrl}
+                        src={mediaUrl(m.photoUrl)}
                         alt={m.text ?? 'shared photo'}
                         className="block max-h-64 w-full object-cover"
                         draggable={false}
@@ -634,6 +727,22 @@ function SquadChatPane({ squadId }: { squadId: string }) {
           onChange={onPickPhoto}
           className="hidden"
         />
+        {pendingPhoto && (
+          <div className="mb-2 flex items-center gap-2.5 bg-white/8 border border-white/10 rounded-2xl p-2">
+            <img src={pendingPhoto.preview} alt="" className="h-14 w-14 rounded-xl object-cover" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white">Photo ready</div>
+              <div className="text-[11px] text-zinc-400">Add a caption if you like, then tap send</div>
+            </div>
+            <button
+              onClick={() => setPendingPhoto(null)}
+              aria-label="Remove photo"
+              className="h-8 w-8 rounded-full grid place-items-center text-zinc-200 bg-white/10 hover:bg-white/15 shrink-0"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-1 bg-white/8 border border-white/10 rounded-full pl-1.5 pr-1.5 py-1.5">
           <motion.button
             whileTap={{ scale: 0.9 }}
@@ -647,15 +756,15 @@ function SquadChatPane({ squadId }: { squadId: string }) {
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-            placeholder={`Message ${sq.emoji} ${sq.name}…`}
+            placeholder={pendingPhoto ? 'Add a caption…' : `Message ${sq.emoji} ${sq.name}…`}
             className="flex-1 bg-transparent text-white placeholder:text-zinc-500 focus:outline-none text-sm"
           />
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={submit}
-            disabled={!draft.trim()}
+            disabled={!hasContent}
             className={`h-9 w-9 rounded-full grid place-items-center
-                       ${draft.trim()
+                       ${hasContent
                          ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white'
                          : 'bg-white/10 text-zinc-500'}`}
           >

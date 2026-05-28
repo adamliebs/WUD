@@ -1,4 +1,7 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+// motion is still used by NotificationRow's "Pass" button; the row list itself
+// uses plain divs after Android WebView showed subpixel compositing gaps
+// between motion-wrapped children (regression of commit 79af4a7's fix).
 import { Bell, Clock, Crown, Megaphone, UserPlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { Avatar } from '../components/Avatar';
@@ -44,29 +47,15 @@ export function NotificationsScreen() {
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-32">
-        <AnimatePresence>
-          {notifications.length === 0 ? (
-            <div className="text-center text-zinc-500 mt-16">All caught up ✨</div>
-          ) : (
-            <motion.div
-              className="flex flex-col gap-2"
-              initial="hidden" animate="show"
-              variants={{ hidden: {}, show: { transition: { staggerChildren: 0.05 } } }}
-            >
-              {notifications.map(n => (
-                <motion.div
-                  key={n.id}
-                  variants={{
-                    hidden: { opacity: 0, x: 16 },
-                    show:   { opacity: 1, x: 0 },
-                  }}
-                >
-                  <NotificationRow n={n} />
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {notifications.length === 0 ? (
+          <div className="text-center text-zinc-500 mt-16">All caught up ✨</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {notifications.map(n => (
+              <NotificationRow key={n.id} n={n} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

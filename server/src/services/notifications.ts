@@ -1,5 +1,7 @@
 import { q } from '../db/index.js';
 import { newId, now } from '../lib/ids.js';
+import { logger } from '../lib/logger.js';
+import { sendFcm } from '../lib/push.js';
 import { publish } from '../realtime/bus.js';
 import type { AppNotification, NotificationType } from '../types.js';
 import { getSettings } from './users.js';
@@ -49,24 +51,67 @@ export function createNotification(input: {
   const notification = toNotification(row);
 
   publish({ channel: `user:${input.userId}`, type: 'notification.created', data: notification });
-  dispatchPush(input.userId, input.body);
+  // Fire-and-forget; createNotification stays sync. Errors are swallowed by
+  // dispatchPush itself and surface only in logs (push failures should never
+  // break the originating action).
+  dispatchPush(input.userId, input.type, input.body, input.activityId);
   return notification;
 }
 
 /**
- * PRODUCTION STUB — would enqueue an APNs/FCM payload for each of the user's
- * registered devices (SRS §10.7). Requires real Apple/Google credentials, so
- * here it just logs. The `devices` table + per-user `push_enabled` check are
- * already in place for the real implementation.
+ * Banner title shown on the lockscreen / notification center. Distinct per
+ * notification type so a glance at the device tells you what's happening —
+ * "WUD" alone is too generic when 4 of these stack up.
  */
-function dispatchPush(userId: string, body: string): void {
+function bannerTitle(type: NotificationType): string {
+  switch (type) {
+    case 'join':         return 'New RSVP';
+    case 'ping':         return 'Ping';
+    case 'reminder':     return 'Starting soon';
+    case 'invite':       return 'New plan visible';
+    case 'host_offer':   return "You're up to host";
+    case 'host_taken':   return 'Host accepted';
+    default:             return 'WUD';
+  }
+}
+
+/**
+ * Push the notification to all of the user's registered devices via FCM.
+ * Skips silently when:
+ *   • the user has disabled push in their settings, or
+ *   • they have no registered devices.
+ *
+ * Invalid tokens (uninstalled apps, token mismatch) are pruned from `devices`
+ * so the table doesn't accumulate dead entries that we'd retry forever.
+ */
+function dispatchPush(
+  userId: string,
+  type: NotificationType,
+  body: string,
+  activityId?: string,
+): void {
   const settings = getSettings(userId);
   if (!settings.pushEnabled) return;
-  const devices = q.all<{ push_token: string }>(
-    'SELECT push_token FROM devices WHERE user_id = ?', userId,
+  const devices = q.all<{ id: string; push_token: string }>(
+    'SELECT id, push_token FROM devices WHERE user_id = ?', userId,
   );
   if (devices.length === 0) return;
-  console.log(`[push:stub] → user ${userId} (${devices.length} device(s)): ${body}`);
+
+  const title = bannerTitle(type);
+  // Deep-link the user to the plan when the notification has one attached, so
+  // tapping the banner lands them on the activity detail instead of just
+  // opening the app.
+  const link = activityId ? `wud://plan/${activityId}` : undefined;
+
+  void Promise.all(devices.map(async d => {
+    const result = await sendFcm(d.push_token, title, body, link);
+    if (result === 'invalid') {
+      // Token rejected by FCM — most often "app uninstalled" or "token
+      // belongs to a different app/project." Prune so we don't keep trying.
+      q.run('DELETE FROM devices WHERE id = ?', d.id);
+      logger.info({ deviceId: d.id, userId }, '[push] pruned invalid token');
+    }
+  })).catch(err => logger.warn({ err }, '[push] dispatch batch failed'));
 }
 
 export function listNotifications(userId: string): AppNotification[] {

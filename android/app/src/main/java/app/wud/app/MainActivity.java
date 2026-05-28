@@ -1,4 +1,4 @@
-package com.wud.app;
+package app.wud.app;
 
 import com.getcapacitor.BridgeActivity;
 

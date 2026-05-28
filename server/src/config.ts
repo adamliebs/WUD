@@ -80,6 +80,11 @@ export const config = {
   /** Max JSON request body size. */
   bodyLimit: process.env.BODY_LIMIT ?? '2mb',
 
+  /** Directory for uploaded photos — must live on a persistent volume. */
+  uploadsDir: process.env.UPLOADS_DIR ?? 'uploads',
+  /** Max uploaded photo size, in bytes. */
+  maxUploadBytes: num('MAX_UPLOAD_BYTES', 8 * 1024 * 1024),
+
   /** Reverse proxies in front of the app (so client IPs / rate limits are correct). */
   trustProxy: num('TRUST_PROXY', isProd ? 1 : 0),
 
@@ -96,4 +101,14 @@ export const config = {
   sentryDsn: process.env.SENTRY_DSN ?? '',
   /** Release identifier surfaced to Sentry and logs. */
   release: process.env.RELEASE ?? process.env.GIT_SHA ?? 'dev',
+
+  /**
+   * Firebase service-account credentials for FCM push delivery. Either:
+   *   • FIREBASE_SERVICE_ACCOUNT_PATH = absolute path to the JSON file, OR
+   *   • FIREBASE_SERVICE_ACCOUNT_JSON = the JSON contents pasted inline.
+   * With neither set, dispatchPush() falls back to a console-log stub so the
+   * rest of the app continues to function without Firebase configured.
+   */
+  firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH ?? '',
+  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
 };

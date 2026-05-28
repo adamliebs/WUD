@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CAPACITOR_DEBUG</key>
+	<key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>WUD</string>
+	<string>WUD</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,10 +20,50 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<!-- Custom wud:// deep links (plan / activity routing). -->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.wud.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wud</string>
+			</array>
+		</dict>
+		<!-- Google Sign-In OAuth callback. Value MUST equal REVERSED_CLIENT_ID
+		     from GoogleService-Info.plist — keep in sync if Firebase regenerates
+		     it (e.g. on plist re-download). -->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.wud.app.google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.267273833603-2tmvtl41vo2434l5epon0f2aig0k0au7</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>WUD uses the camera so you can add photos to your profile, plans and chats.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WUD connects to a development server on your local network.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>WUD lets you choose photos from your library for your profile, plans and chats.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -45,16 +85,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.wud.app</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>wud</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

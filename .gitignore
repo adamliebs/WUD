@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# SQLite database files (a stray wud.db can land here if the backend is run
+# from the repo root — the real DB lives under server/).
+*.db
+*.db-shm
+*.db-wal
+
 # Env files — keep only the example committed.
 .env
 .env.*
