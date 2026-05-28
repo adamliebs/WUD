@@ -10,17 +10,6 @@ export interface Category {
   gradient: string; // tailwind class for gradient
 }
 
-export interface LiveStatus {
-  emoji: string;
-  text: string;
-  startedAt: number;
-  expiresAt: number;
-  /** Optional place — shown in the live-detail sheet. */
-  place?: string;
-  /** Whether friends are invited to join you. */
-  openToJoin?: boolean;
-}
-
 export interface Squad {
   id: string;
   name: string;
@@ -44,7 +33,6 @@ export interface User {
   /** Firebase Auth has verified the user owns their email. Always true for
    *  OAuth signups; false for new email signups until they click the link. */
   emailVerified?: boolean;
-  liveStatus?: LiveStatus;
 }
 
 export type ChatMessageType = 'text' | 'photo' | 'poll';
@@ -94,6 +82,8 @@ export interface Activity {
   /** Optional event banner — replaces the category gradient in card + detail hero. */
   bannerUrl?: string;
   startsAt: number;     // epoch ms
+  /** When the activity ends. Activities are "live" when now ∈ [startsAt, endsAt]. */
+  endsAt: number;       // epoch ms
   description: string;
   // RSVPs (none of these include the host). A user appears in at most one list.
   joinerIds: string[];  // "going"

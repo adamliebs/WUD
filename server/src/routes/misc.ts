@@ -5,9 +5,7 @@ import { handler, requireString } from '../lib/http.js';
 import { search, suggestions, trending } from '../services/discovery.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
 import { listNotifications, markAllRead, sendPing, unreadCount } from '../services/notifications.js';
-import { clearLiveStatus, setLiveStatus } from '../services/presence.js';
 import { friendIds } from '../services/social.js';
-import { getUserRow, toPublicUser } from '../services/users.js';
 
 export const miscRouter = Router();
 
@@ -24,40 +22,6 @@ miscRouter.get('/notifications', handler((req, res) => {
 
 miscRouter.post('/notifications/read', handler((req, res) => {
   markAllRead(uid(req));
-  res.json({ ok: true });
-}));
-
-/* ---- presence / live status ---- */
-
-miscRouter.get('/live', handler((req, res) => {
-  // Live statuses of the caller's friends (+ themselves).
-  const id = uid(req);
-  const ids = [id, ...friendIds(id)];
-  const live = ids
-    .map(getUserRow)
-    .filter((r): r is NonNullable<typeof r> => !!r)
-    .map(toPublicUser)
-    .filter(u => u.liveStatus);
-  res.json({ live });
-}));
-
-miscRouter.put('/me/live-status', handler((req, res) => {
-  const b = req.body ?? {};
-  if (typeof b.durationMins !== 'number') {
-    throw badRequest('VALIDATION', 'durationMins is required', 'durationMins');
-  }
-  const status = setLiveStatus(uid(req), {
-    emoji: requireString(b, 'emoji'),
-    text: requireString(b, 'text'),
-    place: typeof b.place === 'string' ? b.place : undefined,
-    openToJoin: !!b.openToJoin,
-    durationMins: b.durationMins,
-  });
-  res.json({ liveStatus: status });
-}));
-
-miscRouter.delete('/me/live-status', handler((req, res) => {
-  clearLiveStatus(uid(req));
   res.json({ ok: true });
 }));
 

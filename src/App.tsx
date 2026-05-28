@@ -13,7 +13,6 @@ import { PostSheet } from './screens/PostSheet';
 import { ActivityDetailSheet } from './screens/ActivityDetailSheet';
 import { AuthScreen } from './screens/AuthScreen';
 import { GoLiveSheet } from './screens/GoLiveSheet';
-import { LiveDetailSheet } from './screens/LiveDetailSheet';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { OverlayHost } from './screens/OverlayHost';
 import { PollComposerSheet } from './screens/PollComposerSheet';
@@ -80,7 +79,6 @@ function MainApp() {
       <PostSheet />
       <GoLiveSheet />
       <ActivityDetailSheet />
-      <LiveDetailSheet />
       <PollComposerSheet />
       <ReportSheet />
       <OverlayHost />

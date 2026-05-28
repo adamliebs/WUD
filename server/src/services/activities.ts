@@ -21,6 +21,7 @@ interface ActivityRow {
   lat: number | null;
   lng: number | null;
   starts_at: number;
+  ends_at: number;
   max_size: number | null;
   is_private: number;
   is_open_invite: number;
@@ -64,6 +65,7 @@ export function toActivity(row: ActivityRow): Activity {
     place: row.place,
     description: row.description,
     startsAt: row.starts_at,
+    endsAt: row.ends_at,
     joinerIds: rsvpIds(row.id, 'going'),
     maybeIds: rsvpIds(row.id, 'maybe'),
     cantIds: rsvpIds(row.id, 'cant'),
@@ -93,7 +95,9 @@ export function getActivity(id: string): Activity {
   return toActivity(row);
 }
 
-const isPast = (row: ActivityRow): boolean => row.starts_at < now();
+/** An activity is "past" only once its END time has elapsed. A live event
+ *  (started, still in its window) is current, not past. */
+const isPast = (row: ActivityRow): boolean => row.ends_at < now();
 
 /* ===================== visibility (SRS FR-FEED-02) ===================== */
 
@@ -136,12 +140,15 @@ export interface FeedFilters {
   timeWindow?: 'now' | 'today' | 'week' | 'all';
 }
 
-/** Visible, upcoming activities for the feed, with discovery filters applied. */
+/** Visible, current+upcoming activities for the feed. Live (started but
+ *  not ended) activities stay visible so they don't drop out of the feed
+ *  the moment they start — they migrate to the live strip and the main
+ *  list as the user's home page picks them up. */
 export function feedFor(userId: string, filters: FeedFilters = {}): Activity[] {
   const ts = now();
   const HOUR = 3_600_000, DAY = 86_400_000;
   const rows = q.all<ActivityRow>(
-    'SELECT * FROM activities WHERE starts_at >= ? AND dissolved_at IS NULL ORDER BY starts_at',
+    'SELECT * FROM activities WHERE ends_at >= ? AND dissolved_at IS NULL ORDER BY starts_at',
     ts,
   );
   return rows
@@ -161,16 +168,17 @@ export function feedFor(userId: string, filters: FeedFilters = {}): Activity[] {
 /** Whether any visible plan is reachable only via FoF (drives the scope toggle). */
 export function hasFoFAvailable(userId: string): boolean {
   return q.all<ActivityRow>(
-    'SELECT * FROM activities WHERE starts_at >= ? AND dissolved_at IS NULL', now(),
+    'SELECT * FROM activities WHERE ends_at >= ? AND dissolved_at IS NULL', now(),
   ).some(r => canSeeActivity(userId, r) && isFoF(userId, r));
 }
 
-/** Past activities the user hosted or RSVP'd to. */
+/** Past activities the user hosted or RSVP'd to. An activity only counts as
+ *  history once its end window has fully passed. */
 export function historyFor(userId: string): Activity[] {
   const rows = q.all<ActivityRow>(
     `SELECT DISTINCT a.* FROM activities a
        LEFT JOIN rsvps r ON r.activity_id = a.id AND r.user_id = ?
-      WHERE a.starts_at < ? AND (a.host_id = ? OR r.user_id = ?)
+      WHERE a.ends_at < ? AND (a.host_id = ? OR r.user_id = ?)
       ORDER BY a.starts_at DESC`,
     userId, now(), userId, userId,
   );
@@ -187,6 +195,10 @@ export function createActivity(hostId: string, input: {
   place?: string;
   description?: string;
   startsAt: number;
+  /** Required. Must be strictly after startsAt. Activities without an end
+   *  time aren't supported — clients pick a chip ("1h"/"2h"/etc.) for the
+   *  "Happening now" mode or a full picker for scheduled. */
+  endsAt: number;
   maxSize?: number;
   isPrivate?: boolean;
   isOpenInvite?: boolean;
@@ -195,6 +207,9 @@ export function createActivity(hostId: string, input: {
   reminderMins?: number | null;
   squadIds?: string[];
 }): Activity {
+  if (!Number.isFinite(input.endsAt) || input.endsAt <= input.startsAt) {
+    throw badRequest('INVALID_END_TIME', 'End time must be after start time', 'endsAt');
+  }
   const id = newId();
   const ts = now();
   const isCustom = input.category === 'custom';
@@ -207,9 +222,9 @@ export function createActivity(hostId: string, input: {
     q.run(
       `INSERT INTO activities
         (id, host_id, category, custom_emoji, custom_label, title, description, place,
-         starts_at, max_size, is_private, is_open_invite, banner_url,
+         starts_at, ends_at, max_size, is_private, is_open_invite, banner_url,
          recurrence, reminder_minutes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, hostId, input.category,
       isCustom ? (input.customEmoji?.trim() || '✨') : null,
       isCustom ? (input.customLabel?.trim() || 'Custom') : null,
@@ -217,6 +232,7 @@ export function createActivity(hostId: string, input: {
       input.description?.trim() ?? '',
       input.place?.trim() ?? '',
       input.startsAt,
+      input.endsAt,
       input.maxSize ?? null,
       input.isPrivate ? 1 : 0,
       input.isOpenInvite === false ? 0 : 1,
@@ -242,7 +258,8 @@ export function createActivity(hostId: string, input: {
  * before. Storage encoding for reminderMins: undefined→NULL, null→-1, n→n.
  */
 export function updateActivity(actorId: string, activityId: string, patch: {
-  title?: string; description?: string; place?: string; startsAt?: number;
+  title?: string; description?: string; place?: string;
+  startsAt?: number; endsAt?: number;
   maxSize?: number | null; bannerUrl?: string | null;
   // 'default' clears the override (use the user's default), 'off' disables it.
   reminderMins?: number | 'default' | 'off';
@@ -252,14 +269,23 @@ export function updateActivity(actorId: string, activityId: string, patch: {
 
   const reminderOnly =
     patch.title === undefined && patch.description === undefined && patch.place === undefined &&
-    patch.startsAt === undefined && patch.maxSize === undefined && patch.bannerUrl === undefined;
+    patch.startsAt === undefined && patch.endsAt === undefined &&
+    patch.maxSize === undefined && patch.bannerUrl === undefined;
 
   // Host-only for content edits; participants may tweak only their reminder.
   if (!reminderOnly && row.host_id !== actorId) {
     throw forbidden('Only the host can edit this plan');
   }
   if (!reminderOnly && isPast(row)) {
-    throw conflict('ACTIVITY_OVER', 'This plan has already started');
+    throw conflict('ACTIVITY_OVER', 'This plan has already ended');
+  }
+
+  // Validate that any new time window stays end-after-start. Use the patched
+  // value if present, else the existing row's value.
+  const nextStarts = patch.startsAt ?? row.starts_at;
+  const nextEnds   = patch.endsAt   ?? row.ends_at;
+  if (nextEnds <= nextStarts) {
+    throw badRequest('INVALID_END_TIME', 'End time must be after start time', 'endsAt');
   }
 
   const reminderCol =
@@ -269,12 +295,13 @@ export function updateActivity(actorId: string, activityId: string, patch: {
     : patch.reminderMins;                                    // explicit lead
 
   q.run(
-    `UPDATE activities SET title = ?, description = ?, place = ?, starts_at = ?,
+    `UPDATE activities SET title = ?, description = ?, place = ?, starts_at = ?, ends_at = ?,
        max_size = ?, banner_url = ?, reminder_minutes = ?, updated_at = ? WHERE id = ?`,
     patch.title?.trim() || row.title,
     patch.description?.trim() ?? row.description,
     patch.place?.trim() ?? row.place,
-    patch.startsAt ?? row.starts_at,
+    nextStarts,
+    nextEnds,
     patch.maxSize === undefined ? row.max_size : patch.maxSize,
     patch.bannerUrl === undefined ? row.banner_url : patch.bannerUrl,
     reminderCol,

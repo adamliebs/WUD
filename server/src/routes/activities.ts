@@ -43,6 +43,9 @@ activitiesRouter.post('/activities', handler((req, res) => {
   if (typeof b.startsAt !== 'number') {
     throw badRequest('VALIDATION', 'startsAt (epoch ms) is required', 'startsAt');
   }
+  if (typeof b.endsAt !== 'number') {
+    throw badRequest('VALIDATION', 'endsAt (epoch ms) is required', 'endsAt');
+  }
   const activity = createActivity(uid(req), {
     category: requireString(b, 'category') as CategoryKey,
     customEmoji: optionalString(b, 'customEmoji'),
@@ -51,6 +54,7 @@ activitiesRouter.post('/activities', handler((req, res) => {
     place: optionalString(b, 'place'),
     description: optionalString(b, 'description'),
     startsAt: b.startsAt,
+    endsAt: b.endsAt,
     maxSize: typeof b.maxSize === 'number' ? b.maxSize : undefined,
     isPrivate: !!b.isPrivate,
     isOpenInvite: b.isOpenInvite !== false,
@@ -76,6 +80,7 @@ activitiesRouter.patch('/activities/:id', handler((req, res) => {
     description: optionalString(b, 'description'),
     place: optionalString(b, 'place'),
     startsAt: typeof b.startsAt === 'number' ? b.startsAt : undefined,
+    endsAt:   typeof b.endsAt   === 'number' ? b.endsAt   : undefined,
     maxSize: 'maxSize' in b ? (b.maxSize ?? null) : undefined,
     bannerUrl: 'bannerUrl' in b ? (b.bannerUrl ?? null) : undefined,
     // Wire encoding: 'default' clears the override, 'off' disables, number = lead.

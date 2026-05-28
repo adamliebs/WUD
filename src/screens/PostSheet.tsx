@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Calendar, Camera, Clock, Globe2, Loader2, Lock, Sparkles } from 'lucide-react';
+import { Calendar, Camera, Clock, Globe2, Loader2, Lock, Radio, Sparkles } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
@@ -63,8 +63,21 @@ export function PostSheet() {
   const [title, setTitle] = useState('');
   const [place, setPlace] = useState('');
   const [description, setDescription] = useState('');
+  // Two-mode time picker:
+  //   'now'      — activity is happening RIGHT NOW; user picks a duration chip
+  //                and the start time is `Date.now()` at submit. Renders a
+  //                glowing GO LIVE indicator instead of a date picker.
+  //   'scheduled'— traditional pick-a-day-and-time, plus a duration chip
+  //                (or "Custom" end date+time) for the window.
+  // Default = scheduled; if the user wants a live event the lighter
+  // GoLiveSheet is the dedicated shortcut.
+  const [timeMode, setTimeMode] = useState<'now' | 'scheduled'>('scheduled');
   const [dayOffset, setDayOffset] = useState<number>(0);
   const [time, setTime] = useState<string>(nextQuarterTime());
+  // Duration in minutes. Drives endsAt in BOTH modes by default; "Custom" in
+  // scheduled mode flips to an explicit end day+time picker (customEnd state).
+  const [durationMins, setDurationMins] = useState<number>(120);
+  const [customEnd, setCustomEnd] = useState<{ dayOffset: number; time: string } | null>(null);
   const [maxSize, setMaxSize] = useState<number | undefined>(undefined);
   const [isPrivate, setIsPrivate] = useState<boolean>(false);
   const [bannerUrl, setBannerUrl] = useState<string | undefined>(undefined);
@@ -107,13 +120,23 @@ export function PostSheet() {
         gradient: CUSTOM_GRADIENT,
       }
     : CATEGORIES.find(c => c.key === category)!;
-  const startsAt = computeStartsAt(dayOffset, time);
-  const startsAtLabel = formatStartsAt(dayOffset, time);
+  // For 'now' mode, both the start-of-window and recurrence-weekday hint
+  // come from "today, now". For 'scheduled' mode the chosen pickers drive
+  // them — same as before.
+  const startsAt = timeMode === 'now'
+    ? Date.now()
+    : computeStartsAt(dayOffset, time);
+  const startsAtLabel = timeMode === 'now'
+    ? 'Starting now'
+    : formatStartsAt(dayOffset, time);
 
   const reset = () => {
     setCategory('coffee'); setCustomEmoji(''); setCustomLabel('');
     setTitle(''); setPlace(''); setDescription('');
-    setDayOffset(0); setTime(nextQuarterTime()); setMaxSize(undefined);
+    setTimeMode('scheduled');
+    setDayOffset(0); setTime(nextQuarterTime());
+    setDurationMins(120); setCustomEnd(null);
+    setMaxSize(undefined);
     setIsPrivate(false);
     setBannerUrl(undefined);
     setRecurrence(undefined);
@@ -138,11 +161,37 @@ export function PostSheet() {
 
   const audienceEmpty = !openInvite && selectedSquadIds.length === 0;
 
+  // Derived submit times — depend on the active mode + state.
+  //   'now':       starts = right-now-at-submit; ends = starts + duration.
+  //   'scheduled': starts = chosen day+time; ends = either a duration chip
+  //                offset from start, or an explicit customEnd day+time.
+  const computedTimes = (): { startsAt: number; endsAt: number } => {
+    if (timeMode === 'now') {
+      const start = Date.now();
+      return { startsAt: start, endsAt: start + durationMins * 60_000 };
+    }
+    const start = computeStartsAt(dayOffset, time);
+    const end = customEnd
+      ? computeStartsAt(customEnd.dayOffset, customEnd.time)
+      : start + durationMins * 60_000;
+    return { startsAt: start, endsAt: end };
+  };
+
   const submit = () => {
     if (audienceEmpty) return;
+    const { startsAt: liveStartsAt, endsAt: liveEndsAt } = computedTimes();
+    // Custom end-time must fall after start. Other paths are safe by
+    // construction (chips are positive offsets).
+    if (liveEndsAt <= liveStartsAt) {
+      pushToast('End time must be after the start', 'warn');
+      return;
+    }
     post({
       category, customEmoji, customLabel,
-      title, place, startsAt, description, maxSize,
+      title, place,
+      startsAt: liveStartsAt,
+      endsAt: liveEndsAt,
+      description, maxSize,
       // isPrivate only meaningful for open-invite plans
       isPrivate: openInvite ? isPrivate : false,
       bannerUrl, recurrence,
@@ -279,44 +328,221 @@ export function PostSheet() {
               </span>
             }
           >
-            {/* Day strip — horizontal scroll, auto-width chips so "Tomorrow" fits */}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 -mx-1 px-1">
-              {days.map(d => {
-                const active = d.offset === dayOffset;
+            {/* Mode toggle — "Happening now" vs "Scheduled". */}
+            <div className="grid grid-cols-2 bg-white/5 border border-white/10 rounded-2xl p-1 relative mb-3">
+              {(['now', 'scheduled'] as const).map(m => {
+                const active = timeMode === m;
                 return (
-                  <motion.button
-                    key={d.offset}
-                    whileTap={{ scale: 0.92 }}
-                    onClick={() => setDayOffset(d.offset)}
-                    className={`shrink-0 px-4 py-2 rounded-2xl border transition flex flex-col items-center justify-center min-w-[64px]
-                                ${active
-                                  ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_10px_30px_-12px_rgba(244,63,94,0.7)]'
-                                  : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                  <button
+                    key={m}
+                    onClick={() => setTimeMode(m)}
+                    className="relative py-2 rounded-xl text-[12px] font-semibold text-zinc-300"
                   >
-                    <span className={`text-[10px] uppercase tracking-widest font-semibold whitespace-nowrap ${active ? 'text-white/90' : 'text-zinc-400'}`}>
-                      {d.offset < 2 ? d.label : d.weekday}
+                    {active && (
+                      <motion.div
+                        layoutId="timemode-pill"
+                        className="absolute inset-0 bg-white rounded-xl"
+                        transition={{ type: 'spring', stiffness: 480, damping: 32 }}
+                      />
+                    )}
+                    <span className={`relative inline-flex items-center gap-1.5 ${active ? 'text-zinc-900' : ''}`}>
+                      {m === 'now' ? <Radio size={12} /> : <Calendar size={12} />}
+                      {m === 'now' ? 'Happening now' : 'Scheduled'}
                     </span>
-                    <span className="text-xl font-black leading-tight mt-0.5">
-                      {d.day}
-                    </span>
-                  </motion.button>
+                  </button>
                 );
               })}
             </div>
 
-            {/* Time pill */}
-            <label className="mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10
-                              focus-within:ring-2 focus-within:ring-rose-400/60 focus-within:border-rose-400/30 cursor-pointer">
-              <Clock size={16} className="text-zinc-400" />
-              <span className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Time</span>
-              <input
-                type="time"
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                className="ml-auto bg-transparent text-white font-semibold text-base focus:outline-none
-                           [color-scheme:dark]"
-              />
-            </label>
+            {timeMode === 'now' ? (
+              /* GO LIVE banner — gives the "right now" mode a distinctive feel
+                 so the user understands the activity will publish + start
+                 immediately on submit. */
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="relative overflow-hidden rounded-2xl border border-rose-400/40
+                           bg-gradient-to-br from-rose-500/20 via-rose-500/10 to-orange-500/10
+                           px-4 py-3 mb-3"
+              >
+                {/* Subtle pulse so the badge feels alive. */}
+                <motion.span
+                  aria-hidden
+                  className="absolute -inset-1 rounded-2xl pointer-events-none"
+                  initial={{ boxShadow: '0 0 0 0 rgba(244, 63, 94, 0.55)' }}
+                  animate={{ boxShadow: [
+                    '0 0 0 0 rgba(244, 63, 94, 0.55)',
+                    '0 0 0 12px rgba(244, 63, 94, 0)',
+                    '0 0 0 0 rgba(244, 63, 94, 0)',
+                  ] }}
+                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+                />
+                <div className="relative flex items-center gap-3">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.9)]" />
+                  <div className="flex-1">
+                    <div className="text-[12px] uppercase tracking-[0.18em] font-black text-rose-100">
+                      GO LIVE
+                    </div>
+                    <div className="text-[11px] text-rose-200/85 mt-0.5">
+                      Starts the moment you post. Pick how long it'll run.
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <>
+                {/* Day strip — horizontal scroll, auto-width chips so "Tomorrow" fits */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 -mx-1 px-1">
+                  {days.map(d => {
+                    const active = d.offset === dayOffset;
+                    return (
+                      <motion.button
+                        key={d.offset}
+                        whileTap={{ scale: 0.92 }}
+                        onClick={() => setDayOffset(d.offset)}
+                        className={`shrink-0 px-4 py-2 rounded-2xl border transition flex flex-col items-center justify-center min-w-[64px]
+                                    ${active
+                                      ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_10px_30px_-12px_rgba(244,63,94,0.7)]'
+                                      : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                      >
+                        <span className={`text-[10px] uppercase tracking-widest font-semibold whitespace-nowrap ${active ? 'text-white/90' : 'text-zinc-400'}`}>
+                          {d.offset < 2 ? d.label : d.weekday}
+                        </span>
+                        <span className="text-xl font-black leading-tight mt-0.5">
+                          {d.day}
+                        </span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                {/* Start time pill */}
+                <label className="mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10
+                                  focus-within:ring-2 focus-within:ring-rose-400/60 focus-within:border-rose-400/30 cursor-pointer">
+                  <Clock size={16} className="text-zinc-400" />
+                  <span className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Time</span>
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={e => setTime(e.target.value)}
+                    className="ml-auto bg-transparent text-white font-semibold text-base focus:outline-none
+                               [color-scheme:dark]"
+                  />
+                </label>
+              </>
+            )}
+
+            {/* Duration chips — drive endsAt in both modes. "Custom" expands
+                an explicit end-time picker for scheduled events that span
+                long windows or land on a different day. */}
+            <div className="mt-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold px-1 mb-1.5">
+              How long?
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { mins: 30,  label: '30m' },
+                { mins: 60,  label: '1h' },
+                { mins: 120, label: '2h' },
+                { mins: 240, label: '4h' },
+                { mins: 480, label: '8h' },
+              ] as const).map(opt => {
+                const active = !customEnd && durationMins === opt.mins;
+                return (
+                  <motion.button
+                    key={opt.mins}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => { setDurationMins(opt.mins); setCustomEnd(null); }}
+                    className={`px-3 py-1.5 rounded-full text-[12px] font-bold border transition
+                                ${active
+                                  ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_6px_18px_-8px_rgba(244,63,94,0.6)]'
+                                  : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                  >
+                    {opt.label}
+                  </motion.button>
+                );
+              })}
+              {/* Custom — flips to explicit end day+time inputs below.
+                  Disabled in 'now' mode since the day picker doesn't make
+                  sense there (you'd be picking a future day for "now"). */}
+              {timeMode === 'scheduled' && (
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => {
+                    if (customEnd) {
+                      setCustomEnd(null);
+                    } else {
+                      // Seed with start + 2h so the user has a reasonable
+                      // default to tweak.
+                      const seedStart = computeStartsAt(dayOffset, time) + 2 * 60 * 60 * 1000;
+                      const d = new Date(seedStart);
+                      // Day offset relative to today
+                      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+                      const dayOf  = new Date(d);  dayOf.setHours(0, 0, 0, 0);
+                      const offset = Math.round((dayOf.getTime() - today0.getTime()) / 86_400_000);
+                      const hh = String(d.getHours()).padStart(2, '0');
+                      const mm = String(d.getMinutes()).padStart(2, '0');
+                      setCustomEnd({ dayOffset: Math.max(0, offset), time: `${hh}:${mm}` });
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-bold border transition
+                              ${customEnd
+                                ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400'
+                                : 'bg-white/5 text-zinc-200 border-white/10 border-dashed hover:bg-white/10'}`}
+                >
+                  {customEnd ? 'Custom ✓' : 'Custom'}
+                </motion.button>
+              )}
+            </div>
+
+            {/* Explicit end-time picker — only when "Custom" is on in
+                scheduled mode. Lets the user pick a different end day. */}
+            {timeMode === 'scheduled' && customEnd && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden mt-3"
+              >
+                <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold px-1 mb-1.5">
+                  Ends on
+                </div>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 -mx-1 px-1">
+                  {days.map(d => {
+                    const active = d.offset === customEnd.dayOffset;
+                    return (
+                      <motion.button
+                        key={d.offset}
+                        whileTap={{ scale: 0.92 }}
+                        onClick={() => setCustomEnd({ ...customEnd, dayOffset: d.offset })}
+                        className={`shrink-0 px-4 py-2 rounded-2xl border transition flex flex-col items-center justify-center min-w-[64px]
+                                    ${active
+                                      ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400'
+                                      : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                      >
+                        <span className={`text-[10px] uppercase tracking-widest font-semibold whitespace-nowrap ${active ? 'text-white/90' : 'text-zinc-400'}`}>
+                          {d.offset < 2 ? d.label : d.weekday}
+                        </span>
+                        <span className="text-xl font-black leading-tight mt-0.5">
+                          {d.day}
+                        </span>
+                      </motion.button>
+                    );
+                  })}
+                </div>
+                <label className="mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10
+                                  focus-within:ring-2 focus-within:ring-rose-400/60 focus-within:border-rose-400/30 cursor-pointer">
+                  <Clock size={16} className="text-zinc-400" />
+                  <span className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">End time</span>
+                  <input
+                    type="time"
+                    value={customEnd.time}
+                    onChange={e => setCustomEnd({ ...customEnd, time: e.target.value })}
+                    className="ml-auto bg-transparent text-white font-semibold text-base focus:outline-none
+                               [color-scheme:dark]"
+                  />
+                </label>
+              </motion.div>
+            )}
           </Section>
 
           {/* Place */}

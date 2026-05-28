@@ -71,7 +71,6 @@ export interface Bootstrap {
   activities: Activity[];
   notifications: AppNotification[];
   unread: number;
-  live: User[];
   hasFoF: boolean;
   users: User[];
 }
@@ -119,7 +118,10 @@ export const activityApi = {
 
   create: (b: {
     category: CategoryKey; customEmoji?: string; customLabel?: string;
-    title: string; place?: string; description?: string; startsAt: number;
+    title: string; place?: string; description?: string;
+    startsAt: number;
+    /** Required. Must be strictly after startsAt. */
+    endsAt: number;
     maxSize?: number; isPrivate?: boolean; isOpenInvite?: boolean;
     bannerUrl?: string; recurrence?: Recurrence; reminderMins?: number | null;
     squadIds?: string[];
@@ -197,17 +199,12 @@ export const uploadApi = {
   },
 };
 
-/* ---- notifications / presence / discovery ---- */
+/* ---- notifications / discovery ---- */
 
 export const miscApi = {
   notifications: () =>
     api.get<{ notifications: AppNotification[]; unread: number; users: User[] }>('/notifications'),
   markRead: () => api.post('/notifications/read'),
-
-  live: () => api.get<{ live: User[] }>('/live'),
-  setLive: (b: { emoji: string; text: string; place?: string; openToJoin?: boolean; durationMins: number }) =>
-    api.put<{ liveStatus: User['liveStatus'] }>('/me/live-status', b),
-  clearLive: () => api.del('/me/live-status'),
 
   ping: (text: string, recipientIds: string[]) =>
     api.post<{ delivered: number }>('/pings', { text, recipientIds }),

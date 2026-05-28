@@ -8,7 +8,7 @@ import { BottomSheet } from '../components/BottomSheet';
 import { PollBubble } from '../components/PollBubble';
 import { ReactionBar } from '../components/ReactionBar';
 import { categoryFor } from '../data/categories';
-import { clockTime, isPast, recurrenceLabel, relTime, useApp } from '../store';
+import { clockTime, isLiveActivity, isPast, recurrenceLabel, relTime, useApp } from '../store';
 import { mediaUrl } from '../api/client';
 
 export function ActivityDetailSheet() {
@@ -73,6 +73,7 @@ function Inner({ activityId }: { activityId: string }) {
   const total = 1 + activity.joinerIds.length;
   const full = activity.maxSize ? total >= activity.maxSize : false;
   const over = isPast(activity);
+  const live = isLiveActivity(activity);
 
   const onGoing = () => {
     // Only fire confetti when transitioning INTO going from anything else.
@@ -199,6 +200,12 @@ function Inner({ activityId }: { activityId: string }) {
               {recurrenceLabel(activity.recurrence)}
             </span>
           )}
+          {live && (
+            <span className="ml-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-rose-500/80 backdrop-blur px-1.5 py-0.5 rounded-full">
+              <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-white live-dot" />
+              Live
+            </span>
+          )}
           {over && (
             <span className="ml-1 text-[10px] font-bold uppercase tracking-widest text-zinc-100 bg-black/45 backdrop-blur px-1.5 py-0.5 rounded-full">
               Over
@@ -267,9 +274,19 @@ function Inner({ activityId }: { activityId: string }) {
               // RSVP layout — pills + Open chat shortcut + helper text).
               className="absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-48"
             >
-              {/* Info rows */}
-              <InfoRow icon={<Clock size={16} />} label="When"
-                value={`${clockTime(activity.startsAt)} · ${relTime(activity.startsAt)}`} />
+              {/* Info rows — when live, swap to "Started Xm ago · Ym left" so
+                  participants know the current state of the window at a glance
+                  instead of seeing the start time receding into the past. */}
+              {live ? (
+                <InfoRow
+                  icon={<Clock size={16} />}
+                  label="Live now"
+                  value={liveTimingLabel(activity)}
+                />
+              ) : (
+                <InfoRow icon={<Clock size={16} />} label="When"
+                  value={`${clockTime(activity.startsAt)} · ${relTime(activity.startsAt)}`} />
+              )}
               {activity.place && (
                 <InfoRow icon={<MapPin size={16} />} label="Where" value={activity.place} />
               )}
@@ -561,6 +578,22 @@ function SquadTagRow({ squadIds, isOpenInvite }: { squadIds: string[]; isOpenInv
       </div>
     </div>
   );
+}
+
+/** "Started Xm ago · Ym left" — used when the activity is currently in its
+ *  [startsAt, endsAt] window. Uses "Xh Ym" once the value crosses an hour. */
+function liveTimingLabel(a: import('../types').Activity): string {
+  const now = Date.now();
+  const sinceStart = Math.max(0, now - a.startsAt);
+  const untilEnd = Math.max(0, a.endsAt - now);
+  const fmt = (ms: number) => {
+    const m = Math.round(ms / 60_000);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
+  };
+  return `Started ${fmt(sinceStart)} ago · ${fmt(untilEnd)} left`;
 }
 
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

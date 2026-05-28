@@ -217,14 +217,8 @@ interface State {
   isSquadHost: (squadId: string) => boolean;
   amInSquad: (squadId: string) => boolean;
 
-  setLiveStatus: (input: {
-    emoji: string; text: string; durationMins: number; place?: string; openToJoin?: boolean;
-  }) => void;
-  clearLiveStatus: () => void;
   showGoLiveSheet: boolean;
   setShowGoLiveSheet: (b: boolean) => void;
-  openLiveUserId: string | null;
-  setOpenLiveUserId: (id: string | null) => void;
 
   postActivity: (input: {
     category: CategoryKey;
@@ -233,6 +227,8 @@ interface State {
     title: string;
     place: string;
     startsAt: number;
+    /** Required. Must be strictly after startsAt. */
+    endsAt: number;
     description: string;
     maxSize?: number;
     isPrivate?: boolean;
@@ -323,10 +319,13 @@ export const useApp = create<State>((set, get) => {
     const { activities, users } = await activityApi.feed();
     mergeUsers(users);
     set(state => ({
-      // Replace the upcoming partition; keep past activities (History) intact.
+      // Replace the upcoming-and-live partition; keep past activities (History) intact.
+      // The cutoff is endsAt now, so an activity that's mid-window still counts
+      // as current and gets refreshed from the server response, not preserved
+      // as a stale "past" record.
       activities: dedupeById([
         ...activities,
-        ...state.activities.filter(a => a.startsAt < Date.now()),
+        ...state.activities.filter(a => a.endsAt < Date.now()),
       ]),
     }));
     syncSubscriptions();
@@ -337,7 +336,7 @@ export const useApp = create<State>((set, get) => {
     mergeUsers(users);
     set(state => ({
       activities: dedupeById([
-        ...state.activities.filter(a => a.startsAt >= Date.now()),
+        ...state.activities.filter(a => a.endsAt >= Date.now()),
         ...activities,
       ]),
     }));
@@ -416,7 +415,9 @@ export const useApp = create<State>((set, get) => {
       return;
     }
     if (type === 'presence.changed') {
-      void refreshFriends();      // friends carry current liveStatus
+      // Legacy channel still emits when friends transition state; nothing to
+      // do now that "live" is a property of activities, not users. The feed
+      // refreshes on activity:* events instead.
       return;
     }
     if (channel.startsWith('activity:')) {
@@ -443,7 +444,7 @@ export const useApp = create<State>((set, get) => {
     }
     set({
       meId: b.user.id,
-      users: dedupeUsers([b.user, ...b.users, ...b.live]),
+      users: dedupeUsers([b.user, ...b.users]),
       friendIds: b.friendIds,
       activities: dedupeById(b.activities),
       squads: b.squads,
@@ -638,7 +639,6 @@ export const useApp = create<State>((set, get) => {
     openActivityId: null,
     showPostSheet: false,
     showGoLiveSheet: false,
-    openLiveUserId: null,
     pollComposerActivityId: null,
     feedScope: 'fof',
     feedFilters: { timeWindow: 'all', sort: 'soonest' },
@@ -695,7 +695,7 @@ export const useApp = create<State>((set, get) => {
       const HOUR = 60 * 60 * 1000;
       const DAY = 24 * HOUR;
       const filtered = s.activities
-        .filter(a => a.startsAt >= now)
+        .filter(a => a.endsAt >= now)
         .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a))
         .filter(a => !f.category || a.category === f.category)
         // When a specific custom label is selected (e.g. "Pickleball"),
@@ -720,7 +720,9 @@ export const useApp = create<State>((set, get) => {
     },
     hasFoFAvailable: () => {
       const s = get();
-      return s.activities.some(a => a.startsAt >= Date.now() && s.isFoFActivity(a));
+      // Use endsAt — an in-progress (live) FoF activity still counts as
+      // an available FoF surface that should reveal the scope toggle.
+      return s.activities.some(a => a.endsAt >= Date.now() && s.isFoFActivity(a));
     },
     unreadCount: () => get().notifications.filter(n => !n.read).length,
 
@@ -734,7 +736,7 @@ export const useApp = create<State>((set, get) => {
       const s = get();
       const now = Date.now();
       const pool = s.activities
-        .filter(a => a.startsAt >= now)
+        .filter(a => a.endsAt >= now)
         .filter(a => s.canSeeActivity(a))
         .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a));
 
@@ -797,7 +799,7 @@ export const useApp = create<State>((set, get) => {
       // Mirror the feed's visibility logic so the digests match what the user
       // can actually scroll to below — including the friends-vs-FoF toggle.
       const upcoming = s.activities
-        .filter(a => a.startsAt >= now)
+        .filter(a => a.endsAt >= now)
         .filter(a => s.canSeeActivity(a))
         .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a));
 
@@ -923,7 +925,7 @@ export const useApp = create<State>((set, get) => {
       }
 
       const scored = s.activities
-        .filter(a => a.startsAt >= now)
+        .filter(a => a.endsAt >= now)
         .filter(a => a.hostId !== myId)
         .filter(a => !a.joinerIds.includes(myId))
         .filter(a => s.canSeeActivity(a))
@@ -986,7 +988,6 @@ export const useApp = create<State>((set, get) => {
       else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); }
     },
     setShowGoLiveSheet: (b) => set({ showGoLiveSheet: b }),
-    setOpenLiveUserId: (id) => set({ openLiveUserId: id }),
     setPollComposerActivityId: (id) => set({ pollComposerActivityId: id }),
 
     /** Opening an activity refetches it (fresh chat/RSVPs) + subscribes for realtime. */
@@ -1098,7 +1099,7 @@ export const useApp = create<State>((set, get) => {
       set({
         meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],
         notifications: [], squads: [],
-        tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
+        tab: 'feed', openActivityId: null, showPostSheet: false,
         showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
         feedFilters: { timeWindow: 'all', sort: 'soonest' },
         pendingSignup: null, authState: 'welcome',
@@ -1114,7 +1115,7 @@ export const useApp = create<State>((set, get) => {
         set({
           meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],
           notifications: [], squads: [],
-          tab: 'feed', openActivityId: null, openLiveUserId: null, showPostSheet: false,
+          tab: 'feed', openActivityId: null, showPostSheet: false,
           showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
           feedFilters: { timeWindow: 'all', sort: 'soonest' },
           pendingSignup: null, authState: 'welcome',
@@ -1286,28 +1287,6 @@ export const useApp = create<State>((set, get) => {
       });
     },
 
-    /* ---- live status ---- */
-
-    setLiveStatus: ({ emoji, text, durationMins, place, openToJoin }) => {
-      void guard(async () => {
-        const { liveStatus } = await miscApi.setLive({ emoji, text, durationMins, place, openToJoin });
-        set(state => ({
-          users: state.users.map(u => (u.id === state.meId ? { ...u, liveStatus } : u)),
-          showGoLiveSheet: false,
-        }));
-        toast(`You're live: ${emoji} ${text}`, 'success');
-      });
-    },
-    clearLiveStatus: () => {
-      void guard(async () => {
-        await miscApi.clearLive();
-        set(state => ({
-          users: state.users.map(u => (u.id === state.meId ? { ...u, liveStatus: undefined } : u)),
-        }));
-        toast('Went offline', 'default');
-      });
-    },
-
     /* ---- activities ---- */
 
     postActivity: (input) => {
@@ -1320,6 +1299,7 @@ export const useApp = create<State>((set, get) => {
           place: input.place,
           description: input.description,
           startsAt: input.startsAt,
+          endsAt: input.endsAt,
           maxSize: input.maxSize,
           isPrivate: input.isPrivate,
           isOpenInvite: input.isOpenInvite,
@@ -1510,14 +1490,15 @@ function dedupeUsers(users: User[]): User[] {
   return [...map.values()];
 }
 
-/** An activity is "over" once its start time has passed. */
-export function isPast(a: { startsAt: number }): boolean {
-  return a.startsAt < Date.now();
+/** An activity is "over" once its end time has passed. */
+export function isPast(a: { endsAt: number }): boolean {
+  return a.endsAt < Date.now();
 }
 
-/** A user is "live" when they have an unexpired liveStatus. */
-export function isLive(u: { liveStatus?: { expiresAt: number } }): boolean {
-  return !!u.liveStatus && u.liveStatus.expiresAt > Date.now();
+/** True if the activity's [startsAt, endsAt] window covers `now`. */
+export function isLiveActivity(a: { startsAt: number; endsAt: number }): boolean {
+  const ts = Date.now();
+  return a.startsAt <= ts && ts <= a.endsAt;
 }
 
 /** Resolve the active reminder lead time (mins) for an activity; null = off. */

@@ -32,7 +32,6 @@ function closeTopLayer(): boolean {
   const s = useApp.getState();
   if (s.pollComposerActivityId) { s.setPollComposerActivityId(null); return true; }
   if (s.showGoLiveSheet)        { s.setShowGoLiveSheet(false); return true; }
-  if (s.openLiveUserId)         { s.setOpenLiveUserId(null); return true; }
   if (s.openActivityId)         { s.openActivity(null); return true; }
   if (s.showPostSheet)          { s.setShowPostSheet(false); return true; }
   if (s.overlay)                { s.openOverlay(null); return true; }

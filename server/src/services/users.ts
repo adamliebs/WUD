@@ -2,7 +2,6 @@ import { q } from '../db/index.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { newId, now, shortId } from '../lib/ids.js';
 import type { AppSettings, PublicUser } from '../types.js';
-import { getLiveStatus } from './presence.js';
 
 interface UserRow {
   id: string;
@@ -28,9 +27,8 @@ export function handleAvailable(handle: string): boolean {
   return !q.get('SELECT 1 FROM users WHERE handle = ? COLLATE NOCASE', handle);
 }
 
-/** Serialize a user row → API PublicUser, attaching live status if active. */
+/** Serialize a user row → API PublicUser. */
 export function toPublicUser(row: UserRow): PublicUser {
-  const live = getLiveStatus(row.id);
   return {
     id: row.id,
     name: row.name,
@@ -39,7 +37,6 @@ export function toPublicUser(row: UserRow): PublicUser {
     color: row.color,
     photoUrl: row.photo_url ?? undefined,
     emailVerified: !!row.email_verified,
-    liveStatus: live ?? undefined,
   };
 }
 

@@ -5,7 +5,7 @@ import { feedFor, hasFoFAvailable, historyFor } from '../services/activities.js'
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
 import { listNotifications, unreadCount } from '../services/notifications.js';
 import { friendIds, listFriends, listSquadsForUser } from '../services/social.js';
-import { getPublicUser, getSettings, getUserRow, toPublicUser } from '../services/users.js';
+import { getPublicUser, getSettings } from '../services/users.js';
 
 export const bootstrapRouter = Router();
 
@@ -22,13 +22,6 @@ bootstrapRouter.get('/bootstrap', handler((req, res) => {
   const squads = listSquadsForUser(me);
   const notifications = listNotifications(me);
   const friends = listFriends(me);
-
-  // Live statuses of me + friends (PublicUser objects already carry liveStatus).
-  const live = [me, ...friendIds(me)]
-    .map(getUserRow)
-    .filter((r): r is NonNullable<typeof r> => !!r)
-    .map(toPublicUser)
-    .filter(u => u.liveStatus);
 
   // Everyone referenced anywhere, hydrated into a flat cache.
   const userIds = collectUserIds({
@@ -47,7 +40,6 @@ bootstrapRouter.get('/bootstrap', handler((req, res) => {
     activities: [...feed, ...history],
     notifications,
     unread: unreadCount(me),
-    live,
     hasFoF: hasFoFAvailable(me),
     users: hydrateUsers(userIds),
   });

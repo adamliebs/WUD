@@ -3,13 +3,11 @@ import { q } from './db/index.js';
 import { logger } from './lib/logger.js';
 import { newId, now } from './lib/ids.js';
 import { createNotification } from './services/notifications.js';
-import { purgeExpiredLiveStatuses } from './services/presence.js';
 import { getSettings } from './services/users.js';
 
 /**
- * Background scheduler (SRS §7.2). A single timer drives three jobs:
+ * Background scheduler (SRS §7.2). A single timer drives two jobs:
  *   • reminder dispatch     — notify participants before a plan starts
- *   • live-status expiry    — purge expired live statuses
  *   • recurrence rollover   — materialize the next occurrence of recurring plans
  *
  * Production would use a durable queue with per-job cadence; one timer is
@@ -93,12 +91,12 @@ function runRecurrence(): void {
   const recurring = q.all<{
     id: string; host_id: string; category: string; custom_emoji: string | null;
     custom_label: string | null; title: string; description: string; place: string;
-    starts_at: number; max_size: number | null;
+    starts_at: number; ends_at: number; max_size: number | null;
     is_private: number; is_open_invite: number; banner_url: string | null;
     recurrence: string; reminder_minutes: number | null;
   }>(
     `SELECT * FROM activities
-      WHERE recurrence IS NOT NULL AND dissolved_at IS NULL AND starts_at < ?`,
+      WHERE recurrence IS NOT NULL AND dissolved_at IS NULL AND ends_at < ?`,
     ts,
   );
 
@@ -106,9 +104,12 @@ function runRecurrence(): void {
     const rule = JSON.parse(a.recurrence) as { freq: string; weekday?: number };
     const step = rule.freq === 'daily' ? DAY : rule.freq === 'biweekly' ? 2 * WEEK : WEEK;
 
-    // Advance from the old start until it lands in the future.
-    let next = a.starts_at;
-    while (next < ts) next += step;
+    // Advance from the old start until it lands in the future. The new
+    // ends_at slides by the same delta so the duration of each occurrence
+    // matches the original.
+    let nextStart = a.starts_at;
+    while (nextStart < ts) nextStart += step;
+    const nextEnd = a.ends_at + (nextStart - a.starts_at);
 
     // Skip if a future occurrence of this title+host already exists.
     const exists = q.get(
@@ -123,11 +124,11 @@ function runRecurrence(): void {
     q.run(
       `INSERT INTO activities
         (id, host_id, category, custom_emoji, custom_label, title, description, place,
-         starts_at, max_size, is_private, is_open_invite, banner_url,
+         starts_at, ends_at, max_size, is_private, is_open_invite, banner_url,
          recurrence, reminder_minutes, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, a.host_id, a.category, a.custom_emoji, a.custom_label, a.title, a.description,
-      a.place, next, a.max_size, a.is_private, a.is_open_invite,
+      a.place, nextStart, nextEnd, a.max_size, a.is_private, a.is_open_invite,
       a.banner_url, a.recurrence, a.reminder_minutes, ts, ts,
     );
     // Carry forward the squad tags.
@@ -147,7 +148,6 @@ export function startScheduler(): void {
   const tick = () => {
     try {
       runReminders();
-      purgeExpiredLiveStatuses();
       runRecurrence();
     } catch (err) {
       logger.error({ err }, '[scheduler] tick failed');

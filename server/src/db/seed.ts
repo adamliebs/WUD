@@ -145,18 +145,25 @@ function run(): void {
 
     /* --- activities ----------------------------------------------------- */
 
+    // 2h default duration matches the migration's backfill default, so seed
+    // data and migrated rows feel consistent. Override per-activity via
+    // opts.durationMins when a specific activity needs a longer/shorter window.
+    const TWO_HOURS = 2 * 60 * 60 * 1000;
     const mkActivity = (
       id: string, host: string, category: string, title: string, place: string,
       startsAt: number,
-      opts: { joiners?: string[]; maybe?: string[]; squadIds?: string[]; isPrivate?: boolean; isOpenInvite?: boolean; description?: string; bannerUrl?: string } = {},
+      opts: { joiners?: string[]; maybe?: string[]; squadIds?: string[]; isPrivate?: boolean; isOpenInvite?: boolean; description?: string; bannerUrl?: string; durationMins?: number } = {},
     ) => {
+      const endsAt = startsAt + (opts.durationMins !== undefined
+        ? opts.durationMins * 60_000
+        : TWO_HOURS);
       q.run(
         `INSERT INTO activities
-          (id, host_id, category, title, description, place, starts_at,
+          (id, host_id, category, title, description, place, starts_at, ends_at,
            is_private, is_open_invite, banner_url, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id, host, category, title, opts.description ?? '', place,
-        startsAt,
+        startsAt, endsAt,
         opts.isPrivate ? 1 : 0,
         opts.isOpenInvite === false ? 0 : 1,
         opts.bannerUrl ?? null,
@@ -238,20 +245,13 @@ function run(): void {
     mkMsg('a14', 'u_priya', 'bringing my polaroid',                 ts - min(100));
     mkMsg('a17', 'u_sam',   "I'll bring the speaker + sunscreen",   ts - min(60));
 
-    /* --- live status ----------------------------------------------------- */
-
-    // Mike is at the gym right now (mid-window).
-    q.run(
-      `INSERT INTO live_statuses (user_id, emoji, text, place, open_to_join, started_at, expires_at)
-       VALUES ('u_mike', '🏋️', 'at the gym', 'Equinox SoHo', 1, ?, ?)`,
-      ts - min(15), ts + min(45),
-    );
-    // Sam is grabbing coffee — second live tile so the LiveNowStrip has variety.
-    q.run(
-      `INSERT INTO live_statuses (user_id, emoji, text, place, open_to_join, started_at, expires_at)
-       VALUES ('u_sam', '☕', 'coffee + work', 'Sey Coffee', 1, ?, ?)`,
-      ts - min(5), ts + min(55),
-    );
+    /* --- LIVE NOW activities --------------------------------------------
+     * Two activities currently mid-window so the live strip on the feed has
+     * something to render after the seed. (The old per-user `live_statuses`
+     * table is gone — these are real activities, just with starts_at slightly
+     * in the past and ends_at in the future.) */
+    mkActivity('a_live_1', 'u_mike', 'gym',    'Quick gym session',  'Equinox SoHo', ts - min(15), { joiners: ['u_sam'], durationMins: 60 });
+    mkActivity('a_live_2', 'u_sam',  'coffee', 'Coffee + work',      'Sey Coffee',   ts - min(5),  { durationMins: 60 });
 
     /* --- notifications for admin --------------------------------------- */
 
@@ -271,7 +271,7 @@ function run(): void {
 
   console.log('✅ Seed complete.');
   console.log('   Admin login →  email: admin@wud.app   password: admin1234');
-  console.log(`   ${USERS.length} users, ${FRIEND_IDS.length + CROSS_FRIENDSHIPS.length} friendships, 22 activities, 2 squads.`);
+  console.log(`   ${USERS.length} users, ${FRIEND_IDS.length + CROSS_FRIENDSHIPS.length} friendships, 24 activities (2 live now), 2 squads.`);
 }
 
 run();

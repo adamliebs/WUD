@@ -20,16 +20,6 @@ export interface PublicUser {
    *  true for OAuth (Apple/Google) signups; false for new email signups until
    *  they click the verification link. */
   emailVerified?: boolean;
-  liveStatus?: LiveStatus;
-}
-
-export interface LiveStatus {
-  emoji: string;
-  text: string;
-  place?: string;
-  openToJoin?: boolean;
-  startedAt: number;
-  expiresAt: number;
 }
 
 export interface Reaction {
@@ -69,6 +59,12 @@ export interface Activity {
   place: string;
   description: string;
   startsAt: number;
+  /**
+   * When the activity ends. Anything live now satisfies
+   * `startsAt <= now <= endsAt`. Set on every new activity (chips for
+   * "Happening now" mode, picker for scheduled mode).
+   */
+  endsAt: number;
   joinerIds: string[];
   maybeIds: string[];
   cantIds: string[];
