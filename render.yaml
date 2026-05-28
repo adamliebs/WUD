@@ -1,0 +1,69 @@
+# render.yaml — Infrastructure-as-code for Render.com deployment.
+#
+# When you connect this repo to Render, this file becomes the source of truth
+# for the service + disk + env-var shape. Edit here (don't drift in the UI)
+# so the config travels with the codebase.
+#
+# What's deployed:
+#   • One Web Service running the multi-stage Dockerfile (server/Dockerfile)
+#   • One 1 GB persistent disk mounted at /data
+#       — SQLite database file (/data/wud.db)
+#       — Uploaded photos (/data/uploads)
+#       — Both survive deploys / restarts / region migrations
+#
+# Costs: Starter plan ($7/month) — the free tier doesn't allow disks.
+# Scale up to Standard ($25/month) when you have real traffic.
+
+services:
+  - type: web
+    name: wud-api
+    runtime: docker
+    plan: starter           # $7/mo; the free tier disables disks
+    region: oregon          # any region — keep all WUD services co-located
+    branch: production
+    autoDeploy: true        # push to `production` → auto-deploys
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+
+    # Container listens on this — matches `EXPOSE 4000` in Dockerfile
+    # and the default in server/src/config.ts.
+    healthCheckPath: /v1/health/ready
+
+    disk:
+      name: wud-data
+      mountPath: /data      # MUST match WUD_DB + UPLOADS_DIR below
+      sizeGB: 1             # bump later if uploads outgrow it
+
+    envVars:
+      # --- baked from this file (won't change between deploys) ---
+      - key: NODE_ENV
+        value: production
+      - key: WUD_DB
+        value: /data/wud.db
+      - key: UPLOADS_DIR
+        value: /data/uploads
+      - key: TRUST_PROXY
+        value: "1"           # Render sits behind its own load balancer
+
+      # --- you'll set these in the Render UI (or via the API) ---
+      # Marked `sync: false` so render-cli / blueprint doesn't try to
+      # overwrite secrets every deploy — the values stick in Render's
+      # encrypted env store, edited only via dashboard.
+      - key: JWT_SECRET
+        sync: false          # generate with: openssl rand -base64 48
+      - key: CORS_ORIGIN
+        sync: false          # see DEPLOYMENT.md for the values to paste
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false          # paste the entire JSON file contents
+      - key: SENTRY_DSN
+        sync: false          # optional — leave blank to disable error tracking
+
+      # Optional: enable Litestream backup to S3 / GCS / B2 for off-host
+      # restore-on-recreate. Without these set, the SQLite file is still
+      # safe on the persistent disk but you can't recover from disk loss.
+      - key: LITESTREAM_REPLICA_URL
+        sync: false          # e.g. s3://wud-backups/db (see litestream.yml)
+      - key: LITESTREAM_ACCESS_KEY_ID
+        sync: false
+      - key: LITESTREAM_SECRET_ACCESS_KEY
+        sync: false
