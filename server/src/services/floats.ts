@@ -8,7 +8,6 @@
 import { q, tx } from '../db/index.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { newId, now } from '../lib/ids.js';
-import { logger } from '../lib/logger.js';
 import { publish } from '../realtime/bus.js';
 import type { CategoryKey, Float, FloatResponse, FloatResponseState, FloatTiming } from '../types.js';
 import { createActivity } from './activities.js';
@@ -16,21 +15,6 @@ import { createNotification } from './notifications.js';
 import { isBlockedEither } from './safety.js';
 import { areFriends, friendIds, isInSquad, squadEveryoneIds } from './social.js';
 import { getUserRow } from './users.js';
-
-/**
- * Wrap createNotification so a notification-side failure never breaks the
- * user-facing action that triggered it. Notifications are best-effort — if
- * the row can't be written (schema drift, push pipeline error, etc.) the
- * underlying respond/lock/create should still succeed and the client should
- * see "OK, your response was recorded" instead of "something went wrong."
- */
-function safeNotify(input: Parameters<typeof createNotification>[0]): void {
-  try {
-    createNotification(input);
-  } catch (err) {
-    logger.warn({ err, type: input.type, userId: input.userId }, '[floats] notification failed (non-fatal)');
-  }
-}
 
 interface FloatRow {
   id: string;
@@ -230,7 +214,7 @@ export function createFloat(senderId: string, input: {
   const preview = question.length > 60 ? `${question.slice(0, 57)}…` : question;
   for (const friendId of friendIds(senderId)) {
     if (!canSeeFloat(friendId, row)) continue;
-    safeNotify({
+    createNotification({
       userId: friendId,
       type: 'float_received',
       fromId: senderId,
@@ -276,7 +260,7 @@ export function respondToFloat(
   // pinged for every flip. The float card surfaces the live tally anyway.
   if (state === 'keen') {
     const me = getUserRow(userId);
-    safeNotify({
+    createNotification({
       userId: row.sender_id,
       type: 'float_keen',
       fromId: userId,
@@ -353,7 +337,7 @@ export function lockFloat(senderId: string, floatId: string, input: {
 
   // Tell the keen crew their float just became a plan.
   for (const userId of keenIds) {
-    safeNotify({
+    createNotification({
       userId,
       type: 'float_locked',
       fromId: senderId,

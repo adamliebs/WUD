@@ -43,14 +43,25 @@ export function createNotification(input: {
   activityId?: string;
   floatId?: string;
   body: string;
-}): AppNotification {
+}): AppNotification | null {
   const id = newId();
-  q.run(
-    `INSERT INTO notifications (id, user_id, type, from_id, activity_id, float_id, body, read, resolved, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
-    id, input.userId, input.type, input.fromId ?? null, input.activityId ?? null,
-    input.floatId ?? null, input.body, now(),
-  );
+  // Notifications are a *side effect*, never the user-facing action. An
+  // INSERT failure (schema drift between code and DB, FK violation against
+  // a freshly-deleted row, etc.) used to take down the caller's whole route
+  // — e.g. a host leaving an activity 500'd because the host_offer notif
+  // couldn't be written. Make this best-effort: log and bail, let the action
+  // keep going.
+  try {
+    q.run(
+      `INSERT INTO notifications (id, user_id, type, from_id, activity_id, float_id, body, read, resolved, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+      id, input.userId, input.type, input.fromId ?? null, input.activityId ?? null,
+      input.floatId ?? null, input.body, now(),
+    );
+  } catch (err) {
+    logger.warn({ err, type: input.type, userId: input.userId }, '[notifications] insert failed (non-fatal)');
+    return null;
+  }
   const row = q.get<NotifRow>('SELECT * FROM notifications WHERE id = ?', id)!;
   const notification = toNotification(row);
 
