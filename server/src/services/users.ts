@@ -111,7 +111,7 @@ export function createUser(input: {
     input.name.trim() || 'You',
     handle,
     input.avatar ?? '✨',
-    input.color ?? 'from-rose-400 to-orange-500',
+    input.color ?? 'from-rose-500/25 via-pink-500/15 to-orange-500/10',
     input.dateOfBirth ?? null,
     ts,
     ts,

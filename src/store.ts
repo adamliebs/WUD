@@ -16,7 +16,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 type Tab = 'feed' | 'floats' | 'notifications' | 'profile';
 type FeedScope = 'friends' | 'fof';
 /** Top-level app screen — splash → welcome → auth → onboarding → main app. */
-export type AuthState = 'splash' | 'welcome' | 'auth' | 'onboarding' | 'app';
+export type AuthState = 'splash' | 'welcome' | 'auth' | 'onboarding' | 'verifyEmail' | 'app';
 
 /**
  * What happens when a For You digest is tapped. Filter cards apply a feed
@@ -162,6 +162,10 @@ interface State {
   /** Resend the email-verification link for the currently signed-in user.
    *  Returns true if Firebase accepted the request. */
   resendEmailVerification: () => Promise<boolean>;
+  /** Pull a fresh Firebase ID token and re-post to /auth/firebase so the
+   *  server picks up the latest email_verified claim. Returns the new
+   *  verification status. Used by the verify-email gate while polling. */
+  syncFirebaseUser: () => Promise<boolean>;
   /** Admin/demo login — loads the seeded sample dataset. */
   loadDemoData: () => void;
   signOut: () => void;
@@ -317,6 +321,8 @@ interface State {
   declineHostOffer: (notificationId: string) => void;
 
   markAllNotificationsRead: () => void;
+  /** Wipe every notification — optimistic locally, server-authoritative. */
+  clearAllNotifications: () => void;
   pingFriends: (text: string, recipientIds?: string[], squadId?: string) => void;
 
   setReminderForActivity: (activityId: string, mins: number | null | undefined) => void;
@@ -651,6 +657,18 @@ export const useApp = create<State>((set, get) => {
    * either land in the app (existing user) or stash + route to onboarding
    * (new user — needs DOB + handle).
    */
+  /** When an email-provider user logs in (sign-up or login) and the server
+   *  reports email_verified=false, gate them on the verify-email screen
+   *  instead of dropping into the app. OAuth providers are always verified
+   *  so they skip this entirely. */
+  const enforceEmailVerificationGate = (provider: 'apple' | 'google' | 'email') => {
+    if (provider !== 'email') return;
+    const me = get().users.find(u => u.id === get().meId);
+    if (me && me.emailVerified === false) {
+      set({ authState: 'verifyEmail' });
+    }
+  };
+
   const completeFirebaseSignin = async (
     token: string,
     provider: 'apple' | 'google' | 'email',
@@ -660,6 +678,7 @@ export const useApp = create<State>((set, get) => {
       const r = await authApi.firebase({ idToken: token });
       tokens.set(r.accessToken, r.refreshToken);
       await doBootstrap();
+      enforceEmailVerificationGate(provider);
     } catch (e) {
       if (e instanceof ApiError && e.status === 422) {
         // 422 = first sign-in, need DOB + handle. Stash the token so the
@@ -699,6 +718,8 @@ export const useApp = create<State>((set, get) => {
       if (!token) throw new Error('No ID token from Firebase');
       await completeFirebaseSignin(token, provider, `Could not sign in with ${provider}`);
     } catch (e) {
+      // Same diagnostic console.error trick — exposes the real Firebase code.
+      console.error(`[firebaseProviderSignin:${provider}] failed`, e);
       const msg = friendlyFirebaseError(e, `Could not sign in with ${provider}`);
       if (msg) toast(msg, 'warn');
     }
@@ -720,6 +741,10 @@ export const useApp = create<State>((set, get) => {
       if (!token) throw new Error('No ID token from Firebase');
       await completeFirebaseSignin(token, 'email', 'Could not create your account');
     } catch (e) {
+      // Surface the raw Firebase error to the console so the iOS log captures
+      // exactly which code/message tripped us — friendlyFirebaseError swallows
+      // unfamiliar codes into the fallback string, hiding the real cause.
+      console.error('[firebaseEmailSignup] failed', e);
       const msg = friendlyFirebaseError(e, 'Could not create your account');
       if (msg) toast(msg, 'warn');
     }
@@ -1212,8 +1237,12 @@ export const useApp = create<State>((set, get) => {
             name, handle, avatar, color, dateOfBirth,
           });
           tokens.set(r.accessToken, r.refreshToken);
+          const provider = pending.provider;
           set({ pendingSignup: null });
           await doBootstrap();
+          // Apple/Google users are pre-verified; only email-provider signups
+          // see the verify-email gate.
+          enforceEmailVerificationGate(provider);
           return;
         }
         // Legacy email/password path — direct register. No pending = brand new
@@ -1226,6 +1255,9 @@ export const useApp = create<State>((set, get) => {
         tokens.set(r.accessToken, r.refreshToken);
         set({ pendingSignup: null });
         await doBootstrap();
+        // Legacy email register has no Firebase user, so email is unverified
+        // by definition. Same gate so the user lands on verify-email.
+        if (pending?.kind === 'email') enforceEmailVerificationGate('email');
       });
     },
 
@@ -1259,6 +1291,26 @@ export const useApp = create<State>((set, get) => {
       } catch (e) {
         const msg = friendlyFirebaseError(e, 'Could not send verification email');
         if (msg) toast(msg, 'warn');
+        return false;
+      }
+    },
+
+    syncFirebaseUser: async () => {
+      // Pull the latest from Firebase (the email_verified claim updates only
+      // when the cached user is refreshed), then post a fresh idToken to
+      // /auth/firebase so the server's local emailVerified flag catches up.
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        await FirebaseAuthentication.reload();
+        const result = await FirebaseAuthentication.getIdToken({ forceRefresh: true });
+        if (!result.token) return false;
+        const r = await authApi.firebase({ idToken: result.token });
+        if (r.accessToken) tokens.set(r.accessToken, r.refreshToken);
+        // Re-fetch just the user (cheap) rather than re-bootstrapping.
+        const { user } = await meApi.get();
+        mergeUsers([user]);
+        return user.emailVerified === true;
+      } catch {
         return false;
       }
     },
@@ -1713,6 +1765,22 @@ export const useApp = create<State>((set, get) => {
     markAllNotificationsRead: () => {
       set(state => ({ notifications: state.notifications.map(x => ({ ...x, read: true })) }));
       void miscApi.markRead().catch(() => undefined);
+    },
+
+    clearAllNotifications: () => {
+      // Optimistic — empty the inbox immediately. If the round-trip fails we
+      // re-pull, so a stale-cache reappearance is the worst-case outcome.
+      const before = get().notifications;
+      set({ notifications: [] });
+      void (async () => {
+        try {
+          await miscApi.clearAll();
+          toast('Inbox cleared', 'success');
+        } catch {
+          set({ notifications: before });
+          toast('Could not clear notifications', 'warn');
+        }
+      })();
     },
 
     pingFriends: (text, recipientIds, squadId) => {

@@ -36,18 +36,18 @@ interface SeedUser { id: string; name: string; handle: string; emoji: string; co
 const FACE = (n: number) => `https://i.pravatar.cc/300?img=${n}`;
 
 const USERS: SeedUser[] = [
-  { id: 'u_me',    name: 'Alex Admin', handle: 'admin',   emoji: '🧑‍💻', color: 'from-rose-400 to-orange-500',       photoUrl: FACE(12) },
-  { id: 'u_mike',  name: 'Mike',       handle: 'mike',    emoji: '🧔',  color: 'from-sky-400 to-indigo-600',          photoUrl: FACE(33) },
-  { id: 'u_sam',   name: 'Samantha',   handle: 'sammy',   emoji: '👩‍🦰', color: 'from-pink-400 to-rose-600',          photoUrl: FACE(5)  },
-  { id: 'u_josh',  name: 'Josh',       handle: 'jshredd', emoji: '🧑',  color: 'from-violet-500 to-fuchsia-600',      photoUrl: FACE(14) },
-  { id: 'u_maya',  name: 'Maya',       handle: 'mayaa',   emoji: '👩',  color: 'from-emerald-400 to-teal-600',        photoUrl: FACE(44) },
-  { id: 'u_ravi',  name: 'Ravi',       handle: 'rav',     emoji: '🧑‍🎤', color: 'from-amber-400 to-orange-600',       photoUrl: FACE(60) },
-  { id: 'u_priya', name: 'Priya',      handle: 'pri',     emoji: '👩‍🎨', color: 'from-fuchsia-400 to-purple-700',     photoUrl: FACE(49) },
+  { id: 'u_me',    name: 'Alex Admin', handle: 'admin',   emoji: '🧑‍💻', color: 'from-rose-500/25 via-pink-500/15 to-orange-500/10',     photoUrl: FACE(12) },
+  { id: 'u_mike',  name: 'Mike',       handle: 'mike',    emoji: '🧔',  color: 'from-sky-500/25 via-blue-500/15 to-indigo-500/10',       photoUrl: FACE(33) },
+  { id: 'u_sam',   name: 'Samantha',   handle: 'sammy',   emoji: '👩‍🦰', color: 'from-pink-500/25 via-rose-500/15 to-rose-500/10',       photoUrl: FACE(5)  },
+  { id: 'u_josh',  name: 'Josh',       handle: 'jshredd', emoji: '🧑',  color: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10',   photoUrl: FACE(14) },
+  { id: 'u_maya',  name: 'Maya',       handle: 'mayaa',   emoji: '👩',  color: 'from-emerald-500/25 via-teal-500/15 to-cyan-500/10',     photoUrl: FACE(44) },
+  { id: 'u_ravi',  name: 'Ravi',       handle: 'rav',     emoji: '🧑‍🎤', color: 'from-amber-500/25 via-orange-500/15 to-rose-500/10',    photoUrl: FACE(60) },
+  { id: 'u_priya', name: 'Priya',      handle: 'pri',     emoji: '👩‍🎨', color: 'from-fuchsia-500/25 via-purple-500/15 to-purple-500/10', photoUrl: FACE(49) },
   // Not admin's friends — they exist so "people you may know" (friends-of-
   // friends) and handle search have something to surface in the demo.
-  { id: 'u_noah',  name: 'Noah',       handle: 'noahw',   emoji: '🧑‍🚀', color: 'from-teal-400 to-cyan-700',          photoUrl: FACE(11) },
-  { id: 'u_zoe',   name: 'Zoe',        handle: 'zoey',    emoji: '🦊',  color: 'from-violet-500 to-fuchsia-600',      photoUrl: FACE(47) },
-  { id: 'u_liam',  name: 'Liam',       handle: 'liamk',   emoji: '🥷',  color: 'from-zinc-500 to-zinc-800',           photoUrl: FACE(68) },
+  { id: 'u_noah',  name: 'Noah',       handle: 'noahw',   emoji: '🧑‍🚀', color: 'from-teal-500/25 via-cyan-500/15 to-sky-500/10',        photoUrl: FACE(11) },
+  { id: 'u_zoe',   name: 'Zoe',        handle: 'zoey',    emoji: '🦊',  color: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10',   photoUrl: FACE(47) },
+  { id: 'u_liam',  name: 'Liam',       handle: 'liamk',   emoji: '🥷',  color: 'from-zinc-400/25 via-zinc-500/15 to-zinc-600/10',        photoUrl: FACE(68) },
 ];
 
 /**

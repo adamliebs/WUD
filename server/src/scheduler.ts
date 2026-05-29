@@ -2,7 +2,7 @@ import { config } from './config.js';
 import { q } from './db/index.js';
 import { logger } from './lib/logger.js';
 import { newId, now } from './lib/ids.js';
-import { createNotification } from './services/notifications.js';
+import { createNotification, purgeStaleNotifications } from './services/notifications.js';
 import { getSettings } from './services/users.js';
 
 /**
@@ -144,11 +144,20 @@ function runRecurrence(): void {
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
+/** Notifications older than this drop off automatically — they're rarely
+ *  actionable past a few days and clutter the inbox. The user can still wipe
+ *  the full list manually via the "Clear all" button. */
+const NOTIFICATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
 export function startScheduler(): void {
   const tick = () => {
     try {
       runReminders();
       runRecurrence();
+      const purged = purgeStaleNotifications(NOTIFICATION_TTL_MS);
+      if (purged > 0) {
+        logger.info({ purged }, '[scheduler] purged stale notifications');
+      }
     } catch (err) {
       logger.error({ err }, '[scheduler] tick failed');
     }

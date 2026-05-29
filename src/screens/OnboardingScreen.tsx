@@ -1,11 +1,22 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronLeft, Loader2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Calendar, Check, ChevronLeft, Loader2, Sparkles, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Avatar } from '../components/Avatar';
+import { DateWheelPicker } from '../components/DateWheelPicker';
 import { PulseButton } from '../components/PulseButton';
 import { authApi } from '../api/endpoints';
 import { useApp } from '../store';
 import { PrivacyBody, TermsBody } from './LegalScreens';
+
+/**
+ * Post-signup onboarding — name, handle, DOB, avatar, color. After the
+ * rebuild, every input is large-font (16 px+) so iOS can't auto-zoom, and
+ * the date picker is a custom three-wheel component instead of the native
+ * `<input type="date">` (which was the source of the zoom-in glitch the user
+ * was hitting). The screen also gets the atmospheric orb background that
+ * the rest of the app uses, so the auth flow feels continuous with the app
+ * proper.
+ */
 
 const AVATAR_OPTIONS = [
   '🧑‍💻', '🧑‍🎤', '🧑‍🎨', '🧑‍🚀', '🧑‍🍳', '🧑‍🎓',
@@ -14,72 +25,67 @@ const AVATAR_OPTIONS = [
   '🌈', '✨', '🔥', '🌊', '🌵', '🍕',
 ];
 
+// Glassy/transparent palette — matches the Floats card + the rest of the
+// app's color picker (see EditProfileScreen).
 const COLOR_OPTIONS: { label: string; value: string }[] = [
-  { label: 'Sunset', value: 'from-rose-400 to-orange-500' },
-  { label: 'Berry',  value: 'from-pink-400 to-rose-600' },
-  { label: 'Coral',  value: 'from-amber-400 to-orange-600' },
-  { label: 'Aurora', value: 'from-violet-500 to-fuchsia-600' },
-  { label: 'Ocean',  value: 'from-sky-400 to-indigo-600' },
-  { label: 'Forest', value: 'from-emerald-400 to-teal-600' },
-  { label: 'Lagoon', value: 'from-teal-400 to-cyan-700' },
-  { label: 'Plum',   value: 'from-fuchsia-400 to-purple-700' },
-  { label: 'Storm',  value: 'from-zinc-500 to-zinc-800' },
+  { label: 'Sunset',   value: 'from-rose-500/25 via-pink-500/15 to-orange-500/10' },
+  { label: 'Berry',    value: 'from-pink-500/25 via-rose-500/15 to-rose-500/10' },
+  { label: 'Coral',    value: 'from-amber-500/25 via-orange-500/15 to-rose-500/10' },
+  { label: 'Aurora',   value: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10' },
+  { label: 'Ocean',    value: 'from-sky-500/25 via-blue-500/15 to-indigo-500/10' },
+  { label: 'Forest',   value: 'from-emerald-500/25 via-teal-500/15 to-cyan-500/10' },
+  { label: 'Lagoon',   value: 'from-teal-500/25 via-cyan-500/15 to-sky-500/10' },
+  { label: 'Plum',     value: 'from-fuchsia-500/25 via-purple-500/15 to-purple-500/10' },
+  { label: 'Storm',    value: 'from-zinc-400/25 via-zinc-500/15 to-zinc-600/10' },
 ];
 
-/**
- * Post-signup onboarding — the user sets their display name, handle, avatar
- * emoji and colour. Completing it calls signUp() and enters the app.
- */
 /** Apple Guideline 1.3 / COPPA — refuse signups under this age in years. */
 const MIN_AGE_YEARS = 13;
-/** Years in the past for the date picker's max (today minus MIN_AGE_YEARS).
- *  Returns YYYY-MM-DD because <input type="date"> uses ISO strings. */
-const isoYearsAgo = (years: number) => {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() - years);
-  return d.toISOString().slice(0, 10);
-};
-const fullYearsBetween = (dobIso: string, refDate = new Date()): number => {
+/** Oldest plausible signup. The wheel picker uses this to bound the year list. */
+const MAX_AGE_YEARS = 100;
+
+function fullYearsBetween(dobIso: string, refDate = new Date()): number {
   const dob = new Date(dobIso);
   if (Number.isNaN(dob.getTime())) return -1;
   let age = refDate.getUTCFullYear() - dob.getUTCFullYear();
   const m = refDate.getUTCMonth() - dob.getUTCMonth();
   if (m < 0 || (m === 0 && refDate.getUTCDate() < dob.getUTCDate())) age -= 1;
   return age;
-};
+}
+
+function prettyDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+}
 
 export function OnboardingScreen() {
   const setAuthState = useApp(s => s.setAuthState);
   const signUp = useApp(s => s.signUp);
-  // Pending signup carries either email/password credentials OR a Firebase
-  // ID token. For OAuth (Apple/Google) users we prefill the name from the
-  // provider's profile so they don't have to retype it.
   const pendingSignup = useApp(s => s.pendingSignup);
   const isOauthSignup = pendingSignup?.kind === 'firebase';
-  // Privacy / Terms in onboarding are NOT routed through openOverlay() — the
-  // global OverlayHost is mounted inside MainApp, which doesn't exist until
-  // authState === 'app'. We render them inline with a local modal instead.
+
+  // Inline legal panel — global OverlayHost isn't mounted yet pre-signin.
   const [legal, setLegal] = useState<null | 'privacy' | 'terms'>(null);
 
   const [name, setName] = useState(pendingSignup?.kind === 'firebase' ? pendingSignup.suggestedName ?? '' : '');
   const [handle, setHandle] = useState('');
-  // Birthday stored as ISO date string (the format the native picker emits).
   const [dob, setDob] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
   const [color, setColor] = useState(COLOR_OPTIONS[0].value);
 
-  // Age check — empty input is "not entered yet" (not a failure); too-young
-  // is the only state that blocks the CTA and shows an error message.
+  const sanitize = (h: string) => h.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+  const effectiveHandle = handle || sanitize(name);
+
   const ageState: 'empty' | 'ok' | 'tooYoung' | 'future' =
     !dob ? 'empty'
     : fullYearsBetween(dob) < 0 ? 'future'
     : fullYearsBetween(dob) < MIN_AGE_YEARS ? 'tooYoung'
     : 'ok';
 
-  const sanitize = (h: string) => h.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
-  const effectiveHandle = handle || sanitize(name);
-
-  // Live handle-availability check (handles are unique; names are not).
+  // Live handle availability check (debounced server hit).
   const [handleState, setHandleState] = useState<'idle' | 'checking' | 'free' | 'taken'>('idle');
   useEffect(() => {
     const h = effectiveHandle;
@@ -108,7 +114,10 @@ export function OnboardingScreen() {
     signUp({ name, handle: effectiveHandle, avatar, color, dateOfBirth });
   };
 
-  const previewUser = { id: 'preview', name: name.trim() || 'You', avatar, color };
+  const previewUser = useMemo(
+    () => ({ id: 'preview', name: name.trim() || 'You', avatar, color }),
+    [name, avatar, color],
+  );
 
   return (
     <motion.div
@@ -116,15 +125,14 @@ export function OnboardingScreen() {
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
       transition={{ type: 'spring', stiffness: 320, damping: 36 }}
-      className="absolute inset-0 bg-[#07060b] flex flex-col"
+      className="absolute inset-0 bg-[#07060b] flex flex-col overflow-hidden"
     >
+      <OnboardingBackgroundOrbs />
+
       {/* Header */}
-      <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5">
+      <div className="relative pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5">
         <button
           onClick={() => {
-            // Backing out abandons the in-flight signup. For OAuth pendings
-            // we go back to welcome (where they came from); for email we go
-            // back to the email screen so they can edit credentials.
             useApp.setState({ pendingSignup: null });
             setAuthState(isOauthSignup ? 'welcome' : 'auth');
           }}
@@ -139,8 +147,8 @@ export function OnboardingScreen() {
         <div className="w-9" />
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
-        {/* Live preview hero */}
+      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-36">
+        {/* Live preview hero — uses the chosen color + avatar at 84 px. */}
         <div className={`relative h-40 bg-gradient-to-br ${color} transition-colors`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -162,7 +170,10 @@ export function OnboardingScreen() {
 
         <div className="px-4 pt-5">
           <div className="text-center mb-4">
-            <div className="text-lg font-black text-white">Make it yours ✨</div>
+            <div className="text-lg font-black text-white inline-flex items-center gap-1.5">
+              <Sparkles size={14} className="text-rose-300" />
+              Make it yours
+            </div>
             <div className="text-[13px] text-zinc-400 mt-0.5">
               This is how friends will see you on WUD.
             </div>
@@ -174,7 +185,7 @@ export function OnboardingScreen() {
               value={name}
               onChange={e => setName(e.target.value.slice(0, 30))}
               placeholder="Your name"
-              autoFocus
+              autoFocus={!isOauthSignup}
               className="auth-input"
             />
           </Field>
@@ -204,18 +215,46 @@ export function OnboardingScreen() {
             </div>
           </Field>
 
-          {/* Date of birth — Apple Guideline 1.3 / COPPA; ≥13 enforced both
-              here and on the server. iOS WKWebView renders this as the native
-              wheel picker, no library needed. */}
+          {/* Date of birth — custom wheel picker. Tapping the row opens an
+              inline wheel below so the user never sees the iOS native sheet. */}
           <Field label="Date of birth">
-            <input
-              type="date"
-              value={dob}
-              onChange={e => setDob(e.target.value)}
-              max={isoYearsAgo(MIN_AGE_YEARS)}
-              className={`auth-input ${ageState === 'tooYoung' || ageState === 'future'
-                ? 'ring-2 ring-rose-400/60 border-rose-400/30' : ''}`}
-            />
+            <button
+              type="button"
+              onClick={() => setShowDatePicker(o => !o)}
+              className={`auth-input text-left flex items-center justify-between gap-2
+                          ${ageState === 'tooYoung' || ageState === 'future'
+                            ? 'ring-2 ring-rose-400/60 border-rose-400/30' : ''}`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Calendar size={14} className="text-zinc-400" />
+                <span className={dob ? 'text-white' : 'text-zinc-500'}>
+                  {dob ? prettyDate(dob) : 'Tap to pick your birthday'}
+                </span>
+              </span>
+              <span className="text-[11px] uppercase tracking-widest font-bold text-zinc-500">
+                {showDatePicker ? 'Done' : 'Edit'}
+              </span>
+            </button>
+            <AnimatePresence initial={false}>
+              {showDatePicker && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-3 rounded-2xl bg-white/[0.03] border border-white/10 px-2 py-2">
+                    <DateWheelPicker
+                      value={dob}
+                      onChange={setDob}
+                      minAge={MIN_AGE_YEARS}
+                      maxAge={MAX_AGE_YEARS}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="text-[11px] mt-1 px-1 h-3.5">
               {ageState === 'tooYoung' && (
                 <span className="text-rose-300">You must be {MIN_AGE_YEARS} or older to use WUD.</span>
@@ -285,8 +324,6 @@ export function OnboardingScreen() {
         <PulseButton onClick={finish} disabled={!canFinish}>
           {canFinish ? 'Enter WUD' : 'Add your details to continue'}
         </PulseButton>
-        {/* Apple expects an explicit acknowledgement of Terms / Privacy at the
-            point of account creation. Links open the in-app overlays. */}
         <div className="text-[11px] text-zinc-500 text-center mt-2 leading-relaxed">
           By tapping Enter, you agree to our{' '}
           <button
@@ -307,8 +344,7 @@ export function OnboardingScreen() {
       </div>
 
       {/* Inline legal modal — covers the onboarding screen because the global
-          OverlayHost isn't mounted yet pre-signin. Same shape as a system
-          overlay so users get a consistent close-back-chevron affordance. */}
+          OverlayHost isn't mounted yet pre-signin. */}
       <AnimatePresence>
         {legal && (
           <motion.div
@@ -349,6 +385,47 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** Drifting orbs behind the onboarding form — same pattern as the tab pages. */
+function OnboardingBackgroundOrbs() {
+  return (
+    <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
+      <motion.div
+        className="absolute -top-16 -left-10 h-64 w-64 rounded-full bg-rose-500/12 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, 22, 0], x: [0, 14, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut' },
+          y: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
+          x: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
+        }}
+      />
+      <motion.div
+        className="absolute top-1/3 -right-16 h-72 w-72 rounded-full bg-fuchsia-500/10 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -28, 0], x: [0, -16, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
+          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+        }}
+      />
+      <motion.div
+        className="absolute bottom-24 left-1/4 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -18, 0], x: [0, 10, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
+          y: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 4 },
+          x: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 4 },
+        }}
+      />
     </div>
   );
 }

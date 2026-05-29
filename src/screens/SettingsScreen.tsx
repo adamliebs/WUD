@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, ChevronLeft, FileText, LogOut, Megaphone, ShieldCheck, ShieldOff, Trash2, UserCircle } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
+import { SwipeBackPage } from '../components/SwipeBackPage';
 import { Toggle } from '../components/Toggle';
-import { useSwipeBack } from '../components/useSwipeBack';
 import { useApp, type AppSettings } from '../store';
 import { BlockedUsersBody } from './BlockedUsersScreen';
 import { PrivacyBody, TermsBody } from './LegalScreens';
@@ -53,10 +53,10 @@ export function SettingsScreen() {
   };
 
   // Back chevron pops within Settings first; only closes the overlay when
-  // we're already on the root list. Left-edge swipe-right uses the same
-  // logic so the gesture pops sub-pages step by step before exiting.
+  // we're already on the root list. The swipe-back gesture (handled by the
+  // SwipeBackPage wrapper) always closes the whole overlay — having it pop
+  // sub-pages would fight the outer drag handler in nested cases.
   const onClose = () => (sub ? go(null) : closeOverlay());
-  const swipeRef = useSwipeBack<HTMLDivElement>(onClose);
 
   const title =
     sub === 'privacy' ? 'Privacy Policy'
@@ -70,11 +70,8 @@ export function SettingsScreen() {
     // Outer = overlay-level open/close. Inline (vs OverlayShell) so the header
     // can update across sub-screens without remounting the shell — that's
     // what prevents the feed-flash between settings → privacy.
-    <motion.div
-      ref={swipeRef}
-      initial={{ x: '100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: '100%' }}
+    <SwipeBackPage
+      onBack={closeOverlay}
       transition={pageTransition}
       className="absolute inset-0 z-40 bg-[#07060b] flex flex-col"
     >
@@ -111,7 +108,7 @@ export function SettingsScreen() {
           </motion.div>
         </AnimatePresence>
       </div>
-    </motion.div>
+    </SwipeBackPage>
   );
 }
 

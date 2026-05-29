@@ -149,24 +149,29 @@ function DigestRow({
   suggestion: Suggestion;
   onTap: (tap: SuggestionTap) => void;
 }) {
+  // Same neutral card chrome as SuggestedEventRow so digests and picks read
+  // as one rail. The "Smart suggestion:" / "Event:" prefix on the title is
+  // what distinguishes them visually instead of a contrasting tint.
   return (
     <motion.button
       whileTap={{ scale: 0.985 }}
       onClick={() => onTap(sg.tap)}
-      className="w-full text-left flex items-center gap-3 p-3 rounded-2xl border transition
-                 bg-gradient-to-r from-fuchsia-500/15 via-rose-500/10 to-orange-500/10
-                 border-fuchsia-400/25 hover:from-fuchsia-500/20 hover:via-rose-500/15 hover:to-orange-500/15"
+      className="w-full text-left flex items-center gap-3 p-2.5 rounded-2xl bg-white/[0.04]
+                 border border-white/10 hover:bg-white/[0.08] transition"
     >
-      <div className="h-10 w-10 rounded-xl grid place-items-center text-xl bg-gradient-to-br from-fuchsia-500/30 to-rose-500/30 border border-white/10">
+      <div className="h-10 w-10 rounded-xl grid place-items-center text-xl bg-white/5 border border-white/10 shrink-0">
         {sg.emoji}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-white leading-snug">
-          {sg.text}
+          <span className="text-fuchsia-300/90 text-[11px] uppercase tracking-widest font-bold mr-1.5 align-middle">
+            Smart suggestion:
+          </span>
+          <span className="align-middle">{sg.text}</span>
         </div>
         {/* Sub-label tells the user what tapping will do, so an "open"
             card doesn't masquerade as a filter shortcut. */}
-        <div className="text-[11px] text-fuchsia-200/90 mt-0.5">
+        <div className="text-[11px] text-zinc-400 mt-0.5">
           {sg.tap.action === 'open' ? 'Tap to open' : 'Tap to filter'}
         </div>
       </div>
@@ -210,7 +215,12 @@ function SuggestedEventRow({ activity }: { activity: Activity }) {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold text-white truncate">{activity.title}</div>
+        <div className="text-sm font-semibold text-white truncate">
+          <span className="text-amber-200/90 text-[11px] uppercase tracking-widest font-bold mr-1.5 align-middle">
+            Event:
+          </span>
+          <span className="align-middle">{activity.title}</span>
+        </div>
         <div className="text-[11px] text-zinc-400 truncate flex items-center gap-1.5">
           <span>{relDayLabel(activity.startsAt)} · {clockTime(activity.startsAt)}</span>
           <span aria-hidden>·</span>

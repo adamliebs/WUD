@@ -4,7 +4,7 @@ import { badRequest } from '../lib/errors.js';
 import { handler, requireString } from '../lib/http.js';
 import { search, suggestions, trending } from '../services/discovery.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
-import { listNotifications, markAllRead, sendPing, unreadCount } from '../services/notifications.js';
+import { clearAllNotifications, listNotifications, markAllRead, sendPing, unreadCount } from '../services/notifications.js';
 import { friendIds } from '../services/social.js';
 
 export const miscRouter = Router();
@@ -23,6 +23,12 @@ miscRouter.get('/notifications', handler((req, res) => {
 miscRouter.post('/notifications/read', handler((req, res) => {
   markAllRead(uid(req));
   res.json({ ok: true });
+}));
+
+/** DELETE /v1/notifications — wipe every notification the user has. */
+miscRouter.delete('/notifications', handler((req, res) => {
+  const cleared = clearAllNotifications(uid(req));
+  res.json({ cleared });
 }));
 
 /* ---- pings ---- */

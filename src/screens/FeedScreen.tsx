@@ -29,9 +29,15 @@ export function FeedScreen() {
   const openOverlay = useApp(s => s.openOverlay);
 
   return (
-    <div className="h-full w-full flex flex-col">
+    <div className="h-full w-full flex flex-col relative overflow-hidden">
+      {/* Drifting orbs — same atmospheric trick the Floats page uses, but a
+          cooler palette (rose / sky / violet) so the two tabs feel related
+          without looking identical. Pointer-events disabled so they never
+          intercept taps. */}
+      <FeedBackgroundOrbs />
+
       {/* Header */}
-      <div className="pt-status-lg pb-3 px-5">
+      <div className="relative pt-status-lg pb-3 px-5">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -39,8 +45,9 @@ export function FeedScreen() {
           className="flex items-end justify-between"
         >
           <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-400">
-              Hey {me.name}, what's up?
+            <div className="text-xs uppercase tracking-[0.2em] text-zinc-400 inline-flex items-center gap-1.5">
+              <Sparkles size={12} className="text-rose-300" />
+              Hey {me.name}
             </div>
             <h1 className="text-[34px] font-black leading-none mt-1">
               <span className="text-grad">WUD?</span>
@@ -87,7 +94,7 @@ export function FeedScreen() {
       </div>
 
       {/* Scroll list */}
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
+      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
         <EmailVerificationBanner />
         <LiveNowStrip />
         <SmartSuggestions />
@@ -139,25 +146,94 @@ export function FeedScreen() {
           ))}
 
           {activities.length === 0 && (
-            <div className="text-center mt-20">
+            <div className="text-center mt-16 pb-6">
               {filtersActive ? (
                 <>
-                  <div className="text-5xl mb-2">🪄</div>
-                  <div className="text-white font-semibold">Nothing matches those filters</div>
+                  <motion.div
+                    animate={{ rotate: [0, 10, 0, -10, 0] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                    className="text-6xl"
+                  >
+                    🪄
+                  </motion.div>
+                  <div className="text-white font-semibold mt-3">Nothing matches those filters</div>
+                  <div className="text-sm text-zinc-400 mt-1 max-w-[260px] mx-auto">
+                    Loosen up and the right plan might surface.
+                  </div>
                   <button
                     onClick={clearFilters}
-                    className="mt-3 px-4 py-2 rounded-full text-xs font-bold text-white bg-gradient-to-br from-rose-500 to-orange-500"
+                    className="mt-4 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest text-white
+                               bg-gradient-to-br from-rose-500 to-orange-500
+                               shadow-[0_12px_30px_-12px_rgba(244,63,94,0.55)]"
                   >
                     Clear filters
                   </button>
                 </>
               ) : (
-                <div className="text-zinc-400">No plans yet — be the first 👀</div>
+                <>
+                  <motion.div
+                    animate={{ y: [0, -8, 0], rotate: [0, 6, 0, -6, 0] }}
+                    transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                    className="text-6xl"
+                  >
+                    ✨
+                  </motion.div>
+                  <div className="text-white font-semibold mt-3">Quiet feed</div>
+                  <div className="text-sm text-zinc-400 mt-1 max-w-[280px] mx-auto">
+                    Nothing on the books right now. Drop a plan or float an idea — your crew is one tap away.
+                  </div>
+                </>
               )}
             </div>
           )}
         </motion.div>
       </div>
+    </div>
+  );
+}
+
+/** Drifting blurred orbs behind the feed. Same idea as Floats' BackgroundOrbs
+ *  but a different palette (rose · sky · violet) so each tab carries its own
+ *  mood without feeling reskinned. */
+function FeedBackgroundOrbs() {
+  // willChange + opacity fade-in: keeps the orbs from flashing as solid
+  // bright dots before the browser applies the blur filter (see FloatsScreen
+  // BackgroundOrbs for the same fix).
+  return (
+    <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
+      <motion.div
+        className="absolute -top-24 -left-10 h-72 w-72 rounded-full bg-rose-500/12 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, 24, 0], x: [0, 14, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut' },
+          y: { duration: 20, repeat: Infinity, ease: 'easeInOut' },
+          x: { duration: 20, repeat: Infinity, ease: 'easeInOut' },
+        }}
+      />
+      <motion.div
+        className="absolute top-1/4 -right-20 h-80 w-80 rounded-full bg-sky-500/10 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -30, 0], x: [0, -18, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
+          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 3 },
+          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 3 },
+        }}
+      />
+      <motion.div
+        className="absolute bottom-20 left-1/5 h-64 w-64 rounded-full bg-violet-500/12 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -18, 0], x: [0, 12, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
+          y: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
+          x: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
+        }}
+      />
     </div>
   );
 }

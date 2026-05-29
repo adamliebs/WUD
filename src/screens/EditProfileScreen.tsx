@@ -14,16 +14,19 @@ const AVATAR_OPTIONS = [
   '🌈', '✨', '🔥', '🌊', '🌵', '🍕',
 ];
 
+// Glassy/transparent palette — three-stop gradients at low opacity so the
+// profile banner and emoji avatars read as soft tints over a dark base.
+// Matches the Floats card palette so colors feel consistent across the app.
 const COLOR_OPTIONS: { label: string; value: string }[] = [
-  { label: 'Sunset',   value: 'from-rose-400 to-orange-500' },
-  { label: 'Berry',    value: 'from-pink-400 to-rose-600' },
-  { label: 'Coral',    value: 'from-amber-400 to-orange-600' },
-  { label: 'Aurora',   value: 'from-violet-500 to-fuchsia-600' },
-  { label: 'Ocean',    value: 'from-sky-400 to-indigo-600' },
-  { label: 'Forest',   value: 'from-emerald-400 to-teal-600' },
-  { label: 'Lagoon',   value: 'from-teal-400 to-cyan-700' },
-  { label: 'Plum',     value: 'from-fuchsia-400 to-purple-700' },
-  { label: 'Storm',    value: 'from-zinc-500 to-zinc-800' },
+  { label: 'Sunset',   value: 'from-rose-500/25 via-pink-500/15 to-orange-500/10' },
+  { label: 'Berry',    value: 'from-pink-500/25 via-rose-500/15 to-rose-500/10' },
+  { label: 'Coral',    value: 'from-amber-500/25 via-orange-500/15 to-rose-500/10' },
+  { label: 'Aurora',   value: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10' },
+  { label: 'Ocean',    value: 'from-sky-500/25 via-blue-500/15 to-indigo-500/10' },
+  { label: 'Forest',   value: 'from-emerald-500/25 via-teal-500/15 to-cyan-500/10' },
+  { label: 'Lagoon',   value: 'from-teal-500/25 via-cyan-500/15 to-sky-500/10' },
+  { label: 'Plum',     value: 'from-fuchsia-500/25 via-purple-500/15 to-purple-500/10' },
+  { label: 'Storm',    value: 'from-zinc-400/25 via-zinc-500/15 to-zinc-600/10' },
 ];
 
 export function EditProfileScreen() {

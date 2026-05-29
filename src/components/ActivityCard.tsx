@@ -45,9 +45,24 @@ export function ActivityCard({ activity }: Props) {
     <motion.div
       layout
       whileTap={{ scale: 0.985 }}
+      whileHover={{ y: -2 }}
       onClick={() => open(activity.id)}
-      className={`relative overflow-hidden rounded-3xl glass cursor-pointer ${over ? 'opacity-70' : ''}`}
+      className={`relative overflow-hidden rounded-3xl glass cursor-pointer
+                  border border-white/10
+                  shadow-[0_18px_40px_-22px_rgba(0,0,0,0.65)]
+                  transition-shadow hover:shadow-[0_22px_50px_-22px_rgba(0,0,0,0.8)]
+                  ${over ? 'opacity-70' : ''}`}
     >
+      {/* Subtle inner glow lifted from the category gradient — gives every
+          card a unique tint without overpowering the content. Hidden under
+          a banner image so the photo stays the focal point. */}
+      {!activity.bannerUrl && (
+        <div
+          aria-hidden
+          className={`absolute -inset-px rounded-3xl opacity-30 pointer-events-none bg-gradient-to-br ${cat.gradient}`}
+          style={{ filter: 'blur(28px)' }}
+        />
+      )}
       {/* Header — banner image if provided, otherwise the category gradient */}
       <div className={`relative h-24 ${activity.bannerUrl ? 'bg-zinc-900' : `bg-gradient-to-br ${cat.gradient}`}`}>
         {activity.bannerUrl ? (

@@ -148,6 +148,24 @@ export function markAllRead(userId: string): void {
   q.run('UPDATE notifications SET read = 1 WHERE user_id = ?', userId);
 }
 
+/** Wipe every notification belonging to a user. Used by the "Clear all"
+ *  affordance on the Alerts page. Returns the row count deleted. */
+export function clearAllNotifications(userId: string): number {
+  const result = q.run('DELETE FROM notifications WHERE user_id = ?', userId);
+  return result.changes;
+}
+
+/** Drop notifications older than the cutoff. Called by the scheduler each
+ *  tick so the table doesn't accumulate ancient noise. Returns the row count
+ *  deleted (zero on most ticks). */
+export function purgeStaleNotifications(olderThanMs: number): number {
+  const result = q.run(
+    'DELETE FROM notifications WHERE created_at < ?',
+    Date.now() - olderThanMs,
+  );
+  return result.changes;
+}
+
 /** Fetch one notification belonging to a user (or undefined). */
 export function getNotification(id: string, userId: string): AppNotification | undefined {
   const row = q.get<NotifRow>(

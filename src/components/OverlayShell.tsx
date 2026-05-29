@@ -1,7 +1,6 @@
-import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { type ReactNode } from 'react';
-import { useSwipeBack } from './useSwipeBack';
+import { SwipeBackPage } from './SwipeBackPage';
 
 interface Props {
   title: string;
@@ -12,19 +11,15 @@ interface Props {
 }
 
 /**
- * Full-screen push overlay — used for Settings, Edit Profile, Friends.
- * Slides in from the right with a back chevron + title in the header. Also
- * supports a left-edge swipe-right gesture to dismiss, matching iOS.
+ * Full-screen push overlay — used for Settings, Edit Profile, Friends, etc.
+ * Slides in from the right with a back chevron + title in the header, and
+ * supports an anywhere-on-screen drag-right gesture to dismiss (the page
+ * follows the finger, revealing the underlying tab page behind it).
  */
 export function OverlayShell({ title, onClose, trailing, children }: Props) {
-  const swipeRef = useSwipeBack<HTMLDivElement>(onClose);
   return (
-    <motion.div
-      ref={swipeRef}
-      initial={{ x: '100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: '100%' }}
-      transition={{ type: 'spring', stiffness: 360, damping: 36 }}
+    <SwipeBackPage
+      onBack={onClose}
       className="absolute inset-0 z-40 bg-[#07060b] flex flex-col"
     >
       {/* Header */}
@@ -44,6 +39,6 @@ export function OverlayShell({ title, onClose, trailing, children }: Props) {
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {children}
       </div>
-    </motion.div>
+    </SwipeBackPage>
   );
 }

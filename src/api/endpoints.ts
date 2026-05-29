@@ -261,6 +261,8 @@ export const miscApi = {
   notifications: () =>
     api.get<{ notifications: AppNotification[]; unread: number; users: User[] }>('/notifications'),
   markRead: () => api.post('/notifications/read'),
+  /** Wipe every notification — server-authoritative, returns count cleared. */
+  clearAll: () => api.del<{ cleared: number }>('/notifications'),
 
   ping: (text: string, recipientIds: string[]) =>
     api.post<{ delivered: number }>('/pings', { text, recipientIds }),

@@ -108,22 +108,45 @@ export function FloatsScreen() {
 /* ─────────────────────────── Background bokeh ─────────────────────────── */
 
 function BackgroundOrbs() {
+  // willChange: 'filter' promotes each orb onto its own GPU layer with the
+  // blur baked in from the first paint. Without it, browsers paint the
+  // unblurred element briefly before the filter kicks in, which read as a
+  // bright flash when the page mounted — most visible on the bottom amber
+  // orb. Pairing that with an opacity fade-in hides any residual hiccup.
   return (
     <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div
         className="absolute -top-20 -left-10 h-64 w-64 rounded-full bg-fuchsia-500/15 blur-3xl"
-        animate={{ y: [0, 24, 0], x: [0, 12, 0] }}
-        transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, 24, 0], x: [0, 12, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut' },
+          y: { duration: 18, repeat: Infinity, ease: 'easeInOut' },
+          x: { duration: 18, repeat: Infinity, ease: 'easeInOut' },
+        }}
       />
       <motion.div
         className="absolute top-1/3 -right-16 h-72 w-72 rounded-full bg-rose-500/12 blur-3xl"
-        animate={{ y: [0, -30, 0], x: [0, -16, 0] }}
-        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -30, 0], x: [0, -16, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
+          y: { duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+          x: { duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+        }}
       />
       <motion.div
         className="absolute bottom-10 left-1/4 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl"
-        animate={{ y: [0, -18, 0], x: [0, 10, 0] }}
-        transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -18, 0], x: [0, 10, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
+          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 4 },
+          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 4 },
+        }}
       />
     </div>
   );

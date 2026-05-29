@@ -1,22 +1,26 @@
 import type { Activity, Category } from '../types';
 
+// Glassy/transparent palette — three-stop 500-level gradients at low opacity
+// (/25, /15, /10) so the banner reads as a soft tint over the dark card
+// instead of a saturated block. Matches the Floats card palette so the whole
+// app shares one visual language.
 export const CATEGORIES: Category[] = [
-  { key: 'surf',     label: 'Surf',     emoji: '🏄',  gradient: 'from-cyan-400 to-blue-600' },
-  { key: 'gym',      label: 'Gym',      emoji: '🏋️', gradient: 'from-red-400 to-rose-600' },
-  { key: 'run',      label: 'Run',      emoji: '🏃',  gradient: 'from-lime-400 to-emerald-600' },
-  { key: 'gaming',   label: 'Gaming',   emoji: '🎮',  gradient: 'from-violet-500 to-fuchsia-600' },
-  { key: 'food',     label: 'Food',     emoji: '🍔',  gradient: 'from-amber-400 to-orange-600' },
-  { key: 'drinks',   label: 'Drinks',   emoji: '🍹',  gradient: 'from-pink-400 to-rose-600' },
-  { key: 'coffee',   label: 'Coffee',   emoji: '☕',  gradient: 'from-amber-700 to-stone-800' },
-  { key: 'study',    label: 'Study',    emoji: '📚',  gradient: 'from-indigo-400 to-blue-700' },
-  { key: 'movie',    label: 'Movie',    emoji: '🎬',  gradient: 'from-zinc-500 to-zinc-800' },
-  { key: 'outdoors', label: 'Outdoors', emoji: '🌲',  gradient: 'from-green-500 to-teal-700' },
-  { key: 'party',    label: 'Party',    emoji: '🎉',  gradient: 'from-fuchsia-500 to-purple-700' },
-  { key: 'other',    label: 'Other',    emoji: '✨',  gradient: 'from-slate-400 to-slate-700' },
+  { key: 'surf',     label: 'Surf',     emoji: '🏄',  gradient: 'from-cyan-500/25 via-sky-500/15 to-blue-500/10' },
+  { key: 'gym',      label: 'Gym',      emoji: '🏋️', gradient: 'from-rose-500/25 via-pink-500/15 to-rose-500/10' },
+  { key: 'run',      label: 'Run',      emoji: '🏃',  gradient: 'from-lime-500/25 via-emerald-500/15 to-teal-500/10' },
+  { key: 'gaming',   label: 'Gaming',   emoji: '🎮',  gradient: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10' },
+  { key: 'food',     label: 'Food',     emoji: '🍔',  gradient: 'from-amber-500/25 via-orange-500/15 to-rose-500/10' },
+  { key: 'drinks',   label: 'Drinks',   emoji: '🍹',  gradient: 'from-pink-500/25 via-rose-500/15 to-rose-500/10' },
+  { key: 'coffee',   label: 'Coffee',   emoji: '☕',  gradient: 'from-amber-500/25 via-amber-700/15 to-stone-500/10' },
+  { key: 'study',    label: 'Study',    emoji: '📚',  gradient: 'from-indigo-500/25 via-blue-500/15 to-blue-500/10' },
+  { key: 'movie',    label: 'Movie',    emoji: '🎬',  gradient: 'from-zinc-400/25 via-zinc-500/15 to-zinc-600/10' },
+  { key: 'outdoors', label: 'Outdoors', emoji: '🌲',  gradient: 'from-emerald-500/25 via-green-500/15 to-teal-500/10' },
+  { key: 'party',    label: 'Party',    emoji: '🎉',  gradient: 'from-fuchsia-500/25 via-pink-500/15 to-purple-500/10' },
+  { key: 'other',    label: 'Other',    emoji: '✨',  gradient: 'from-slate-400/25 via-slate-500/15 to-slate-600/10' },
 ];
 
-/** Distinct, vibrant gradient used for user-defined "custom" categories. */
-export const CUSTOM_GRADIENT = 'from-fuchsia-500 via-pink-500 to-rose-600';
+/** Glassy default for user-defined "custom" categories. */
+export const CUSTOM_GRADIENT = 'from-fuchsia-500/25 via-pink-500/15 to-rose-500/10';
 
 /** Look up a category by its key — falls back to "Other" for unknown keys. */
 export const categoryOf = (k: string) =>

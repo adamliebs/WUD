@@ -22,19 +22,12 @@ export function ProfileScreen() {
   const openOverlay = useApp(s => s.openOverlay);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
+    <div className="h-full flex flex-col relative overflow-hidden">
+      <MeBackgroundOrbs />
+      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-32">
         {/* Hero gradient — uses the color chosen in Edit profile */}
         <div className={`relative h-44 bg-gradient-to-br ${me.color} transition-colors`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
-          <motion.button
-            whileTap={{ scale: 0.9 }}
-            onClick={() => openOverlay('settings')}
-            aria-label="Settings"
-            className="absolute top-12 right-4 h-9 w-9 rounded-full grid place-items-center bg-black/30 backdrop-blur text-white"
-          >
-            <Settings size={16} />
-          </motion.button>
         </div>
 
         {/* Avatar overlap */}
@@ -56,9 +49,23 @@ export function ProfileScreen() {
             </motion.button>
           </div>
 
-          <div className="mt-3">
-            <div className="text-2xl font-black text-white">{me.name}</div>
-            <div className="text-sm text-zinc-400">@{me.handle}</div>
+          <div className="mt-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-2xl font-black text-white truncate">{me.name}</div>
+              <div className="text-sm text-zinc-400 truncate">@{me.handle}</div>
+            </div>
+            {/* Settings — moved out of the hero so the colored banner reads
+                cleaner. Lives at name-level on the right so it stays a
+                glanceable affordance without dominating. */}
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => openOverlay('settings')}
+              aria-label="Settings"
+              className="shrink-0 h-10 w-10 grid place-items-center rounded-full
+                         bg-white/5 border border-white/10 text-zinc-200 hover:bg-white/10 transition"
+            >
+              <Settings size={16} />
+            </motion.button>
           </div>
 
           {/* Edit profile — subtle outlined CTA below identity, full width */}
@@ -107,7 +114,21 @@ export function ProfileScreen() {
         {/* Upcoming plans */}
         <Section title="Upcoming plans">
           {myUpcomingPosts.length === 0 && myUpcomingJoins.length === 0 ? (
-            <div className="px-5 text-zinc-500 text-sm">Nothing on the calendar — post a plan!</div>
+            <div className="px-5 text-center pt-2 pb-1">
+              <motion.div
+                animate={{ y: [0, -6, 0], rotate: [0, 4, 0, -4, 0] }}
+                transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
+                className="text-3xl"
+              >
+                📭
+              </motion.div>
+              <div className="text-sm text-zinc-300 font-medium mt-1.5">
+                Nothing on the calendar
+              </div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">
+                Post a plan or float an idea to get something rolling.
+              </div>
+            </div>
           ) : (
             <div className="px-4 flex flex-col gap-2">
               {[...myUpcomingPosts, ...myUpcomingJoins].map(a => {
@@ -207,6 +228,48 @@ export function ProfileScreen() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Background orbs for the Me tab — emerald · violet · sky for a quieter,
+ *  more personal feel that doesn't compete with the user's chosen hero color. */
+function MeBackgroundOrbs() {
+  return (
+    <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
+      <motion.div
+        className="absolute top-1/2 -left-16 h-72 w-72 rounded-full bg-emerald-500/8 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, 22, 0], x: [0, 14, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut' },
+          y: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
+          x: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
+        }}
+      />
+      <motion.div
+        className="absolute top-1/4 -right-12 h-64 w-64 rounded-full bg-violet-500/10 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -24, 0], x: [0, -14, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
+          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
+        }}
+      />
+      <motion.div
+        className="absolute bottom-10 left-1/3 h-56 w-56 rounded-full bg-sky-500/8 blur-3xl"
+        style={{ willChange: 'filter, transform' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, y: [0, -16, 0], x: [0, 10, 0] }}
+        transition={{
+          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
+          y: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
+          x: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
+        }}
+      />
     </div>
   );
 }
