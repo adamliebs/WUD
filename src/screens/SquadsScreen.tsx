@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
 import { Avatar, AvatarStack } from '../components/Avatar';
 import { PulseButton } from '../components/PulseButton';
+import { useSwipeBack } from '../components/useSwipeBack';
 import { categoryFor } from '../data/categories';
 import { clockTime, relTime, useApp } from '../store';
 import { mediaUrl } from '../api/client';
@@ -100,12 +101,17 @@ export function SquadsScreen() {
     : mode.type === 'edit'  ? `edit-${mode.squadId}`
     : mode.type;
 
+  // Left-edge swipe-right uses the same per-mode onClose, so it pops the
+  // squad stack one level at a time (edit → detail → list → close).
+  const swipeRef = useSwipeBack<HTMLDivElement>(onClose);
+
   return (
     // Outer = overlay-level open/close (mirrors OverlayShell's spring).
     // Kept inline (vs reusing OverlayShell) so the header can update across
     // mode changes without remounting the shell — that's what stops the
     // profile-page flash between list → detail.
     <motion.div
+      ref={swipeRef}
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
       exit={{ x: '100%' }}

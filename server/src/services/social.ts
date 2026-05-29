@@ -313,10 +313,21 @@ export function updateSquad(
   return getSquad(squadId);
 }
 
+/** Push feed.changed to each user so they refetch — squad membership swings
+ *  visibility on every plan tagged to that squad. */
+function fanFeedChanged(userIds: Iterable<string>, reason: string): void {
+  for (const userId of userIds) {
+    publish({ channel: `user:${userId}`, type: 'feed.changed', data: { reason } });
+  }
+}
+
 /** Host-only: delete the squad (cascades untag activities + remove chat). */
 export function deleteSquad(squadId: string, actingUserId: string): void {
   if (!isSquadHost(squadId, actingUserId)) throw forbidden('Only the squad host can delete it');
+  // Snapshot members before the cascade so we can tell them their feed shifted.
+  const affected = squadEveryoneIds(squadId);
   q.run('DELETE FROM squads WHERE id = ?', squadId); // FKs cascade members/messages/activity_squads
+  fanFeedChanged(affected, 'squad.deleted');
 }
 
 /** Host-only: add a friend as a member. */
@@ -329,6 +340,7 @@ export function addSquadMember(squadId: string, actingUserId: string, memberId: 
     'INSERT OR IGNORE INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)',
     squadId, memberId, now(),
   );
+  fanFeedChanged([memberId], 'squad.member.added');
   return getSquad(squadId);
 }
 
@@ -336,6 +348,7 @@ export function addSquadMember(squadId: string, actingUserId: string, memberId: 
 export function removeSquadMember(squadId: string, actingUserId: string, memberId: string): Squad {
   if (!isSquadHost(squadId, actingUserId)) throw forbidden('Only the squad host can remove members');
   q.run('DELETE FROM squad_members WHERE squad_id = ? AND user_id = ?', squadId, memberId);
+  fanFeedChanged([memberId], 'squad.member.removed');
   return getSquad(squadId);
 }
 
@@ -345,4 +358,5 @@ export function leaveSquad(squadId: string, userId: string): void {
     throw forbidden('You host this squad — delete it instead of leaving');
   }
   q.run('DELETE FROM squad_members WHERE squad_id = ? AND user_id = ?', squadId, userId);
+  fanFeedChanged([userId], 'squad.left');
 }

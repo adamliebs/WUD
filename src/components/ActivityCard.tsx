@@ -128,10 +128,14 @@ export function ActivityCard({ activity }: Props) {
         </div>
 
         <div className="flex items-center gap-3 mt-3 text-zinc-300 text-xs">
-          <div className="flex items-center gap-1.5">
-            <Clock size={13} className="text-zinc-400" />
-            <span className="font-medium">{clockTime(activity.startsAt)}</span>
-            <span className="text-zinc-500">· {relTime(activity.startsAt)}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Clock size={13} className="text-zinc-400 shrink-0" />
+            <span className="font-medium truncate">
+              {clockTime(activity.startsAt)}
+              <span className="text-zinc-500 mx-1">→</span>
+              {clockTime(activity.endsAt)}
+            </span>
+            <span className="text-zinc-500 shrink-0">· {relTime(activity.startsAt)}</span>
           </div>
           {activity.place && (
             <div className="flex items-center gap-1.5 min-w-0">

@@ -6,7 +6,7 @@ import type { Activity, CategoryKey, Reaction, Recurrence, RsvpState } from '../
 import { messagesForActivity, sendSystem } from './chat.js';
 import { createNotification } from './notifications.js';
 import { isBlockedEither } from './safety.js';
-import { areFriends, isInSquad } from './social.js';
+import { areFriends, friendIds, isInSquad, squadEveryoneIds } from './social.js';
 import { getUserRow } from './users.js';
 
 interface ActivityRow {
@@ -218,7 +218,7 @@ export function createActivity(hostId: string, input: {
     input.reminderMins === undefined ? null
     : input.reminderMins === null ? -1
     : input.reminderMins;
-  return tx(() => {
+  const created = tx(() => {
     q.run(
       `INSERT INTO activities
         (id, host_id, category, custom_emoji, custom_label, title, description, place,
@@ -249,6 +249,11 @@ export function createActivity(hostId: string, input: {
     }
     return getActivity(id);
   });
+  // Tell every potential viewer that their feed just changed so the new plan
+  // lands on their home screen without waiting for a manual refresh.
+  const row = getActivityRow(id);
+  if (row) publishFeedChange(row, 'created');
+  return created;
 }
 
 /**
@@ -313,7 +318,44 @@ export function updateActivity(actorId: string, activityId: string, patch: {
 function emitActivity(activityId: string): Activity {
   const activity = getActivity(activityId);
   publish({ channel: `activity:${activityId}`, type: 'activity.updated', data: activity });
+  // The set of plans visible to each potential viewer can shift on edit (time
+  // window, squad tags, privacy flag), so nudge every plausible viewer to
+  // refetch their feed alongside the activity-level update.
+  const row = getActivityRow(activityId);
+  if (row) publishFeedChange(row, 'updated');
   return activity;
+}
+
+/**
+ * Every user who can currently see this activity. Used to fan out feed.changed
+ * pushes on create/update/dissolve so a brand-new plan appears on a friend's
+ * home screen without them having to refresh. The candidate set is the host,
+ * friends-of-host, members of any tagged squad, and (for open + non-private)
+ * friends of anyone already going — then narrowed by canSeeActivity so
+ * blocked pairs drop out.
+ */
+function viewerIdsForRow(row: ActivityRow): string[] {
+  const viewers = new Set<string>([row.host_id]);
+  for (const fid of friendIds(row.host_id)) viewers.add(fid);
+  for (const sid of squadIdsFor(row.id)) {
+    for (const uid of squadEveryoneIds(sid)) viewers.add(uid);
+  }
+  if (row.is_open_invite && !row.is_private) {
+    for (const id of rsvpIds(row.id, 'going')) {
+      for (const fid of friendIds(id)) viewers.add(fid);
+    }
+  }
+  return [...viewers].filter(uid => canSeeActivity(uid, row));
+}
+
+function publishFeedChange(row: ActivityRow, reason: 'created' | 'updated' | 'removed'): void {
+  for (const viewerId of viewerIdsForRow(row)) {
+    publish({
+      channel: `user:${viewerId}`,
+      type: 'feed.changed',
+      data: { activityId: row.id, reason },
+    });
+  }
 }
 
 /* ===================== RSVP ===================== */
@@ -376,6 +418,22 @@ export function setRsvp(userId: string, activityId: string, state: RsvpState | '
       }
     }
     publish({ channel: `activity:${activityId}`, type: 'rsvp.changed', data: { activityId, userId, state } });
+    // Friend-of-friend visibility hinges on whether a friend has a `going`
+    // RSVP, so a transition across the going boundary on an open + non-private
+    // plan can newly grant or revoke visibility for the RSVPer's friends. Fan
+    // feed.changed to each of those friends so they pick the plan up (or drop
+    // it) without a manual refresh.
+    const wasGoing = existing?.state === 'going';
+    const nowGoing = state === 'going';
+    if (wasGoing !== nowGoing && row.is_open_invite && !row.is_private) {
+      for (const fid of friendIds(userId)) {
+        publish({
+          channel: `user:${fid}`,
+          type: 'feed.changed',
+          data: { activityId, reason: 'rsvp' },
+        });
+      }
+    }
     return getActivity(activityId);
   });
 }
@@ -405,6 +463,9 @@ export function leaveActivity(userId: string, activityId: string): { dissolved: 
     if (!next) {
       q.run('UPDATE activities SET dissolved_at = ?, updated_at = ? WHERE id = ?', now(), now(), activityId);
       publish({ channel: `activity:${activityId}`, type: 'activity.updated', data: { id: activityId, dissolved: true } });
+      // Fan out a feed.changed so viewers drop the dissolved plan without
+      // having to refresh.
+      publishFeedChange(row, 'removed');
       return { dissolved: true };
     }
     // Promote: new host, drop their RSVP row.

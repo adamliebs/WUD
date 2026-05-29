@@ -428,6 +428,21 @@ export const useApp = create<State>((set, get) => {
       // refreshes on activity:* events instead.
       return;
     }
+    if (type === 'feed.changed') {
+      // A friend posted / edited / dissolved a plan I can see. The activity
+      // wasn't in my subscription set before this event (I didn't know it
+      // existed), so refetch the whole feed slice — cheap and always correct.
+      void refreshFeed();
+      return;
+    }
+    if (type === 'block.changed') {
+      // A block went up or came down on either side — the feed view (and the
+      // friends list) needs to drop or restore everything tied to that user.
+      void get().refreshBlocks();
+      void refreshFriends();
+      void refreshFeed();
+      return;
+    }
     if (channel.startsWith('activity:')) {
       void refreshActivity(channel.slice('activity:'.length));
       return;
@@ -436,6 +451,46 @@ export const useApp = create<State>((set, get) => {
       void refreshSquad(channel.slice('squad:'.length));
       return;
     }
+  };
+
+  /* ---- background refresh: pull-side safety net for the realtime push ----
+   *
+   * The WebSocket already pushes feed.changed / activity:* events, but mobile
+   * sockets drop silently on backgrounding and slow networks. A periodic
+   * refresh + a visibilitychange refresh keeps the feed in sync without the
+   * user needing to pull-to-refresh. Intentionally lightweight: skips while
+   * the tab is hidden, and only touches feed + notifications.
+   */
+  const BACKGROUND_REFRESH_MS = 30_000;
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+  let visibilityHandler: (() => void) | null = null;
+
+  const backgroundRefresh = () => {
+    void refreshFeed();
+    void refreshNotifications();
+  };
+
+  const startBackgroundRefresh = () => {
+    stopBackgroundRefresh();
+    refreshTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      backgroundRefresh();
+    }, BACKGROUND_REFRESH_MS);
+    if (typeof document !== 'undefined') {
+      visibilityHandler = () => {
+        if (!document.hidden) backgroundRefresh();
+      };
+      document.addEventListener('visibilitychange', visibilityHandler);
+    }
+  };
+
+  const stopBackgroundRefresh = () => {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
+    if (visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', visibilityHandler);
+    }
+    visibilityHandler = null;
   };
 
   /* ---- bootstrap: load the whole world after auth ---- */
@@ -463,6 +518,7 @@ export const useApp = create<State>((set, get) => {
     });
     connectRealtime(handleRealtime);
     syncSubscriptions();
+    startBackgroundRefresh();
     void refreshFriendRequests();   // load any pending incoming requests
     void get().refreshBlocks();     // load my block list (T&S — Apple 1.2)
     // The user is now authenticated — push the device's FCM token to the
@@ -1103,6 +1159,7 @@ export const useApp = create<State>((set, get) => {
       // signin sheet next time, not the previous account auto-restored.
       void firebaseSignOutSilent();
       disconnectRealtime();
+      stopBackgroundRefresh();
       tokens.clear();
       set({
         meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],

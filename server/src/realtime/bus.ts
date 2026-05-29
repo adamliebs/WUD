@@ -13,6 +13,12 @@ export type RealtimeEvent =
   | { channel: `user:${string}`;     type: 'notification.created'; data: unknown }
   | { channel: `user:${string}`;     type: 'friend.changed';       data: unknown }
   | { channel: `user:${string}`;     type: 'block.changed';        data: unknown }
+  // Tells a specific viewer "the set of plans you can see just changed" so the
+  // client can refetch its feed. Lets a brand-new activity show up on a
+  // friend's home screen without them having to refresh — they wouldn't be
+  // subscribed to `activity:<newId>` yet, so the activity-level events miss
+  // them on creation.
+  | { channel: `user:${string}`;     type: 'feed.changed';         data: unknown }
   | { channel: `activity:${string}`; type: 'message.created';      data: unknown }
   | { channel: `activity:${string}`; type: 'poll.updated';         data: unknown }
   | { channel: `activity:${string}`; type: 'rsvp.changed';         data: unknown }

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Calendar, Camera, Clock, Globe2, Loader2, Lock, Radio, Sparkles } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
 import { BottomSheet } from '../components/BottomSheet';
@@ -130,7 +130,11 @@ export function PostSheet() {
     ? 'Starting now'
     : formatStartsAt(dayOffset, time);
 
-  const reset = () => {
+  // Reset on open (not on submit) so the user's last selection stays visible
+  // through the sheet's close animation instead of flashing back to defaults
+  // before sliding away. Mirrors the GoLiveSheet pattern.
+  useEffect(() => {
+    if (!open) return;
     setCategory('coffee'); setCustomEmoji(''); setCustomLabel('');
     setTitle(''); setPlace(''); setDescription('');
     setTimeMode('scheduled');
@@ -142,7 +146,7 @@ export function PostSheet() {
     setRecurrence(undefined);
     setOpenInvite(true);
     setSelectedSquadIds([]);
-  };
+  }, [open]);
 
   const toggleSquad = (id: string) =>
     setSelectedSquadIds(prev =>
@@ -198,7 +202,8 @@ export function PostSheet() {
       squadIds: selectedSquadIds,
       isOpenInvite: openInvite,
     });
-    reset();
+    // Don't reset here — that flashes every field back to defaults while the
+    // sheet animates closed. The open-effect above resets on the next open.
   };
 
   // Weekday derived from the chosen day, used as the default for "weekly"/"biweekly".

@@ -285,7 +285,7 @@ function Inner({ activityId }: { activityId: string }) {
                 />
               ) : (
                 <InfoRow icon={<Clock size={16} />} label="When"
-                  value={`${clockTime(activity.startsAt)} · ${relTime(activity.startsAt)}`} />
+                  value={`${clockTime(activity.startsAt)} → ${clockTime(activity.endsAt)} · ${relTime(activity.startsAt)}`} />
               )}
               {activity.place && (
                 <InfoRow icon={<MapPin size={16} />} label="Where" value={activity.place} />

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { type ReactNode } from 'react';
+import { useSwipeBack } from './useSwipeBack';
 
 interface Props {
   title: string;
@@ -12,11 +13,14 @@ interface Props {
 
 /**
  * Full-screen push overlay — used for Settings, Edit Profile, Friends.
- * Slides in from the right with a back chevron + title in the header.
+ * Slides in from the right with a back chevron + title in the header. Also
+ * supports a left-edge swipe-right gesture to dismiss, matching iOS.
  */
 export function OverlayShell({ title, onClose, trailing, children }: Props) {
+  const swipeRef = useSwipeBack<HTMLDivElement>(onClose);
   return (
     <motion.div
+      ref={swipeRef}
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
