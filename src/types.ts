@@ -119,16 +119,50 @@ export type NotificationType =
   | 'host_taken'       // someone else accepted host (informational)
   | 'ping'             // friend pinged the squad
   | 'invite'           // friend-of-friend visibility unlocked
-  | 'reminder';        // your joined plan is starting soon
+  | 'reminder'         // your joined plan is starting soon
+  | 'float_received'   // a friend floated a soft proposal to you
+  | 'float_keen'       // someone is keen on your float
+  | 'float_locked';    // a float you were keen on became a real plan
 
 export interface AppNotification {
   id: string;
   type: NotificationType;
   fromId: string;
   activityId?: string;
+  /** Set for float_* notifications so the card can deep-link into the float. */
+  floatId?: string;
   text: string;
   at: number;
   read: boolean;
   // Action state for host_offer
   resolved?: boolean;
+}
+
+/* ---- floats ---- */
+
+export type FloatResponseState = 'keen' | 'maybe' | 'nah';
+
+export type FloatTiming = 'today' | 'tomorrow' | 'weekend' | 'whenever';
+
+export interface FloatResponse {
+  userId: string;
+  state: FloatResponseState;
+  at: number;
+}
+
+export interface Float {
+  id: string;
+  senderId: string;
+  question: string;
+  emoji?: string;
+  place?: string;
+  timing?: FloatTiming;
+  isOpenInvite: boolean;
+  isPrivate: boolean;
+  squadIds: string[];
+  responses: FloatResponse[];
+  createdAt: number;
+  expiresAt: number;
+  /** Set once the sender locks the float into a real activity. */
+  lockedIntoActivityId?: string;
 }

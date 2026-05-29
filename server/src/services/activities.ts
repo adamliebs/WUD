@@ -206,6 +206,12 @@ export function createActivity(hostId: string, input: {
   recurrence?: Recurrence;
   reminderMins?: number | null;
   squadIds?: string[];
+  /** User ids to auto-RSVP as `going` right after creation. Used by the
+   *  floats lock-in flow so a float's "keen" responders land in the new plan
+   *  without a second tap. Each id is re-checked against blocks before
+   *  inserting the RSVP — a keen who's since blocked the host (or vice versa)
+   *  silently drops out. */
+  prefilledGoingIds?: string[];
 }): Activity {
   if (!Number.isFinite(input.endsAt) || input.endsAt <= input.startsAt) {
     throw badRequest('INVALID_END_TIME', 'End time must be after start time', 'endsAt');
@@ -247,6 +253,18 @@ export function createActivity(hostId: string, input: {
         q.run('INSERT OR IGNORE INTO activity_squads (activity_id, squad_id) VALUES (?, ?)', id, squadId);
       }
     }
+    // Prefilled going RSVPs (from floats lock-in). Order them sequentially so
+    // they get stable order_index values matching the order they were keen.
+    let prefillOrder = 1;
+    for (const userId of new Set(input.prefilledGoingIds ?? [])) {
+      if (userId === hostId) continue;
+      if (isBlockedEither(hostId, userId)) continue;
+      q.run(
+        `INSERT OR IGNORE INTO rsvps (activity_id, user_id, state, order_index, created_at, updated_at)
+         VALUES (?, ?, 'going', ?, ?, ?)`,
+        id, userId, prefillOrder++, ts, ts,
+      );
+    }
     return getActivity(id);
   });
   // Tell every potential viewer that their feed just changed so the new plan
@@ -266,6 +284,11 @@ export function updateActivity(actorId: string, activityId: string, patch: {
   title?: string; description?: string; place?: string;
   startsAt?: number; endsAt?: number;
   maxSize?: number | null; bannerUrl?: string | null;
+  isPrivate?: boolean;
+  isOpenInvite?: boolean;
+  /** Full new squad tag set — drives a delete+reinsert of activity_squads.
+   *  Omit to leave tags untouched. Each id must be a squad the host belongs to. */
+  squadIds?: string[];
   // 'default' clears the override (use the user's default), 'off' disables it.
   reminderMins?: number | 'default' | 'off';
 }): Activity {
@@ -275,7 +298,9 @@ export function updateActivity(actorId: string, activityId: string, patch: {
   const reminderOnly =
     patch.title === undefined && patch.description === undefined && patch.place === undefined &&
     patch.startsAt === undefined && patch.endsAt === undefined &&
-    patch.maxSize === undefined && patch.bannerUrl === undefined;
+    patch.maxSize === undefined && patch.bannerUrl === undefined &&
+    patch.isPrivate === undefined && patch.isOpenInvite === undefined &&
+    patch.squadIds === undefined;
 
   // Host-only for content edits; participants may tweak only their reminder.
   if (!reminderOnly && row.host_id !== actorId) {
@@ -283,6 +308,16 @@ export function updateActivity(actorId: string, activityId: string, patch: {
   }
   if (!reminderOnly && isPast(row)) {
     throw conflict('ACTIVITY_OVER', 'This plan has already ended');
+  }
+
+  // Plans currently in their window may extend or shorten via endsAt, but the
+  // start time is fixed once the plan is live — moving it would either rewrite
+  // history or pretend the plan never started yet.
+  const ts = now();
+  const isLive = row.starts_at <= ts && ts <= row.ends_at;
+  if (isLive && patch.startsAt !== undefined && patch.startsAt !== row.starts_at) {
+    throw conflict('ACTIVITY_LIVE_START_LOCKED',
+      'Start time is locked once a plan is live. You can still adjust the end time.');
   }
 
   // Validate that any new time window stays end-after-start. Use the patched
@@ -299,19 +334,53 @@ export function updateActivity(actorId: string, activityId: string, patch: {
     : patch.reminderMins === 'off' ? -1                      // disabled
     : patch.reminderMins;                                    // explicit lead
 
-  q.run(
-    `UPDATE activities SET title = ?, description = ?, place = ?, starts_at = ?, ends_at = ?,
-       max_size = ?, banner_url = ?, reminder_minutes = ?, updated_at = ? WHERE id = ?`,
-    patch.title?.trim() || row.title,
-    patch.description?.trim() ?? row.description,
-    patch.place?.trim() ?? row.place,
-    nextStarts,
-    nextEnds,
-    patch.maxSize === undefined ? row.max_size : patch.maxSize,
-    patch.bannerUrl === undefined ? row.banner_url : patch.bannerUrl,
-    reminderCol,
-    now(), activityId,
-  );
+  // Capture viewers BEFORE the update so we can also tell anyone who's about
+  // to lose visibility (squad-untag, privacy flip) to refetch — emitActivity
+  // only fans to the new viewer set.
+  const oldViewers = new Set<string>(viewerIdsForRow(row));
+
+  tx(() => {
+    q.run(
+      `UPDATE activities SET title = ?, description = ?, place = ?, starts_at = ?, ends_at = ?,
+         max_size = ?, banner_url = ?, is_private = ?, is_open_invite = ?,
+         reminder_minutes = ?, updated_at = ? WHERE id = ?`,
+      patch.title?.trim() || row.title,
+      patch.description?.trim() ?? row.description,
+      patch.place?.trim() ?? row.place,
+      nextStarts,
+      nextEnds,
+      patch.maxSize === undefined ? row.max_size : patch.maxSize,
+      patch.bannerUrl === undefined ? row.banner_url : patch.bannerUrl,
+      patch.isPrivate === undefined ? row.is_private : (patch.isPrivate ? 1 : 0),
+      patch.isOpenInvite === undefined ? row.is_open_invite : (patch.isOpenInvite ? 1 : 0),
+      reminderCol,
+      ts, activityId,
+    );
+    // Replace squad tags wholesale when a new set is provided. Validation
+    // mirrors createActivity — only squads the host is in are honored.
+    if (patch.squadIds !== undefined) {
+      q.run('DELETE FROM activity_squads WHERE activity_id = ?', activityId);
+      for (const squadId of new Set(patch.squadIds)) {
+        if (isInSquad(squadId, row.host_id)) {
+          q.run('INSERT OR IGNORE INTO activity_squads (activity_id, squad_id) VALUES (?, ?)', activityId, squadId);
+        }
+      }
+    }
+  });
+
+  // Push feed.changed to viewers who lost visibility (squad-untag, privacy
+  // flipped, etc.) before letting emitActivity push to the new viewer set.
+  const newRow = getActivityRow(activityId)!;
+  const newViewers = new Set<string>(viewerIdsForRow(newRow));
+  for (const viewerId of oldViewers) {
+    if (!newViewers.has(viewerId)) {
+      publish({
+        channel: `user:${viewerId}`,
+        type: 'feed.changed',
+        data: { activityId, reason: 'updated' },
+      });
+    }
+  }
   return emitActivity(activityId);
 }
 

@@ -11,6 +11,7 @@ interface NotifRow {
   type: NotificationType;
   from_id: string | null;
   activity_id: string | null;
+  float_id: string | null;
   body: string;
   read: number;
   resolved: number;
@@ -23,6 +24,7 @@ function toNotification(r: NotifRow): AppNotification {
     type: r.type,
     fromId: r.from_id ?? 'system',
     activityId: r.activity_id ?? undefined,
+    floatId: r.float_id ?? undefined,
     text: r.body,
     at: r.created_at,
     read: !!r.read,
@@ -39,13 +41,15 @@ export function createNotification(input: {
   type: NotificationType;
   fromId?: string;
   activityId?: string;
+  floatId?: string;
   body: string;
 }): AppNotification {
   const id = newId();
   q.run(
-    `INSERT INTO notifications (id, user_id, type, from_id, activity_id, body, read, resolved, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)`,
-    id, input.userId, input.type, input.fromId ?? null, input.activityId ?? null, input.body, now(),
+    `INSERT INTO notifications (id, user_id, type, from_id, activity_id, float_id, body, read, resolved, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+    id, input.userId, input.type, input.fromId ?? null, input.activityId ?? null,
+    input.floatId ?? null, input.body, now(),
   );
   const row = q.get<NotifRow>('SELECT * FROM notifications WHERE id = ?', id)!;
   const notification = toNotification(row);
@@ -65,13 +69,16 @@ export function createNotification(input: {
  */
 function bannerTitle(type: NotificationType): string {
   switch (type) {
-    case 'join':         return 'New RSVP';
-    case 'ping':         return 'Ping';
-    case 'reminder':     return 'Starting soon';
-    case 'invite':       return 'New plan visible';
-    case 'host_offer':   return "You're up to host";
-    case 'host_taken':   return 'Host accepted';
-    default:             return 'WUD';
+    case 'join':            return 'New RSVP';
+    case 'ping':            return 'Ping';
+    case 'reminder':        return 'Starting soon';
+    case 'invite':          return 'New plan visible';
+    case 'host_offer':      return "You're up to host";
+    case 'host_taken':      return 'Host accepted';
+    case 'float_received':  return 'New float';
+    case 'float_keen':      return 'Someone is keen';
+    case 'float_locked':    return 'Locked in';
+    default:                return 'WUD';
   }
 }
 

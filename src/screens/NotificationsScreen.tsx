@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 // motion is still used by NotificationRow's "Pass" button; the row list itself
 // uses plain divs after Android WebView showed subpixel compositing gaps
 // between motion-wrapped children (regression of commit 79af4a7's fix).
-import { Bell, Clock, Crown, Megaphone, UserPlus } from 'lucide-react';
+import { Bell, Check, Clock, Crown, Megaphone, Sparkles, UserPlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { Avatar } from '../components/Avatar';
 import { PulseButton } from '../components/PulseButton';
@@ -10,21 +10,27 @@ import { useApp, relTime } from '../store';
 import type { AppNotification, NotificationType } from '../types';
 
 const ICONS: Record<NotificationType, React.ReactNode> = {
-  join:        <Bell size={14} />,
-  host_offer:  <Crown size={14} />,
-  host_taken:  <Crown size={14} />,
-  ping:        <Megaphone size={14} />,
-  invite:      <UserPlus size={14} />,
-  reminder:    <Clock size={14} />,
+  join:           <Bell size={14} />,
+  host_offer:     <Crown size={14} />,
+  host_taken:     <Crown size={14} />,
+  ping:           <Megaphone size={14} />,
+  invite:         <UserPlus size={14} />,
+  reminder:       <Clock size={14} />,
+  float_received: <Sparkles size={14} />,
+  float_keen:     <Check size={14} />,
+  float_locked:   <Sparkles size={14} />,
 };
 
 const TONES: Record<NotificationType, string> = {
-  join:        'from-emerald-400 to-teal-600',
-  host_offer:  'from-amber-400 to-orange-600',
-  host_taken:  'from-zinc-400 to-zinc-700',
-  ping:        'from-rose-500 to-pink-600',
-  invite:      'from-sky-400 to-blue-600',
-  reminder:    'from-orange-400 to-rose-600',
+  join:           'from-emerald-400 to-teal-600',
+  host_offer:     'from-amber-400 to-orange-600',
+  host_taken:     'from-zinc-400 to-zinc-700',
+  ping:           'from-rose-500 to-pink-600',
+  invite:         'from-sky-400 to-blue-600',
+  reminder:       'from-orange-400 to-rose-600',
+  float_received: 'from-fuchsia-500 to-rose-600',
+  float_keen:     'from-emerald-400 to-teal-600',
+  float_locked:   'from-fuchsia-500 to-orange-500',
 };
 
 export function NotificationsScreen() {
@@ -66,6 +72,7 @@ function NotificationRow({ n }: { n: AppNotification }) {
   const activity = useApp(s => n.activityId ? s.activities.find(a => a.id === n.activityId) : undefined);
   const openActivity = useApp(s => s.openActivity);
   const openOverlay = useApp(s => s.openOverlay);
+  const setTab = useApp(s => s.setTab);
   const accept = useApp(s => s.acceptHostOffer);
   const decline = useApp(s => s.declineHostOffer);
 
@@ -124,6 +131,25 @@ function NotificationRow({ n }: { n: AppNotification }) {
               className="mt-2 text-xs font-semibold text-rose-300"
             >
               {n.resolved ? 'View friends →' : 'Respond →'}
+            </button>
+          )}
+
+          {/* Float events — jump to the Floats tab, or to the locked-in
+              activity when there is one. */}
+          {(n.type === 'float_received' || n.type === 'float_keen') && (
+            <button
+              onClick={() => setTab('floats')}
+              className="mt-2 text-xs font-semibold text-fuchsia-300"
+            >
+              View float →
+            </button>
+          )}
+          {n.type === 'float_locked' && n.activityId && (
+            <button
+              onClick={() => n.activityId && openActivity(n.activityId)}
+              className="mt-2 text-xs font-semibold text-fuchsia-300"
+            >
+              See the plan →
             </button>
           )}
         </div>

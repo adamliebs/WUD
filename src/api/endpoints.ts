@@ -3,7 +3,8 @@
  * Response shapes mirror the server routes (see server/src/routes/*).
  */
 import type {
-  Activity, AppNotification, CategoryKey, ChatMessage, Recurrence, Squad, User,
+  Activity, AppNotification, CategoryKey, ChatMessage, Float, FloatResponseState,
+  FloatTiming, Recurrence, Squad, User,
 } from '../types';
 import type { AppSettings, RsvpState } from '../store';
 import { api } from './client';
@@ -69,6 +70,7 @@ export interface Bootstrap {
   friendIds: string[];
   squads: Squad[];
   activities: Activity[];
+  floats: Float[];
   notifications: AppNotification[];
   unread: number;
   hasFoF: boolean;
@@ -129,6 +131,20 @@ export const activityApi = {
 
   patch: (id: string, b: Record<string, unknown>) =>
     api.patch<ActivityResp>(`/activities/${id}`, b),
+
+  /** Typed host-only update. Same endpoint as `patch` with a stable shape. */
+  update: (id: string, b: {
+    title?: string;
+    place?: string;
+    description?: string;
+    startsAt?: number;
+    endsAt?: number;
+    maxSize?: number | null;
+    bannerUrl?: string | null;
+    isPrivate?: boolean;
+    isOpenInvite?: boolean;
+    squadIds?: string[];
+  }) => api.patch<ActivityResp>(`/activities/${id}`, b),
 
   rsvp: (id: string, state: RsvpState | 'none') =>
     api.put<ActivityResp>(`/activities/${id}/rsvp`, { state }),
@@ -197,6 +213,46 @@ export const uploadApi = {
     form.append('photo', file);
     return api.upload<{ url: string }>('/uploads', form);
   },
+};
+
+/* ---- floats ---- */
+
+export interface FloatResp { float: Float; users: User[] }
+export interface FloatsResp { floats: Float[]; users: User[] }
+export interface FloatLockResp { float: Float; activityId: string }
+
+export const floatApi = {
+  list: () => api.get<FloatsResp>('/floats'),
+  get: (id: string) => api.get<FloatResp>(`/floats/${id}`),
+  create: (b: {
+    question: string;
+    emoji?: string;
+    place?: string;
+    timing?: FloatTiming;
+    isOpenInvite?: boolean;
+    isPrivate?: boolean;
+    squadIds?: string[];
+    lifetimeMs?: number;
+  }) => api.post<FloatResp>('/floats', b),
+  respond: (id: string, state: FloatResponseState) =>
+    api.put<FloatResp>(`/floats/${id}/respond`, { state }),
+  lock: (id: string, b: {
+    title?: string;
+    category?: CategoryKey;
+    customEmoji?: string;
+    customLabel?: string;
+    place?: string;
+    description?: string;
+    startsAt: number;
+    endsAt: number;
+    maxSize?: number;
+    bannerUrl?: string;
+    isPrivate?: boolean;
+    isOpenInvite?: boolean;
+    squadIds?: string[];
+    reminderMins?: number | null;
+  }) => api.post<FloatLockResp>(`/floats/${id}/lock`, b),
+  remove: (id: string) => api.del(`/floats/${id}`),
 };
 
 /* ---- notifications / discovery ---- */

@@ -1,14 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Home, Megaphone, Plus, User } from 'lucide-react';
+import { Bell, Home, Plus, Sparkles, User } from 'lucide-react';
 import { useApp } from '../store';
 
-type Tab = 'feed' | 'ping' | 'notifications' | 'profile';
+type Tab = 'feed' | 'floats' | 'notifications' | 'profile';
 
 const tabs: { key: Tab; label: string; Icon: React.ElementType }[] = [
-  { key: 'feed',          label: 'Feed',  Icon: Home },
-  { key: 'ping',          label: 'Ping',  Icon: Megaphone },
+  { key: 'feed',          label: 'Feed',   Icon: Home },
+  { key: 'floats',        label: 'Floats', Icon: Sparkles },
   { key: 'notifications', label: 'Alerts', Icon: Bell },
-  { key: 'profile',       label: 'Me',    Icon: User },
+  { key: 'profile',       label: 'Me',     Icon: User },
 ];
 
 export function TabBar() {

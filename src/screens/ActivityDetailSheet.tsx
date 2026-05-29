@@ -1,6 +1,6 @@
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Repeat, Send, ShieldOff, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, ShieldOff, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -36,6 +36,7 @@ function Inner({ activityId }: { activityId: string }) {
   // your own plan; you'd delete it instead).
   const blockUserAction = useApp(s => s.blockUser);
   const openReport = useApp(s => s.openReportSheet);
+  const openEdit = useApp(s => s.setEditActivityId);
   const [tab, setTab] = useState<'details' | 'chat'>('details');
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -114,6 +115,17 @@ function Inner({ activityId }: { activityId: string }) {
         >
           <X size={16} />
         </button>
+        {/* Edit pencil — host-only. Opens the EditActivitySheet pre-filled
+            with this plan's current fields. */}
+        {isHost && !over && (
+          <button
+            onClick={() => openEdit(activity.id)}
+            aria-label="Edit plan"
+            className="absolute top-2 right-12 h-8 w-8 rounded-full grid place-items-center bg-black/30 text-white backdrop-blur"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
         {/* "More" menu — exposes Report plan + Block host. Hidden when I'm the
             host (you can't report/block yourself). Required surface for Apple
             Guideline 1.2 review. */}

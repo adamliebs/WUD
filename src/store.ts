@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { categoryFor } from './data/categories';
-import type { Activity, AppNotification, CategoryKey, Recurrence, Squad, User } from './types';
+import type { Activity, AppNotification, CategoryKey, Float, FloatResponseState, FloatTiming, Recurrence, Squad, User } from './types';
 import { ApiError, tokens } from './api/client';
 import {
-  activityApi, authApi, chatApi, getBootstrap, meApi, miscApi, safetyApi, socialApi, uploadApi,
+  activityApi, authApi, chatApi, floatApi, getBootstrap, meApi, miscApi, safetyApi, socialApi, uploadApi,
 } from './api/endpoints';
 import {
   connectRealtime, disconnectRealtime, type RealtimeEvent,
@@ -13,7 +13,7 @@ import { notify, registerPushAfterAuth } from './native';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-type Tab = 'feed' | 'ping' | 'notifications' | 'profile';
+type Tab = 'feed' | 'floats' | 'notifications' | 'profile';
 type FeedScope = 'friends' | 'fof';
 /** Top-level app screen — splash → welcome → auth → onboarding → main app. */
 export type AuthState = 'splash' | 'welcome' | 'auth' | 'onboarding' | 'app';
@@ -112,6 +112,7 @@ interface State {
 
   // domain
   activities: Activity[];
+  floats: Float[];
   notifications: AppNotification[];
   squads: Squad[];
 
@@ -228,6 +229,11 @@ interface State {
   showGoLiveSheet: boolean;
   setShowGoLiveSheet: (b: boolean) => void;
 
+  /** Activity currently being edited via the EditActivitySheet (host-only).
+   *  Null when the sheet is closed. */
+  editActivityId: string | null;
+  setEditActivityId: (id: string | null) => void;
+
   postActivity: (input: {
     category: CategoryKey;
     customEmoji?: string;
@@ -245,6 +251,55 @@ interface State {
     squadIds?: string[];
     isOpenInvite?: boolean;
   }) => void;
+
+  /** Host-only edit. Server enforces ownership + the live-start lock. */
+  updateActivity: (activityId: string, patch: {
+    title?: string;
+    place?: string;
+    description?: string;
+    startsAt?: number;
+    endsAt?: number;
+    maxSize?: number | null;
+    bannerUrl?: string | null;
+    isPrivate?: boolean;
+    isOpenInvite?: boolean;
+    squadIds?: string[];
+  }) => Promise<boolean>;
+
+  /* ---- floats — soft proposals before plans ---- */
+  /** Float a soft proposal to friends. Returns the created float (or null on failure). */
+  postFloat: (input: {
+    question: string;
+    emoji?: string;
+    place?: string;
+    timing?: FloatTiming;
+    isOpenInvite?: boolean;
+    isPrivate?: boolean;
+    squadIds?: string[];
+    lifetimeMs?: number;
+  }) => Promise<Float | null>;
+  /** Respond to a float — keen / maybe / nah. Toggle off by passing the same state again. */
+  respondToFloat: (floatId: string, state: FloatResponseState) => void;
+  /** Sender-only: promote a float to a real activity. Opens the host-side
+   *  PostSheet pre-filled with the float's keen crew as joiners. */
+  lockFloat: (floatId: string, input: {
+    title?: string;
+    category?: CategoryKey;
+    place?: string;
+    description?: string;
+    startsAt: number;
+    endsAt: number;
+    maxSize?: number;
+    isPrivate?: boolean;
+    isOpenInvite?: boolean;
+    squadIds?: string[];
+  }) => Promise<string | null>;
+  /** Sender-only: discard a float. */
+  removeFloat: (floatId: string) => void;
+  /** UI: which float (if any) is staged for lock-in via PostSheet. Carries the
+   *  prefill payload separately so reset() on close doesn't lose context. */
+  lockingFloatId: string | null;
+  setLockingFloatId: (id: string | null) => void;
 
   joinActivity: (activityId: string) => void;
   leaveActivity: (activityId: string) => void;
@@ -378,6 +433,39 @@ export const useApp = create<State>((set, get) => {
     set({ notifications });
   };
 
+  /* ---- floats: insert/replace, remove, refresh-all ---- */
+
+  const upsertFloat = (f: Float) => {
+    set(state => {
+      const exists = state.floats.some(x => x.id === f.id);
+      return {
+        floats: exists
+          ? state.floats.map(x => (x.id === f.id ? f : x))
+          : [f, ...state.floats],
+      };
+    });
+  };
+
+  const removeFloatLocal = (id: string) => {
+    set(state => ({
+      floats: state.floats.filter(f => f.id !== id),
+      lockingFloatId: state.lockingFloatId === id ? null : state.lockingFloatId,
+    }));
+  };
+
+  const refreshFloats = async () => {
+    try {
+      const { floats, users } = await floatApi.list();
+      mergeUsers(users);
+      set({ floats: dedupeById(floats) });
+    } catch (e) {
+      // Floats are non-critical — fail silently rather than dumping a toast.
+      if (e instanceof ApiError && e.status >= 500) {
+        // server hiccup; let the next pull recover
+      }
+    }
+  };
+
   const refreshFriends = async () => {
     const { friends } = await socialApi.friends();
     mergeUsers(friends);
@@ -435,6 +523,12 @@ export const useApp = create<State>((set, get) => {
       void refreshFeed();
       return;
     }
+    if (type === 'float.changed') {
+      // A float I can see was created / responded to / locked / removed.
+      // Re-pull the list — same cheap-and-correct pattern as feed.changed.
+      void refreshFloats();
+      return;
+    }
     if (type === 'block.changed') {
       // A block went up or came down on either side — the feed view (and the
       // friends list) needs to drop or restore everything tied to that user.
@@ -467,6 +561,7 @@ export const useApp = create<State>((set, get) => {
 
   const backgroundRefresh = () => {
     void refreshFeed();
+    void refreshFloats();
     void refreshNotifications();
   };
 
@@ -510,6 +605,7 @@ export const useApp = create<State>((set, get) => {
       users: dedupeUsers([b.user, ...b.users]),
       friendIds: b.friendIds,
       activities: dedupeById(b.activities),
+      floats: dedupeById(b.floats ?? []),
       squads: b.squads,
       notifications: b.notifications,
       settings: b.settings,
@@ -693,6 +789,7 @@ export const useApp = create<State>((set, get) => {
     blockedUsers: [],
     reportSheet: null,
     activities: [],
+    floats: [],
     notifications: [],
     squads: [],
     authState: 'splash',
@@ -703,6 +800,8 @@ export const useApp = create<State>((set, get) => {
     openActivityId: null,
     showPostSheet: false,
     showGoLiveSheet: false,
+    editActivityId: null,
+    lockingFloatId: null,
     pollComposerActivityId: null,
     feedScope: 'fof',
     feedFilters: { timeWindow: 'all', sort: 'soonest' },
@@ -860,12 +959,19 @@ export const useApp = create<State>((set, get) => {
       const DAY = 24 * HOUR;
       const WEEK = 7 * DAY;
       const out: Suggestion[] = [];
+      const myId = s.meId;
       // Mirror the feed's visibility logic so the digests match what the user
       // can actually scroll to below — including the friends-vs-FoF toggle.
+      // Also drop my own plans: For You is a discovery rail, surfacing things
+      // I'm already hosting (and would open up to "your own plan") feels off.
       const upcoming = s.activities
         .filter(a => a.endsAt >= now)
+        .filter(a => a.hostId !== myId)
         .filter(a => s.canSeeActivity(a))
         .filter(a => s.feedScope === 'fof' ? true : !s.isFoFActivity(a));
+      // For "open" action picks, prefer a plan the viewer hasn't already
+      // RSVP'd to — surfacing one I'm going to is redundant.
+      const notJoined = (a: Activity) => !a.joinerIds.includes(myId);
 
       // -- Morning pulse — only shown in the morning, only when something
       //    actually looks worth highlighting (2+ plans today). The "today"
@@ -887,16 +993,18 @@ export const useApp = create<State>((set, get) => {
           if (s.isFriend(a.hostId)) friendsToday.add(a.hostId);
           for (const id of a.joinerIds) if (s.isFriend(id)) friendsToday.add(id);
         }
-        out.push({
-          kind: 'morning_pulse',
-          count: todayPlans.length,
-          friendsGoing: friendsToday.size,
-          emoji: '🌅',
-          text: friendsToday.size > 0
-            ? `Good morning — ${todayPlans.length} plans today, ${friendsToday.size} friend${friendsToday.size === 1 ? '' : 's'} out`
-            : `Good morning — ${todayPlans.length} plans today`,
-          tap: { action: 'filter', apply: { timeWindow: 'today' } },
-        });
+        // Only surface the morning pulse when at least one friend is in the
+        // mix — a generic "3 plans today" with nobody I know is noisy.
+        if (friendsToday.size > 0) {
+          out.push({
+            kind: 'morning_pulse',
+            count: todayPlans.length,
+            friendsGoing: friendsToday.size,
+            emoji: '🌅',
+            text: `Good morning — ${todayPlans.length} plans today, ${friendsToday.size} friend${friendsToday.size === 1 ? '' : 's'} out`,
+            tap: { action: 'filter', apply: { timeWindow: 'today' } },
+          });
+        }
       }
 
       // -- Big night — find the evening (5pm–2am window) in the next week with
@@ -922,11 +1030,12 @@ export const useApp = create<State>((set, get) => {
       if (biggest && biggest.friends.size >= 3) {
         const label = relDayLabel(biggest.refMs);
         // Primary plan of that night = most friends going, soonest first as
-        // tiebreak. Tapping the card opens that single plan instead of
-        // dumping the user into a week-wide filter where they have to hunt.
-        const primary = [...biggest.activities].sort((a, b) =>
+        // tiebreak. Prefer un-joined plans so the tap surfaces something new
+        // instead of one I'm already going to.
+        const ranked = [...biggest.activities].sort((a, b) =>
           friendCount(b) - friendCount(a) || a.startsAt - b.startsAt,
-        )[0];
+        );
+        const primary = ranked.find(notJoined) ?? ranked[0];
         out.push({
           kind: 'big_night',
           nightLabel: label,
@@ -939,32 +1048,46 @@ export const useApp = create<State>((set, get) => {
 
       // -- Starting soon. With one plan we open it directly — no point making
       //    the user filter to a list of one. With more, fall back to a filter.
+      //    Prefer un-joined when picking the single-plan target.
       const soon = upcoming.filter(a => a.startsAt - now <= HOUR);
       if (soon.length >= 1) {
+        const soonPrimary = soon.find(notJoined) ?? soon[0];
         out.push({
           kind: 'starting_soon', count: soon.length, emoji: '⏰',
           text: soon.length === 1
             ? '1 plan starting in the next hour'
             : `${soon.length} plans starting in the next hour`,
           tap: soon.length === 1
-            ? { action: 'open', activityId: soon[0].id }
+            ? { action: 'open', activityId: soonPrimary.id }
             : { action: 'filter', apply: { timeWindow: 'now' } },
         });
       }
 
-      // -- Category cluster — filter is the right action (the card's whole job
-      //    is to surface a worth-scanning group of plans).
+      // -- Category cluster — only surface when the category is relevant: I've
+      //    either joined plans in this category before (affinity) or a friend
+      //    is involved. A "3 surf plans today" pile when I don't surf and
+      //    nobody I know is going is just noise.
+      const myCategoryAffinity = new Map<string, number>();
+      for (const a of s.activities) {
+        if (a.hostId === myId || a.joinerIds.includes(myId)) {
+          myCategoryAffinity.set(a.category, (myCategoryAffinity.get(a.category) ?? 0) + 1);
+        }
+      }
       const tally = new Map<string, number>();
       for (const a of todayPlans) tally.set(a.category, (tally.get(a.category) ?? 0) + 1);
       const top = [...tally.entries()].sort((a, b) => b[1] - a[1])[0];
       if (top && top[1] >= 2) {
-        const sample = todayPlans.find(a => a.category === top[0])!;
-        const c = categoryFor(sample);
-        out.push({
-          kind: 'category_cluster', category: top[0] as CategoryKey, count: top[1], emoji: c.emoji,
-          text: `${top[1]} ${c.label.toLowerCase()} plan${top[1] === 1 ? '' : 's'} today — tap to see them all`,
-          tap: { action: 'filter', apply: { category: top[0] as CategoryKey, timeWindow: 'today' } },
-        });
+        const samples = todayPlans.filter(a => a.category === top[0]);
+        const hasFriendInvolvement = samples.some(a => friendCount(a) > 0);
+        const hasAffinity = (myCategoryAffinity.get(top[0]) ?? 0) > 0;
+        if (hasFriendInvolvement || hasAffinity) {
+          const c = categoryFor(samples[0]);
+          out.push({
+            kind: 'category_cluster', category: top[0] as CategoryKey, count: top[1], emoji: c.emoji,
+            text: `${top[1]} ${c.label.toLowerCase()} plan${top[1] === 1 ? '' : 's'} today — tap to see them all`,
+            tap: { action: 'filter', apply: { category: top[0] as CategoryKey, timeWindow: 'today' } },
+          });
+        }
       }
 
       // Hard cap so the For You strip never grows beyond a glanceable size.
@@ -1052,6 +1175,7 @@ export const useApp = create<State>((set, get) => {
       else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); }
     },
     setShowGoLiveSheet: (b) => set({ showGoLiveSheet: b }),
+    setEditActivityId: (id) => set({ editActivityId: id }),
     setPollComposerActivityId: (id) => set({ pollComposerActivityId: id }),
 
     /** Opening an activity refetches it (fresh chat/RSVPs) + subscribes for realtime. */
@@ -1162,10 +1286,10 @@ export const useApp = create<State>((set, get) => {
       stopBackgroundRefresh();
       tokens.clear();
       set({
-        meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],
+        meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, showPostSheet: false,
-        showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
+        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null,
         feedFilters: { timeWindow: 'all', sort: 'soonest' },
         pendingSignup: null, authState: 'welcome',
       });
@@ -1178,10 +1302,10 @@ export const useApp = create<State>((set, get) => {
         disconnectRealtime();
         tokens.clear();
         set({
-          meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [],
+          meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
           notifications: [], squads: [],
           tab: 'feed', openActivityId: null, showPostSheet: false,
-          showGoLiveSheet: false, pollComposerActivityId: null, overlay: null,
+          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null,
           feedFilters: { timeWindow: 'all', sort: 'soonest' },
           pendingSignup: null, authState: 'welcome',
         });
@@ -1379,6 +1503,115 @@ export const useApp = create<State>((set, get) => {
         toast('Posted — your squad can see it', 'success');
       });
     },
+
+    updateActivity: async (activityId, patch) => {
+      try {
+        const { activity, users } = await activityApi.update(activityId, patch);
+        mergeUsers(users);
+        upsertActivity(activity);
+        toast('Plan updated', 'success');
+        return true;
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : 'Could not save changes', 'warn');
+        return false;
+      }
+    },
+
+    /* ---- floats ---- */
+
+    postFloat: async (input) => {
+      try {
+        const { float, users } = await floatApi.create(input);
+        mergeUsers(users);
+        upsertFloat(float);
+        toast('Floated 🎈', 'success');
+        return float;
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : 'Could not float that', 'warn');
+        return null;
+      }
+    },
+
+    respondToFloat: (floatId, state) => {
+      // Optimistic: stamp the response locally before the round-trip lands so
+      // the tally bar feels instant. The server result rehydrates on success;
+      // on failure we revert and toast.
+      const myId = get().meId;
+      const before = get().floats.find(f => f.id === floatId);
+      if (!before) return;
+      const existing = before.responses.find(r => r.userId === myId);
+      const wasSame = existing?.state === state;
+      const optimisticResponses = wasSame
+        ? before.responses.filter(r => r.userId !== myId)  // toggle off
+        : [
+            ...before.responses.filter(r => r.userId !== myId),
+            { userId: myId, state, at: Date.now() },
+          ];
+      upsertFloat({ ...before, responses: optimisticResponses });
+
+      void (async () => {
+        try {
+          // If we already had this state, the server's PUT just re-asserts it;
+          // we'd want a DELETE-like toggle for "tap again to clear" but the
+          // server treats responses as last-writer-wins. Re-asserting is fine
+          // and keeps the client/server in sync.
+          const { float, users } = await floatApi.respond(floatId, state);
+          mergeUsers(users);
+          upsertFloat(float);
+        } catch (e) {
+          upsertFloat(before);  // revert
+          toast(e instanceof ApiError ? e.message : 'Could not respond', 'warn');
+        }
+      })();
+    },
+
+    lockFloat: async (floatId, input) => {
+      try {
+        const { float, activityId } = await floatApi.lock(floatId, {
+          category: input.category ?? 'custom',
+          customEmoji: '🎈',
+          customLabel: 'Float',
+          title: input.title,
+          place: input.place,
+          description: input.description,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          maxSize: input.maxSize,
+          isPrivate: input.isPrivate,
+          isOpenInvite: input.isOpenInvite,
+          squadIds: input.squadIds,
+        });
+        upsertFloat(float);
+        // Pull the newly-created activity into the local cache so the user
+        // can jump straight into it from the float card.
+        try {
+          const { activity, users } = await activityApi.get(activityId);
+          mergeUsers(users);
+          upsertActivity(activity);
+          subscribeChannel(`activity:${activityId}`);
+        } catch { /* non-fatal */ }
+        toast('Locked in 🎉', 'success');
+        set({ lockingFloatId: null });
+        return activityId;
+      } catch (e) {
+        toast(e instanceof ApiError ? e.message : 'Could not lock it in', 'warn');
+        return null;
+      }
+    },
+
+    removeFloat: (floatId) => {
+      removeFloatLocal(floatId);
+      void (async () => {
+        try { await floatApi.remove(floatId); }
+        catch (e) {
+          // Restore from server if the local removal was premature.
+          void refreshFloats();
+          toast(e instanceof ApiError ? e.message : 'Could not delete float', 'warn');
+        }
+      })();
+    },
+
+    setLockingFloatId: (id) => set({ lockingFloatId: id }),
 
     joinActivity: (activityId) => get().setRsvp(activityId, 'going'),
 

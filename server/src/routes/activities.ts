@@ -83,6 +83,11 @@ activitiesRouter.patch('/activities/:id', handler((req, res) => {
     endsAt:   typeof b.endsAt   === 'number' ? b.endsAt   : undefined,
     maxSize: 'maxSize' in b ? (b.maxSize ?? null) : undefined,
     bannerUrl: 'bannerUrl' in b ? (b.bannerUrl ?? null) : undefined,
+    isPrivate: typeof b.isPrivate === 'boolean' ? b.isPrivate : undefined,
+    isOpenInvite: typeof b.isOpenInvite === 'boolean' ? b.isOpenInvite : undefined,
+    squadIds: Array.isArray(b.squadIds)
+      ? b.squadIds.filter((x: unknown): x is string => typeof x === 'string')
+      : undefined,
     // Wire encoding: 'default' clears the override, 'off' disables, number = lead.
     reminderMins: b.reminderMins === 'default' ? 'default'
       : b.reminderMins === 'off' ? 'off'

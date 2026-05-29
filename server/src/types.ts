@@ -91,13 +91,15 @@ export interface Squad {
 }
 
 export type NotificationType =
-  | 'join' | 'host_offer' | 'host_taken' | 'ping' | 'invite' | 'reminder';
+  | 'join' | 'host_offer' | 'host_taken' | 'ping' | 'invite' | 'reminder'
+  | 'float_received' | 'float_keen' | 'float_locked';
 
 export interface AppNotification {
   id: string;
   type: NotificationType;
   fromId: string;
   activityId?: string;
+  floatId?: string;
   text: string;
   at: number;
   read: boolean;
@@ -108,4 +110,34 @@ export interface AppSettings {
   pushEnabled: boolean;
   pingsEnabled: boolean;
   defaultReminderMins: number | null;
+}
+
+/* ---- floats (soft proposals before plans) ---- */
+
+export type FloatResponseState = 'keen' | 'maybe' | 'nah';
+
+/** Rough timing bucket — narrows the lock-in default but isn't binding. */
+export type FloatTiming = 'today' | 'tomorrow' | 'weekend' | 'whenever';
+
+export interface FloatResponse {
+  userId: string;
+  state: FloatResponseState;
+  at: number;
+}
+
+export interface Float {
+  id: string;
+  senderId: string;
+  question: string;
+  emoji?: string;
+  place?: string;
+  timing?: FloatTiming;
+  isOpenInvite: boolean;
+  isPrivate: boolean;
+  squadIds: string[];
+  responses: FloatResponse[];
+  createdAt: number;
+  expiresAt: number;
+  /** When the sender locked this float into a real activity, the activity's id. */
+  lockedIntoActivityId?: string;
 }

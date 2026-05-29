@@ -10,17 +10,12 @@ import { Avatar } from './Avatar';
  * Horizontal strip at the top of the Feed showing what's happening RIGHT NOW.
  *
  * After the live/activities merge, "live" no longer belongs to users — it
- * belongs to activities whose [startsAt, endsAt] window covers `now`. So this
- * surfaces those activities directly:
+ * belongs to activities whose [startsAt, endsAt] window covers `now`. The
+ * strip surfaces those activities. The "Go live" affordance is a small pill
+ * in the header row so it doesn't eat horizontal space the live cards need.
  *
- *   1. A "You" card — Go live shortcut (always present, primary CTA).
- *   2. One card per live activity I can see, newest first. No bundling —
- *      identical-looking events stay distinct because each is its own plan
- *      with its own host + joiners + chat.
- *
- * Tap the You card → GoLiveSheet.
- * Tap an activity card → ActivityDetailSheet (where the user can RSVP / chat /
- * ask "still happening?").
+ * Tap "Go live" → GoLiveSheet.
+ * Tap an activity card → ActivityDetailSheet.
  */
 export function LiveNowStrip() {
   const setShowGoLive = useApp(s => s.setShowGoLiveSheet);
@@ -38,60 +33,48 @@ export function LiveNowStrip() {
 
   return (
     <div className="px-4 mt-1 mb-3">
-      <div className="flex items-center gap-1.5 mb-2 px-1">
-        <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-rose-400 text-rose-400 live-dot" />
-        <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold">
-          Live now
-          {liveActivities.length > 0 && (
-            <span className="text-rose-300 normal-case tracking-normal font-bold ml-1">
-              · {liveActivities.length}
-            </span>
-          )}
+      <div className="flex items-center justify-between gap-2 mb-2 px-1">
+        <span className="inline-flex items-center gap-1.5 min-w-0">
+          <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-rose-400 text-rose-400 live-dot" />
+          <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold">
+            Live now
+            {liveActivities.length > 0 && (
+              <span className="text-rose-300 normal-case tracking-normal font-bold ml-1">
+                · {liveActivities.length}
+              </span>
+            )}
+          </span>
         </span>
+        <motion.button
+          whileTap={{ scale: 0.94 }}
+          onClick={() => setShowGoLive(true)}
+          className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold
+                     px-2.5 py-1 rounded-full
+                     bg-gradient-to-br from-rose-500 to-orange-500 text-white
+                     shadow-[0_6px_18px_-8px_rgba(244,63,94,0.55)]"
+          aria-label="Go live"
+        >
+          <Radio size={11} />
+          Go live
+        </motion.button>
       </div>
 
-      <div className="flex gap-2.5 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
-        <YouCard onTap={() => setShowGoLive(true)} />
-
-        {liveActivities.map(a => (
-          <LiveActivityCard
-            key={a.id}
-            activity={a}
-            onTap={() => openActivity(a.id)}
-          />
-        ))}
-
-        {liveActivities.length === 0 && (
-          <div className="self-center pl-1 text-[11px] text-zinc-500">
-            Nothing live right now — be the spark.
-          </div>
-        )}
-      </div>
+      {liveActivities.length > 0 ? (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
+          {liveActivities.map(a => (
+            <LiveActivityCard
+              key={a.id}
+              activity={a}
+              onTap={() => openActivity(a.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="px-1 text-[11px] text-zinc-500">
+          Nothing live right now — be the spark.
+        </div>
+      )}
     </div>
-  );
-}
-
-function YouCard({ onTap }: { onTap: () => void }) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.97 }}
-      onClick={onTap}
-      className="shrink-0 w-[148px] rounded-2xl p-3 text-left
-                 bg-white/5 border border-dashed border-white/20 hover:bg-white/10 transition"
-    >
-      <div className="flex items-center gap-2">
-        <div className="h-9 w-9 rounded-full grid place-items-center bg-gradient-to-br from-rose-500 to-orange-500 text-white">
-          <Radio size={16} />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">You</div>
-          <div className="text-sm font-bold text-white truncate">Go live</div>
-        </div>
-      </div>
-      <div className="mt-2 text-[11px] text-zinc-400 truncate">
-        Tell friends what you're up to right now.
-      </div>
-    </motion.button>
   );
 }
 
@@ -107,7 +90,7 @@ function liveTimingLabel(a: Activity): string {
     const rem = m % 60;
     return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
   };
-  return `Started ${fmt(sinceStart)} ago · ${fmt(untilEnd)} left`;
+  return `${fmt(sinceStart)} ago · ${fmt(untilEnd)} left`;
 }
 
 function LiveActivityCard({
@@ -127,7 +110,7 @@ function LiveActivityCard({
     <motion.button
       whileTap={{ scale: 0.97 }}
       onClick={onTap}
-      className="shrink-0 w-[200px] rounded-2xl p-3 text-left relative overflow-hidden
+      className="shrink-0 w-[168px] rounded-2xl p-2.5 text-left relative overflow-hidden
                  bg-gradient-to-br from-rose-500/15 to-orange-500/10
                  border border-rose-400/30 hover:border-rose-400/50 transition"
     >
@@ -135,27 +118,27 @@ function LiveActivityCard({
       <div className={`absolute -inset-1 opacity-30 bg-gradient-to-br ${cat.gradient}`} />
       <div className="relative">
         <div className="flex items-center gap-2">
-          <Avatar user={host} size={32} />
+          <Avatar user={host} size={28} />
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-widest text-rose-200 font-bold flex items-center gap-1">
-              <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-rose-400 live-dot" />
+            <div className="text-[9px] uppercase tracking-widest text-rose-200 font-bold flex items-center gap-1">
+              <span className="relative inline-block h-1 w-1 rounded-full bg-rose-400 live-dot" />
               Live
             </div>
-            <div className="text-sm font-bold text-white truncate">
+            <div className="text-[13px] font-bold text-white truncate leading-tight">
               {host.name}
             </div>
           </div>
         </div>
 
-        <div className="mt-2 text-xs text-zinc-100 line-clamp-2 leading-snug">
+        <div className="mt-1.5 text-[12px] text-zinc-100 line-clamp-2 leading-snug">
           <span className="mr-1">{cat.emoji}</span>
           {activity.title}
         </div>
 
-        <div className="mt-2 flex items-center justify-between text-[10px] text-zinc-300">
+        <div className="mt-1.5 flex items-center justify-between text-[10px] text-zinc-300">
           <span className="truncate">{liveTimingLabel(activity)}</span>
           {extra > 0 && (
-            <span className="ml-2 shrink-0 bg-white/10 text-white px-1.5 py-0.5 rounded-full font-bold">
+            <span className="ml-1.5 shrink-0 bg-white/10 text-white px-1.5 py-0.5 rounded-full font-bold">
               +{extra}
             </span>
           )}

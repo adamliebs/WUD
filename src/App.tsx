@@ -6,13 +6,15 @@ import { PhoneFrame } from './components/PhoneFrame';
 import { TabBar } from './components/TabBar';
 import { Toaster } from './components/Toaster';
 import { FeedScreen } from './screens/FeedScreen';
-import { PingScreen } from './screens/PingScreen';
+import { FloatsScreen } from './screens/FloatsScreen';
 import { NotificationsScreen } from './screens/NotificationsScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { PostSheet } from './screens/PostSheet';
 import { ActivityDetailSheet } from './screens/ActivityDetailSheet';
 import { AuthScreen } from './screens/AuthScreen';
+import { EditActivitySheet } from './screens/EditActivitySheet';
 import { GoLiveSheet } from './screens/GoLiveSheet';
+import { LockFloatSheet } from './screens/LockFloatSheet';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { OverlayHost } from './screens/OverlayHost';
 import { PollComposerSheet } from './screens/PollComposerSheet';
@@ -69,7 +71,7 @@ function MainApp() {
           className="absolute inset-0"
         >
           {tab === 'feed' && <FeedScreen />}
-          {tab === 'ping' && <PingScreen />}
+          {tab === 'floats' && <FloatsScreen />}
           {tab === 'notifications' && <NotificationsScreen />}
           {tab === 'profile' && <ProfileScreen />}
         </motion.div>
@@ -79,6 +81,8 @@ function MainApp() {
       <PostSheet />
       <GoLiveSheet />
       <ActivityDetailSheet />
+      <EditActivitySheet />
+      <LockFloatSheet />
       <PollComposerSheet />
       <ReportSheet />
       <OverlayHost />

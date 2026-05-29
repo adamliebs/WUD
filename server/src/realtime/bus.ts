@@ -19,6 +19,10 @@ export type RealtimeEvent =
   // subscribed to `activity:<newId>` yet, so the activity-level events miss
   // them on creation.
   | { channel: `user:${string}`;     type: 'feed.changed';         data: unknown }
+  // Floats — soft proposals — use the same per-viewer fan-out pattern as
+  // feed.changed. One generic event tells the client "refetch your floats";
+  // the granular create/respond/lock/remove distinction lives in `data.reason`.
+  | { channel: `user:${string}`;     type: 'float.changed';        data: unknown }
   | { channel: `activity:${string}`; type: 'message.created';      data: unknown }
   | { channel: `activity:${string}`; type: 'poll.updated';         data: unknown }
   | { channel: `activity:${string}`; type: 'rsvp.changed';         data: unknown }
