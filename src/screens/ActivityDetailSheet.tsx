@@ -205,31 +205,36 @@ function Inner({ activityId }: { activityId: string }) {
             </AnimatePresence>
           </div>
         )}
-        <div className="absolute top-3 left-4 flex items-center gap-2">
-          <span className="text-2xl drop-shadow">{cat.emoji}</span>
-          <span className="text-white/90 text-xs font-semibold uppercase tracking-widest">
+        {/* Chip row — capped at right-28 so it never collides with the Share
+            / Edit / Close action buttons stacked on the right. flex-wrap +
+            small gap-y handles the rare case where category label + 2-3
+            chips overflow the remaining width (it stacks them onto a
+            second row instead of overlapping the buttons). */}
+        <div className="absolute top-3 left-4 right-28 flex flex-wrap items-center gap-2 gap-y-1">
+          <span className="text-2xl drop-shadow shrink-0">{cat.emoji}</span>
+          <span className="text-white/90 text-xs font-semibold uppercase tracking-widest truncate">
             {cat.label}
           </span>
           {activity.isPrivate && (
-            <span className="ml-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
               <Lock size={9} strokeWidth={3} />
               Private
             </span>
           )}
           {activity.recurrence && (
-            <span className="ml-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
               <Repeat size={9} strokeWidth={3} />
               {recurrenceLabel(activity.recurrence)}
             </span>
           )}
           {live && (
-            <span className="ml-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-rose-500/80 backdrop-blur px-1.5 py-0.5 rounded-full">
+            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white bg-rose-500/80 backdrop-blur px-1.5 py-0.5 rounded-full">
               <span className="relative inline-block h-1.5 w-1.5 rounded-full bg-white live-dot" />
               Live
             </span>
           )}
           {over && (
-            <span className="ml-1 text-[10px] font-bold uppercase tracking-widest text-zinc-100 bg-black/45 backdrop-blur px-1.5 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-100 bg-black/45 backdrop-blur px-1.5 py-0.5 rounded-full">
               Over
             </span>
           )}
@@ -296,32 +301,33 @@ function Inner({ activityId }: { activityId: string }) {
               // RSVP layout — pills + Open chat shortcut + helper text).
               className="absolute inset-0 overflow-y-auto no-scrollbar px-4 pb-48"
             >
-              {/* Info rows — when live, swap to "Started Xm ago · Ym left" so
-                  participants know the current state of the window at a glance
-                  instead of seeing the start time receding into the past. */}
-              {live ? (
+              {/* Primary info — grouped into one glass card with subtle
+                  internal dividers. Matches the Settings/Notifications card
+                  pattern so the detail surface reads as part of the same
+                  visual family. */}
+              <div className="rounded-2xl bg-white/[0.04] border border-white/8 divide-y divide-white/5 overflow-hidden">
+                {live ? (
+                  <InfoRow
+                    icon={<Clock size={16} />}
+                    label="Live now"
+                    value={liveTimingLabel(activity)}
+                  />
+                ) : (
+                  <InfoRow icon={<Clock size={16} />} label="When"
+                    value={`${clockTime(activity.startsAt)} → ${clockTime(activity.endsAt)} · ${relTime(activity.startsAt)}`} />
+                )}
+                {activity.place && (
+                  <InfoRow icon={<MapPin size={16} />} label="Where" value={activity.place} />
+                )}
                 <InfoRow
-                  icon={<Clock size={16} />}
-                  label="Live now"
-                  value={liveTimingLabel(activity)}
+                  icon={<Users size={16} />}
+                  label="Party"
+                  value={`${total}${activity.maxSize ? `/${activity.maxSize}` : ''} going${full ? ' · full' : ''}`}
                 />
-              ) : (
-                <InfoRow icon={<Clock size={16} />} label="When"
-                  value={`${clockTime(activity.startsAt)} → ${clockTime(activity.endsAt)} · ${relTime(activity.startsAt)}`} />
-              )}
-              {activity.place && (
-                <InfoRow icon={<MapPin size={16} />} label="Where" value={activity.place} />
-              )}
-              <InfoRow
-                icon={<Users size={16} />}
-                label="Party"
-                value={`${total}${activity.maxSize ? `/${activity.maxSize}` : ''} going${full ? ' · full' : ''}`}
-              />
-
-              {/* Tagged squads — only shown if any */}
-              {activity.squadIds.length > 0 && (
-                <SquadTagRow squadIds={activity.squadIds} isOpenInvite={activity.isOpenInvite} />
-              )}
+                {activity.squadIds.length > 0 && (
+                  <SquadTagRow squadIds={activity.squadIds} isOpenInvite={activity.isOpenInvite} />
+                )}
+              </div>
 
               {/* Reminder — show when participating + not over */}
               {(hasJoined || isHost) && !over && (
@@ -346,10 +352,10 @@ function Inner({ activityId }: { activityId: string }) {
                 />
               </div>
 
-              {/* People — grouped by RSVP */}
-              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2">
-                Going · {1 + goingPeople.length}
-              </div>
+              {/* People — grouped by RSVP. Each section header is a small
+                  chip with a count, matching the new chip-style headers used
+                  in the rest of the app. */}
+              <PeopleSectionHeader label="Going" count={1 + goingPeople.length} tone="going" />
               <div className="flex flex-col gap-2">
                 <PersonRow user={host} badge="host" />
                 {goingPeople.map(u => (
@@ -362,9 +368,7 @@ function Inner({ activityId }: { activityId: string }) {
 
               {maybePeople.length > 0 && (
                 <>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2">
-                    Maybe · {maybePeople.length}
-                  </div>
+                  <PeopleSectionHeader label="Maybe" count={maybePeople.length} tone="maybe" />
                   <div className="flex flex-col gap-2">
                     {maybePeople.map(u => (
                       <PersonRow key={u.id} user={u} badge="maybe" />
@@ -375,9 +379,7 @@ function Inner({ activityId }: { activityId: string }) {
 
               {cantPeople.length > 0 && (
                 <>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2">
-                    Can't make it · {cantPeople.length}
-                  </div>
+                  <PeopleSectionHeader label="Can't make it" count={cantPeople.length} tone="cant" />
                   <div className="flex flex-col gap-2">
                     {cantPeople.map(u => (
                       <PersonRow key={u.id} user={u} badge="cant" />
@@ -392,58 +394,67 @@ function Inner({ activityId }: { activityId: string }) {
         </AnimatePresence>
       </div>
 
-      {/* Sticky action bar */}
+      {/* Sticky action bar — lighter glass treatment so it reads as part
+          of the sheet rather than a heavy footer. The primary action (Open
+          chat) is full-width with the brand gradient; destructive / less
+          common actions are smaller ghost-square buttons next to it. */}
       {tab === 'details' && (
         <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-4
-                        bg-[#0a070f]/95 backdrop-blur-md border-t border-white/10">
+                        bg-black/40 backdrop-blur-xl border-t border-white/5">
           {over ? (
             // Past event — no join/leave/pass-host actions. Just read-only access
             // to the chat (if you were part of it) and a clear "Over" label.
             inParty ? (
-              <div className="grid grid-cols-2 gap-2">
-                <div className="py-3.5 rounded-2xl font-bold text-zinc-300 bg-white/5 border border-white/10 text-center">
-                  ✓ Plan is over
-                </div>
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setTab('chat')}
-                  className="py-3.5 rounded-2xl font-bold text-zinc-900 bg-white"
-                >
-                  <MessageCircle size={16} className="inline mr-1.5 -mt-0.5" />
-                  View chat
-                </motion.button>
-              </div>
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setTab('chat')}
+                className="w-full py-3 rounded-2xl font-bold text-white text-sm
+                           bg-gradient-to-br from-rose-500 to-orange-500
+                           shadow-[0_14px_30px_-12px_rgba(244,63,94,0.5)]
+                           inline-flex items-center justify-center gap-1.5"
+              >
+                <MessageCircle size={15} />
+                View chat
+              </motion.button>
             ) : (
-              <div className="w-full py-3.5 rounded-2xl font-bold text-zinc-300 bg-white/5 border border-white/10 text-center">
+              <div className="w-full py-3 rounded-2xl font-bold text-zinc-300 bg-white/5 border border-white/10 text-center text-sm">
                 ✓ This plan is over
               </div>
             )
           ) : isHost ? (
-            // Host can't RSVP — they're hosting. Open chat or pass-host & leave.
-            <div className="grid grid-cols-2 gap-2">
+            // Host — small ghost End plan / Pass host on the left, big primary
+            // Open chat filling the rest. Open chat is what hosts actually
+            // tap 99% of the time; demote the destructive action visually.
+            <div className="flex items-stretch gap-2">
+              <motion.button
+                whileTap={{ scale: 0.94 }}
+                onClick={() => leave(activity.id)}
+                aria-label={activity.joinerIds.length === 0 ? 'End plan' : 'Pass host and leave'}
+                className="w-12 grid place-items-center rounded-2xl text-rose-200
+                           bg-rose-500/10 border border-rose-400/30 hover:bg-rose-500/15 transition"
+              >
+                {activity.joinerIds.length === 0
+                  ? <X size={16} strokeWidth={2.5} />
+                  : <Crown size={16} strokeWidth={2.5} />}
+              </motion.button>
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setTab('chat')}
-                className="py-3.5 rounded-2xl font-bold text-zinc-900 bg-white"
+                className="flex-1 py-3 rounded-2xl font-bold text-white text-sm
+                           bg-gradient-to-br from-rose-500 to-orange-500
+                           shadow-[0_14px_30px_-12px_rgba(244,63,94,0.5)]
+                           inline-flex items-center justify-center gap-1.5"
               >
-                <MessageCircle size={16} className="inline mr-1.5 -mt-0.5" />
+                <MessageCircle size={15} />
                 Open chat
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={() => leave(activity.id)}
-                className="py-3.5 rounded-2xl font-bold text-rose-200 bg-rose-500/15 border border-rose-400/30"
-              >
-                {activity.joinerIds.length === 0 ? (
-                  // No joiners to hand off to — leaving dissolves the plan.
-                  <><X size={16} className="inline mr-1.5 -mt-0.5" /> End plan</>
-                ) : (
-                  <><Crown size={16} className="inline mr-1.5 -mt-0.5" /> Pass host &amp; leave</>
-                )}
               </motion.button>
             </div>
           ) : (
-            // Non-host live event — three RSVP pills + open-chat shortcut when going/maybe.
+            // Non-host — three RSVP pills. Open chat appears below as a
+            // primary CTA once the user is going/maybe (and so has chat
+            // access). When the going list is full and the user isn't on it,
+            // a small helper line clarifies that Maybe / Can't are still on
+            // the table.
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-3 gap-2">
                 <RsvpPill
@@ -473,9 +484,12 @@ function Inner({ activityId }: { activityId: string }) {
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setTab('chat')}
-                  className="w-full py-2.5 rounded-2xl font-bold text-zinc-900 bg-white text-sm"
+                  className="w-full py-2.5 rounded-2xl font-bold text-white text-sm
+                             bg-gradient-to-br from-rose-500 to-orange-500
+                             shadow-[0_14px_30px_-12px_rgba(244,63,94,0.5)]
+                             inline-flex items-center justify-center gap-1.5"
                 >
-                  <MessageCircle size={14} className="inline mr-1.5 -mt-0.5" />
+                  <MessageCircle size={14} />
                   Open chat
                 </motion.button>
               )}
@@ -577,12 +591,12 @@ function SquadTagRow({ squadIds, isOpenInvite }: { squadIds: string[]; isOpenInv
   ));
   if (squads.length === 0) return null;
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-white/5">
-      <div className="h-8 w-8 grid place-items-center rounded-xl bg-white/5 text-zinc-300">
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <div className="h-8 w-8 grid place-items-center rounded-xl bg-rose-500/10 text-rose-300 border border-rose-400/15">
         👥
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[10.5px] uppercase tracking-widest text-zinc-500">
+        <div className="text-[10.5px] uppercase tracking-widest text-zinc-500 font-semibold">
           Shared with {isOpenInvite ? '· also open to all friends' : '· squad only'}
         </div>
         <div className="mt-1 flex flex-wrap gap-1.5">
@@ -685,15 +699,37 @@ function liveTimingLabel(a: import('../types').Activity): string {
   return `Started ${fmt(sinceStart)} ago · ${fmt(untilEnd)} left`;
 }
 
+/** Small chip-style section header for the Going / Maybe / Can't groups.
+ *  Tone tints the count pill to match the badge style used on PersonRow,
+ *  so a glance at the page reads as visually consistent. */
+function PeopleSectionHeader({
+  label, count, tone,
+}: { label: string; count: number; tone: 'going' | 'maybe' | 'cant' }) {
+  const countCls =
+    tone === 'going' ? 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30' :
+    tone === 'maybe' ? 'bg-sky-400/15 text-sky-200 border-sky-400/30' :
+                       'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
+  return (
+    <div className="mt-5 mb-2 flex items-center gap-2">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-300 font-bold">
+        {label}
+      </div>
+      <span className={`text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full border ${countCls}`}>
+        {count}
+      </span>
+    </div>
+  );
+}
+
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-white/5">
-      <div className="h-8 w-8 grid place-items-center rounded-xl bg-white/5 text-zinc-300">
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <div className="h-8 w-8 grid place-items-center rounded-xl bg-rose-500/10 text-rose-300 border border-rose-400/15">
         {icon}
       </div>
-      <div className="flex-1">
-        <div className="text-[10.5px] uppercase tracking-widest text-zinc-500">{label}</div>
-        <div className="text-sm text-zinc-100 font-medium">{value}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[10.5px] uppercase tracking-widest text-zinc-500 font-semibold">{label}</div>
+        <div className="text-sm text-zinc-100 font-medium truncate">{value}</div>
       </div>
     </div>
   );
@@ -709,22 +745,27 @@ function RsvpPill({
   tone: 'going' | 'maybe' | 'cant';
   onClick: () => void;
 }) {
+  // Going is the primary positive action — keep the full gradient fill so
+  // it pops. Maybe + Can't are softer states; use subtle tints so the
+  // bottom bar doesn't compete with the rest of the screen visually.
   const activeCls =
-    tone === 'going' ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-emerald-400 shadow-[0_10px_30px_-12px_rgba(16,185,129,0.55)]' :
-    tone === 'maybe' ? 'bg-gradient-to-br from-sky-500 to-indigo-600 text-white border-sky-400 shadow-[0_10px_30px_-12px_rgba(56,189,248,0.55)]' :
-                       'bg-gradient-to-br from-zinc-600 to-zinc-800 text-white border-zinc-500';
-  const idleCls = 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10';
+    tone === 'going'
+      ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-emerald-400 shadow-[0_10px_30px_-12px_rgba(16,185,129,0.55)]'
+      : tone === 'maybe'
+        ? 'bg-sky-400/15 text-sky-100 border-sky-400/40'
+        : 'bg-zinc-500/15 text-zinc-200 border-zinc-400/30';
+  const idleCls = 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10';
   return (
     <motion.button
       whileTap={!disabled ? { scale: 0.95 } : undefined}
       disabled={disabled}
       onClick={onClick}
       aria-pressed={active}
-      className={`py-3 rounded-2xl text-sm font-bold border transition flex flex-col items-center justify-center gap-0.5
+      className={`py-2.5 rounded-2xl text-sm font-bold border transition flex items-center justify-center gap-1.5
                   ${disabled ? 'bg-white/[0.02] text-zinc-500 border-white/5 cursor-not-allowed' : active ? activeCls : idleCls}`}
     >
-      <span className="text-lg leading-none">{emoji}</span>
-      <span className="text-[11px] uppercase tracking-widest">{label}</span>
+      <span className="text-base leading-none">{emoji}</span>
+      <span className="text-[12px] font-bold tracking-wide">{label}</span>
     </motion.button>
   );
 }

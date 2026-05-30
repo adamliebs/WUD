@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { uid } from '../auth/middleware.js';
+import { q } from '../db/index.js';
 import { badRequest, conflict } from '../lib/errors.js';
 import { handler, optionalString, requireString } from '../lib/http.js';
+import { createNotification } from '../services/notifications.js';
+import { getUserRow } from '../services/users.js';
 import {
   createActivity, feedFor, getActivity, getActivityRow, hasFoFAvailable, historyFor,
   leaveActivity, setRsvp, toggleReaction, updateActivity,
@@ -113,13 +116,33 @@ activitiesRouter.post('/activities/:id/leave', handler((req, res) => {
   res.json({ ...result, ...withUsers(result.activity ? [result.activity] : []) });
 }));
 
-/** POST /v1/activities/:id/host/accept — confirm you'll keep the host role. */
+/** POST /v1/activities/:id/host/accept — confirm you'll keep the host role.
+ *  Also notifies the other participants that hosting changed hands so the
+ *  going crew knows who's now running point on the plan. */
 activitiesRouter.post('/activities/:id/host/accept', handler((req, res) => {
   const id = uid(req);
   const row = getActivityRow(req.params.id);
   if (!row) throw badRequest('ACTIVITY_NOT_FOUND', 'Plan not found');
   if (row.host_id !== id) throw conflict('NOT_HOST', 'You are not the host of this plan');
   resolveHostOffers(id, req.params.id);
+  // Tell the other going participants the host role is now held — the
+  // system message already lives in chat; this is the push/inbox surface.
+  const newHost = getUserRow(id);
+  const newHostName = newHost?.name ?? 'A new host';
+  const participants = q.all<{ user_id: string }>(
+    "SELECT user_id FROM rsvps WHERE activity_id = ? AND state = 'going'",
+    req.params.id,
+  );
+  for (const p of participants) {
+    if (p.user_id === id) continue;
+    createNotification({
+      userId: p.user_id,
+      type: 'host_taken',
+      fromId: id,
+      activityId: req.params.id,
+      body: `${newHostName} is now hosting "${row.title}"`,
+    });
+  }
   const activity = getActivity(req.params.id);
   res.json({ activity, ...withUsers([activity]) });
 }));

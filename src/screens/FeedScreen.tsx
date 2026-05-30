@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Radio, Search, Sparkles, Users, UsersRound } from 'lucide-react';
+import { Search, Sparkles, Users, UsersRound } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
@@ -17,8 +17,6 @@ export function FeedScreen() {
   // The toggle is a feed filter so Clear filters resets it, and so a For You
   // filter shortcut can flip it on automatically.
   const showLiveInFeed = useApp(s => !!s.feedFilters.includeLive);
-  const setFilter = useApp(s => s.setFeedFilter);
-  const liveCount = allActivities.filter(isLiveActivity).length;
   const activities = showLiveInFeed
     ? allActivities
     : allActivities.filter(a => !isLiveActivity(a));
@@ -106,26 +104,6 @@ export function FeedScreen() {
             point so the filtered results are immediately visible. */}
         <div id="feed-results-anchor" />
         <FeedFilters />
-        {liveCount > 0 && (
-          <div className="px-4 mb-2">
-            <motion.button
-              whileTap={{ scale: 0.96 }}
-              onClick={() => setFilter({ includeLive: !showLiveInFeed })}
-              className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.16em]
-                          px-3 py-1.5 rounded-full border transition
-                          ${showLiveInFeed
-                            ? 'bg-rose-500/15 text-rose-200 border-rose-400/40 hover:bg-rose-500/25'
-                            : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
-            >
-              {showLiveInFeed ? <EyeOff size={12} /> : <Eye size={12} />}
-              {showLiveInFeed ? 'Hide live from feed' : 'Show live in feed'}
-              <span className="ml-0.5 inline-flex items-center gap-1 normal-case tracking-normal text-rose-300">
-                <Radio size={11} />
-                {liveCount}
-              </span>
-            </motion.button>
-          </div>
-        )}
         <motion.div
           className="flex flex-col gap-3 px-4"
           initial="hidden"

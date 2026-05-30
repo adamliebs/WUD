@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { useApp } from './store';
+import { DismissKeyboardOnSwipe } from './components/DismissKeyboardOnSwipe';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LoadingOverlay } from './components/LoadingOverlay';
 import { PhoneFrame } from './components/PhoneFrame';
 import { TabBar } from './components/TabBar';
 import { Toaster } from './components/Toaster';
@@ -42,6 +44,13 @@ function App() {
 
           {/* Toaster is global so auth flows can use it too. */}
           <Toaster />
+          {/* Full-screen loading veil shown during auth + signup round-trips.
+              Sits above everything so the user can't double-tap a button
+              that's already in flight. */}
+          <LoadingOverlay />
+          {/* Global gesture: a downward swipe dismisses the on-screen
+              keyboard (only when the keyboard is up). Renders nothing. */}
+          <DismissKeyboardOnSwipe />
         </div>
       </ErrorBoundary>
     </PhoneFrame>

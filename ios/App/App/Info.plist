@@ -56,6 +56,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>WUD uses the camera so you can add photos to your profile, plans and chats.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>WUD checks your contacts to find friends already on WUD. Only matched contacts are shown — nothing else is uploaded or stored.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>WUD connects to a development server on your local network.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

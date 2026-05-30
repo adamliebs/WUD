@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown, Clock, Filter, Flame, Tag, X } from 'lucide-react';
+import { Check, ChevronDown, Clock, Eye, EyeOff, Filter, Flame, Radio, Tag, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useApp } from '../store';
+import { isLiveActivity, useApp } from '../store';
 import type { CategoryKey } from '../types';
 
 /**
@@ -23,6 +23,9 @@ export function FeedFilters() {
   const set = useApp(s => s.setFeedFilter);
   const clear = useApp(s => s.clearFeedFilters);
   const active = useApp(s => s.hasActiveFeedFilters());
+  // includeLive lives on feedFilters too — the eye toggle below flips it.
+  // Hidden entirely when there are no live activities to gate (no signal).
+  const showLiveInFeed = !!filters.includeLive;
 
   // Category dropdown options come from the visible feed pool, so users can't
   // pick a category that would always return zero results. Memo deps cover
@@ -35,6 +38,10 @@ export function FeedFilters() {
     () => useApp.getState().availableCategories(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activities, scope, friendIds],
+  );
+  const liveCount = useMemo(
+    () => activities.filter(isLiveActivity).length,
+    [activities],
   );
 
   // The dropdown's value is encoded — custom labels use `custom:<label>` so
@@ -61,9 +68,15 @@ export function FeedFilters() {
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Clear at the front — animated in/out so it doesn't feel jumpy when
-            it appears as soon as the user picks any non-default filter. */}
+      {/* Icon-only chip row. Active dimensions tint rose/orange; tapping any
+          chip opens its dropdown with the labelled options. Saves horizontal
+          space and prevents the row from wrapping when active labels grow
+          (e.g. a custom category name). Each chip carries an aria-label
+          since the visual is icon-only. */}
+      <div className="flex items-center gap-2">
+        {/* Clear — X + "Clear" label. Compact pill on the left. Animates
+            in/out so the row doesn't jump when the user toggles their
+            first filter. */}
         <AnimatePresence initial={false}>
           {active && (
             <motion.button
@@ -73,21 +86,21 @@ export function FeedFilters() {
               exit={{ opacity: 0, scale: 0.85, width: 0 }}
               transition={{ duration: 0.16 }}
               onClick={clear}
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold
+              aria-label="Clear all filters"
+              className="shrink-0 h-8 inline-flex items-center gap-1 px-2.5 rounded-full text-[12px] font-semibold
                          text-rose-200 bg-rose-500/10 border border-rose-400/40 hover:bg-rose-500/20 transition
                          overflow-hidden whitespace-nowrap"
             >
-              <X size={12} />
+              <X size={13} strokeWidth={2.5} />
               Clear
             </motion.button>
           )}
         </AnimatePresence>
 
-        <Dropdown
-          dimension="Sort"
-          icon={<Flame size={12} />}
+        <IconDropdown
+          ariaLabel="Sort"
+          icon={<Flame size={14} />}
           active={filters.sort !== 'soonest'}
-          activeLabel={filters.sort === 'popular' ? 'Popular' : 'Soonest'}
           options={[
             { value: 'soonest', label: 'Soonest', icon: <Clock size={14} /> },
             { value: 'popular', label: 'Popular', icon: <Flame size={14} /> },
@@ -96,16 +109,10 @@ export function FeedFilters() {
           onChange={(v: 'soonest' | 'popular') => set({ sort: v })}
         />
 
-        <Dropdown
-          dimension="Time"
-          icon={<Clock size={12} />}
+        <IconDropdown
+          ariaLabel="Time"
+          icon={<Clock size={14} />}
           active={filters.timeWindow !== 'all'}
-          activeLabel={
-            filters.timeWindow === 'now' ? 'Now'
-            : filters.timeWindow === 'today' ? 'Today'
-            : filters.timeWindow === 'week' ? 'This week'
-            : 'All time'
-          }
           options={[
             { value: 'all',   label: 'All time' },
             { value: 'now',   label: 'Starting now' },
@@ -116,19 +123,18 @@ export function FeedFilters() {
           onChange={(v: 'all' | 'now' | 'today' | 'week') => set({ timeWindow: v })}
         />
 
-        <Dropdown
-          dimension="Category"
-          icon={<Tag size={12} />}
+        <IconDropdown
+          ariaLabel="Category"
+          // When active, show the chosen category's emoji directly on the
+          // chip so the user can still tell what's filtering at a glance —
+          // the only place we make an exception to "icon only".
+          icon={activeCategoryEntry
+            ? <span className="text-sm leading-none">{activeCategoryEntry.emoji}</span>
+            : <Tag size={14} />}
           active={!!filters.category}
-          // When active, show the category emoji INSIDE the chip so the
-          // current pick is recognizable at a glance, not just by colour.
-          activeLabel={activeCategoryEntry ? `${activeCategoryEntry.emoji} ${activeCategoryEntry.label}` : 'All'}
           options={[
             { value: '__all__', label: 'All categories' },
             ...available.map(c => ({
-              // Standard categories carry their stable key as the value;
-              // custom entries get a `custom:<label>` prefix so each is a
-              // distinct option even though they share the 'custom' key.
               value: c.customLabel ? `custom:${c.customLabel}` : c.key,
               label: c.label,
               emoji: c.emoji,
@@ -141,6 +147,32 @@ export function FeedFilters() {
             else set({ category: v as CategoryKey, customLabel: undefined });
           }}
         />
+
+        {/* Show-live toggle — only meaningful when there are live activities.
+            Eye (on) = live plans visible in the feed; EyeOff (off / line
+            through) = hidden. The little radio + count to the right is the
+            live-events badge so the user still sees "how many are live"
+            even when they've chosen to hide them from the feed. */}
+        {liveCount > 0 && (
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            onClick={() => set({ includeLive: !showLiveInFeed })}
+            aria-pressed={showLiveInFeed}
+            aria-label={showLiveInFeed ? 'Hide live plans from feed' : 'Show live plans in feed'}
+            title={showLiveInFeed ? 'Hide live plans' : 'Show live plans'}
+            className={`shrink-0 h-8 inline-flex items-center gap-1 pl-2 pr-2 rounded-full border transition
+                        ${showLiveInFeed
+                          ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-300 shadow-[0_8px_22px_-8px_rgba(244,63,94,0.7)]'
+                          : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
+          >
+            {showLiveInFeed ? <Eye size={14} /> : <EyeOff size={14} />}
+            <span className={`inline-flex items-center gap-0.5 text-[11px] font-bold tabular-nums
+                              ${showLiveInFeed ? 'text-white/90' : 'text-rose-300'}`}>
+              <Radio size={10} />
+              {liveCount}
+            </span>
+          </motion.button>
+        )}
       </div>
     </div>
   );
@@ -155,23 +187,25 @@ interface DropdownOption<V extends string> {
   icon?: ReactNode;
 }
 
-interface DropdownProps<V extends string> {
-  /** Name of the dimension — shown on the chip when no filter is applied. */
-  dimension: string;
-  /** Small icon shown next to the dimension name when inactive. */
-  icon?: ReactNode;
+interface IconDropdownProps<V extends string> {
+  /** Accessible name for the chip (screen readers + tooltip). */
+  ariaLabel: string;
+  /** Icon shown on the chip. */
+  icon: ReactNode;
   /** True when the current value differs from the dimension's default. */
   active: boolean;
-  /** Text shown on the chip when active (instead of the dimension name). */
-  activeLabel: string;
   options: DropdownOption<V>[];
   value: V;
   onChange: (v: V) => void;
 }
 
-function Dropdown<V extends string>({
-  dimension, icon, active, activeLabel, options, value, onChange,
-}: DropdownProps<V>) {
+/** Icon-only filter chip — square-ish 32px button. The dropdown still
+ *  shows the full labelled option list, so the user can read what each
+ *  value means once they tap in. Active chips fill with the brand gradient
+ *  and pulse so it's obvious which dimensions are in play. */
+function IconDropdown<V extends string>({
+  ariaLabel, icon, active, options, value, onChange,
+}: IconDropdownProps<V>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -195,18 +229,19 @@ function Dropdown<V extends string>({
   return (
     <div ref={wrapRef} className="relative shrink-0">
       <motion.button
-        whileTap={{ scale: 0.95 }}
+        whileTap={{ scale: 0.92 }}
         onClick={() => setOpen(o => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border transition
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        className={`relative h-8 inline-flex items-center gap-1 pl-2 pr-1.5 rounded-full border transition
                     ${active
                       ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-300 shadow-[0_8px_22px_-8px_rgba(244,63,94,0.7)]'
                       : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
       >
-        {/* Glowing pulse ring — only renders for active chips. The infinite
-            spring on the box-shadow does the "shine" so an active filter
-            keeps drawing the eye even after scrolling past the bar. */}
+        {/* Glowing pulse ring — only on active chips, draws the eye to the
+            non-default filter when the user scrolls past the bar. */}
         {active && (
           <motion.span
             aria-hidden
@@ -221,9 +256,8 @@ function Dropdown<V extends string>({
           />
         )}
         {icon}
-        <span className="whitespace-nowrap">{active ? activeLabel : dimension}</span>
         <ChevronDown
-          size={12}
+          size={11}
           className={`transition-transform ${open ? 'rotate-180' : ''} ${active ? 'text-white/85' : 'text-zinc-400'}`}
         />
       </motion.button>

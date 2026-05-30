@@ -118,6 +118,7 @@ export interface Activity {
   chat: ChatMessage[];
 }
 
+// (Client copy — kept in sync with server/src/types.ts.)
 export type NotificationType =
   | 'join'             // someone joined your activity
   | 'host_offer'       // you've been offered the host role
@@ -129,7 +130,10 @@ export type NotificationType =
   | 'float_keen'       // someone is keen on your float
   | 'float_locked'     // a float you were keen on became a real plan
   | 'activity_created' // a friend posted a plan (or went live)
-  | 'chat_message';    // new chat in an activity you're a participant of
+  | 'chat_message'     // new chat in an activity or squad you're part of
+  | 'friend_accepted'  // your friend request was accepted
+  | 'activity_updated' // the host edited a plan you're going to
+  | 'activity_cancelled'; // a plan you were going to was cancelled
 
 export interface AppNotification {
   id: string;

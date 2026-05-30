@@ -137,6 +137,15 @@ export function acceptFriendRequest(requestId: string, actingUserId: string): vo
     addFriendship(r.requester_id, r.recipient_id);
     resolveFriendInviteNotification(r.recipient_id, r.requester_id);
   });
+  // Tell the requester their request was accepted. Outside the TX so a
+  // notification-insert hiccup doesn't roll back the friendship itself.
+  const recipient = getUserRow(r.recipient_id);
+  createNotification({
+    userId: r.requester_id,
+    type: 'friend_accepted',
+    fromId: r.recipient_id,
+    body: `${recipient?.name ?? 'Someone'} accepted your friend request`,
+  });
 }
 
 export function declineFriendRequest(requestId: string, actingUserId: string): void {

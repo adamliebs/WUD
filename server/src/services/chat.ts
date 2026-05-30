@@ -103,7 +103,7 @@ export function sendText(parent: ThreadParent, authorId: string, text: string): 
   const trimmed = text.trim();
   if (!trimmed) throw badRequest('EMPTY_MESSAGE', 'Message cannot be empty', 'text');
   const message = emitMessage(parent, insertMessage(parent, authorId, 'text', { body: trimmed }));
-  notifyActivityChat(parent, authorId, previewLine(trimmed));
+  notifyChatMessage(parent, authorId, previewLine(trimmed));
   return message;
 }
 
@@ -114,7 +114,7 @@ export function sendPhoto(
   const message = emitMessage(parent, insertMessage(parent, authorId, 'photo', {
     photoUrl, body: caption?.trim() || null,
   }));
-  notifyActivityChat(parent, authorId, caption?.trim() ? `📷 ${previewLine(caption)}` : '📷 Photo');
+  notifyChatMessage(parent, authorId, caption?.trim() ? `📷 ${previewLine(caption)}` : '📷 Photo');
   return message;
 }
 
@@ -125,44 +125,62 @@ function previewLine(text: string): string {
   return oneLine.length > 80 ? `${oneLine.slice(0, 77)}…` : oneLine;
 }
 
-/** Fan a `chat_message` notification to every activity participant except the
- *  sender. Skips squad chats (they'd be too noisy in MVP). The body is the
- *  sender's name + the message preview so the lockscreen tells you who said
- *  what without opening the app.
+/** Fan a `chat_message` notification to every chat participant except the
+ *  sender. Works for both activity threads (host + going RSVPs) and squad
+ *  threads (host + members). The body is the sender's name + the message
+ *  preview so the lockscreen tells you who said what without opening the app.
  *
  *  Wrapped in try/catch via the underlying createNotification — a failed
  *  notification never aborts the send. */
-function notifyActivityChat(parent: ThreadParent, authorId: string, preview: string): void {
-  if (!('activityId' in parent)) return;
-  const { activityId } = parent;
-
-  const activity = q.get<{ host_id: string; title: string }>(
-    'SELECT host_id, title FROM activities WHERE id = ?', activityId,
-  );
-  if (!activity) return;
-
-  // Recipients = host + every `going` RSVP, minus the sender.
+function notifyChatMessage(parent: ThreadParent, authorId: string, preview: string): void {
   const recipientIds = new Set<string>();
-  if (activity.host_id !== authorId) recipientIds.add(activity.host_id);
-  const goers = q.all<{ user_id: string }>(
-    "SELECT user_id FROM rsvps WHERE activity_id = ? AND state = 'going'",
-    activityId,
-  );
-  for (const g of goers) {
-    if (g.user_id !== authorId) recipientIds.add(g.user_id);
+  let threadTitle = '';
+  let activityIdRef: string | undefined;
+
+  if ('activityId' in parent) {
+    const { activityId } = parent;
+    const activity = q.get<{ host_id: string; title: string }>(
+      'SELECT host_id, title FROM activities WHERE id = ?', activityId,
+    );
+    if (!activity) return;
+    threadTitle = activity.title;
+    activityIdRef = activityId;
+    if (activity.host_id !== authorId) recipientIds.add(activity.host_id);
+    const goers = q.all<{ user_id: string }>(
+      "SELECT user_id FROM rsvps WHERE activity_id = ? AND state = 'going'",
+      activityId,
+    );
+    for (const g of goers) {
+      if (g.user_id !== authorId) recipientIds.add(g.user_id);
+    }
+  } else {
+    const { squadId } = parent;
+    const squad = q.get<{ host_id: string; name: string }>(
+      'SELECT host_id, name FROM squads WHERE id = ?', squadId,
+    );
+    if (!squad) return;
+    threadTitle = squad.name;
+    if (squad.host_id !== authorId) recipientIds.add(squad.host_id);
+    const members = q.all<{ user_id: string }>(
+      'SELECT user_id FROM squad_members WHERE squad_id = ?', squadId,
+    );
+    for (const m of members) {
+      if (m.user_id !== authorId) recipientIds.add(m.user_id);
+    }
   }
+
   if (recipientIds.size === 0) return;
 
   const author = getUserRow(authorId);
   const authorName = author?.name ?? 'Someone';
-  const body = `${authorName} in "${activity.title}": ${preview}`;
+  const body = `${authorName} in "${threadTitle}": ${preview}`;
 
   for (const userId of recipientIds) {
     createNotification({
       userId,
       type: 'chat_message',
       fromId: authorId,
-      activityId,
+      activityId: activityIdRef,   // only set for activity threads
       body,
     });
   }
@@ -193,7 +211,12 @@ export function sendPoll(
     });
     return id;
   });
-  return emitMessage(parent, messageId);
+  const message = emitMessage(parent, messageId);
+  // Polls notify the same way text/photos do — same channel, same preview
+  // shape with a 📊 prefix so the lockscreen reads "Sarah in 'Coffee':
+  // 📊 Where shall we meet?".
+  notifyChatMessage(parent, authorId, `📊 ${previewLine(qn)}`);
+  return message;
 }
 
 /** Toggle a user's vote. One vote per poll: re-voting the same option clears it. */

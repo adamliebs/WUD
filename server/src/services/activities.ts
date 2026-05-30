@@ -396,9 +396,41 @@ export function updateActivity(actorId: string, activityId: string, patch: {
     }
   });
 
+  // Detect material changes worth notifying participants about. Time +
+  // place are the load-bearing ones — if start moves, people need to
+  // re-plan their evening. Everything else (title tweak, description, max
+  // size, banner) doesn't warrant a push.
+  const newRow = getActivityRow(activityId)!;
+  const startsChanged = newRow.starts_at !== row.starts_at;
+  const endsChanged   = newRow.ends_at   !== row.ends_at;
+  const placeChanged  = (newRow.place ?? '') !== (row.place ?? '');
+  if (!reminderOnly && (startsChanged || endsChanged || placeChanged)) {
+    const host = getUserRow(newRow.host_id);
+    const hostName = host?.name ?? 'The host';
+    const changes: string[] = [];
+    if (startsChanged) changes.push('time');
+    if (!startsChanged && endsChanged) changes.push('end time');
+    if (placeChanged) changes.push('place');
+    const changeLabel = changes.join(' + ');
+    const body = `${hostName} updated the ${changeLabel} for "${newRow.title}"`;
+    const participants = q.all<{ user_id: string }>(
+      "SELECT user_id FROM rsvps WHERE activity_id = ? AND state IN ('going','maybe')",
+      activityId,
+    );
+    for (const p of participants) {
+      if (p.user_id === actorId) continue;
+      createNotification({
+        userId: p.user_id,
+        type: 'activity_updated',
+        fromId: newRow.host_id,
+        activityId,
+        body,
+      });
+    }
+  }
+
   // Push feed.changed to viewers who lost visibility (squad-untag, privacy
   // flipped, etc.) before letting emitActivity push to the new viewer set.
-  const newRow = getActivityRow(activityId)!;
   const newViewers = new Set<string>(viewerIdsForRow(newRow));
   for (const viewerId of oldViewers) {
     if (!newViewers.has(viewerId)) {
@@ -563,6 +595,25 @@ export function leaveActivity(userId: string, activityId: string): { dissolved: 
       // Fan out a feed.changed so viewers drop the dissolved plan without
       // having to refresh.
       publishFeedChange(row, 'removed');
+      // Tell everyone who'd RSVP'd in any state that the plan is gone. The
+      // going/maybe/cant trio captures everyone with active interest; the
+      // host themselves is the actor and doesn't need to be told.
+      const host = getUserRow(userId);
+      const hostName = host?.name ?? 'The host';
+      const participants = q.all<{ user_id: string }>(
+        "SELECT user_id FROM rsvps WHERE activity_id = ? AND state IN ('going','maybe','cant')",
+        activityId,
+      );
+      for (const p of participants) {
+        if (p.user_id === userId) continue;
+        createNotification({
+          userId: p.user_id,
+          type: 'activity_cancelled',
+          fromId: userId,
+          activityId,
+          body: `${hostName} cancelled "${row.title}"`,
+        });
+      }
       return { dissolved: true };
     }
     // Promote: new host, drop their RSVP row.

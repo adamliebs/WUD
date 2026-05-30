@@ -98,7 +98,7 @@ export function SmartSuggestions() {
         whileTap={{ scale: 0.985 }}
         onClick={() => setExpanded(v => !v)}
         aria-expanded={expanded}
-        className="w-full inline-flex items-center justify-between gap-2 px-3 py-2 rounded-2xl
+        className="w-full inline-flex items-center justify-between gap-2 px-3 py-2 rounded-xl
                    bg-gradient-to-r from-fuchsia-500/10 via-rose-500/10 to-orange-500/10
                    border border-fuchsia-400/20 hover:border-fuchsia-400/35 transition"
       >

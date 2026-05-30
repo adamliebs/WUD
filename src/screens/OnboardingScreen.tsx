@@ -65,6 +65,9 @@ export function OnboardingScreen() {
   const signUp = useApp(s => s.signUp);
   const pendingSignup = useApp(s => s.pendingSignup);
   const isOauthSignup = pendingSignup?.kind === 'firebase';
+  // Disable the finish button while signUp is in flight — server round-trip
+  // can take 1-2s and the global LoadingOverlay handles the visible state.
+  const authBusy = useApp(s => s.authBusy);
 
   // Inline legal panel — global OverlayHost isn't mounted yet pre-signin.
   const [legal, setLegal] = useState<null | 'privacy' | 'terms'>(null);
@@ -346,7 +349,7 @@ export function OnboardingScreen() {
       {/* Sticky finish */}
       <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-safe
                       bg-[#0a070f]/95 backdrop-blur-md border-t border-white/10">
-        <PulseButton onClick={finish} disabled={!canFinish}>
+        <PulseButton onClick={finish} disabled={!canFinish || authBusy}>
           {canFinish ? 'Enter WUD' : 'Add your details to continue'}
         </PulseButton>
         <div className="text-[11px] text-zinc-500 text-center mt-2 leading-relaxed">

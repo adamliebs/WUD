@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clock, MapPin, Radio, UserCheck, UserX, X } from 'lucide-react';
+import { MapPin, Radio, UserCheck, UserX, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { BottomSheet } from '../components/BottomSheet';
@@ -51,7 +51,6 @@ export function GoLiveSheet() {
   const squads = useApp(useShallow(s =>
     s.squads.filter(sq => sq.hostId === s.meId || sq.memberIds.includes(s.meId))
   ));
-  const me = useApp(s => s.me());
 
   const [emoji, setEmoji] = useState('✨');
   const [text, setText] = useState('');
@@ -140,25 +139,12 @@ export function GoLiveSheet() {
           </motion.button>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-0 pb-12">
-          {/* Live preview — sticky at the top so the user always sees what
-              they're about to broadcast as they fill the form. Opaque sheet-
-              colored bg closes the gap to the header so scrolled content
-              never peeks through. */}
-          <div className="sticky -top-px -mx-4 px-4 pt-3 pb-3 z-20 glass-strong border-0 border-b border-white/5">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-1.5 px-1">
-              Preview
-            </div>
-            <LivePreviewCard
-              emoji={emoji}
-              text={text}
-              place={place}
-              endTimeLabel={endTimeLabel}
-              hostName={me.name}
-              hostAvatar={me.avatar}
-              hostColor={me.color}
-            />
-          </div>
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 pb-12">
+          {/* Slim "going live" banner — full orange→rose strip with the
+              user's current emoji + status text. Replaces the bigger
+              preview card to free up vertical space, while still tying the
+              sheet visually to the floating + button the user tapped. */}
+          <LiveBanner emoji={emoji} text={text} endTimeLabel={endTimeLabel} />
 
           {/* Quick picks — horizontal scroll so the row stays one line and
               the user can see what comes after the visible chips. */}
@@ -333,71 +319,38 @@ export function GoLiveSheet() {
 }
 
 /**
- * Live preview of the going-live card the user is about to broadcast.
- * Mirrors the visual language of ActivityCard but specifically for the
- * LIVE state: rose-orange header band with a pulsing LIVE pill, the user's
- * emoji + status text as the title, host avatar floating, and a footer
- * line showing "now → endTime" so the user can confirm the duration.
+ * Slim "going live" banner — orange→rose strip with the user's current
+ * emoji + status text and a pulsing LIVE pill. Replaces the bigger live
+ * preview card so the sheet has more room for the form, while still tying
+ * the sheet visually to the floating + button the user tapped.
  */
-function LivePreviewCard({
-  emoji, text, place, endTimeLabel, hostName, hostAvatar, hostColor,
+function LiveBanner({
+  emoji, text, endTimeLabel,
 }: {
   emoji: string;
   text: string;
-  place: string;
   endTimeLabel: string;
-  hostName: string;
-  hostAvatar: string;
-  hostColor: string;
 }) {
   const displayedText = text.trim() || 'What are you doing now?';
   return (
-    <div className="relative overflow-hidden rounded-3xl glass border border-white/10
-                    shadow-[0_18px_40px_-22px_rgba(0,0,0,0.65)]">
-      <div className="relative h-20 bg-gradient-to-br from-orange-500 to-rose-500">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
-        <div className="absolute top-2.5 left-3 flex items-center gap-1.5">
-          <span className="text-lg drop-shadow">{emoji.trim() || '✨'}</span>
-          <span className="text-white/95 text-[10px] font-bold uppercase tracking-widest">
-            Going live
-          </span>
-        </div>
-        <div className="absolute top-2.5 right-3 inline-flex items-center gap-1.5 text-white text-[9px] font-bold uppercase tracking-widest bg-rose-500/85 backdrop-blur px-2 py-0.5 rounded-full">
-          <motion.span
-            animate={{ opacity: [1, 0.2, 1] }}
-            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-            className="inline-block w-1.5 h-1.5 rounded-full bg-white"
-          />
-          Live
-        </div>
-        <div className="absolute -bottom-5 left-3">
-          <div
-            className={`h-12 w-12 rounded-full grid place-items-center text-xl ring-4 ring-[#15121b]
-                        bg-gradient-to-br ${hostColor}`}
-          >
-            {hostAvatar}
+    <div className="relative overflow-hidden rounded-2xl border border-white/10
+                    shadow-[0_18px_40px_-22px_rgba(0,0,0,0.6)]
+                    bg-gradient-to-br from-orange-500 to-rose-500">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
+      <div className="relative px-4 py-3 flex items-center gap-3">
+        <span className="text-3xl drop-shadow shrink-0">{emoji.trim() || '✨'}</span>
+        <div className="min-w-0 flex-1">
+          <div className="inline-flex items-center gap-1.5 text-white/95 text-[10px] uppercase tracking-[0.18em] font-bold">
+            <motion.span
+              animate={{ opacity: [1, 0.25, 1] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+              className="inline-block w-1.5 h-1.5 rounded-full bg-white"
+            />
+            Going live · Now → {endTimeLabel}
           </div>
-        </div>
-      </div>
-      <div className="px-3 pt-7 pb-3">
-        <div className={`text-sm font-semibold leading-tight truncate ${text.trim() ? 'text-white' : 'text-zinc-500'}`}>
-          {displayedText}
-        </div>
-        <div className="text-zinc-400 text-[11px] mt-0.5 truncate">
-          <span className="text-zinc-200 font-medium">{hostName}</span>
-          {' · live now'}
-        </div>
-        <div className="flex items-center gap-3 mt-2 text-zinc-300 text-[11px]">
-          <span className="inline-flex items-center gap-1 min-w-0">
-            <Clock size={11} className="text-zinc-500 shrink-0" />
-            <span className="truncate">Now → {endTimeLabel}</span>
-          </span>
-          {place.trim() && (
-            <span className="inline-flex items-center gap-1 min-w-0">
-              <MapPin size={11} className="text-zinc-500 shrink-0" />
-              <span className="truncate">{place.trim()}</span>
-            </span>
-          )}
+          <div className={`text-base font-bold leading-tight truncate mt-0.5 ${text.trim() ? 'text-white' : 'text-white/70'}`}>
+            {displayedText}
+          </div>
         </div>
       </div>
     </div>

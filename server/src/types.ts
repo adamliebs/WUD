@@ -101,9 +101,15 @@ export type NotificationType =
   // Friend posted a new plan you can see. Includes the "going live" case
   // (activity created with starts_at ≈ now); the body line differentiates.
   | 'activity_created'
-  // New chat message in an activity you're a participant of (host or going).
-  // Fans to other participants only — the sender is muted on their own send.
-  | 'chat_message';
+  // New chat message in an activity or squad you're a participant of.
+  // Fans to the other participants only — sender is muted on their own send.
+  | 'chat_message'
+  // The person you sent a friend request to has accepted it.
+  | 'friend_accepted'
+  // The host edited a plan you're going to (start time, end time, or place).
+  | 'activity_updated'
+  // A plan you were part of was cancelled — host left without a successor.
+  | 'activity_cancelled';
 
 export interface AppNotification {
   id: string;

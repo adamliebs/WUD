@@ -25,6 +25,10 @@ import { useRef, useState, type ReactNode } from 'react';
 const TRIGGER = 70;
 const MAX_PULL = 110;
 const HOLD_Y = 56;
+/** Visual height of the spinner pill (h-9 = 36px). Used to offset the
+ *  indicator's translate so its bottom aligns with the bottom of the
+ *  pull gap instead of jutting past it into the content below. */
+const INDICATOR_HEIGHT = 36;
 
 interface Props {
   onRefresh: () => void | Promise<unknown>;
@@ -48,6 +52,11 @@ export function PullToRefresh({ onRefresh, className, style, children }: Props) 
   const indicatorOpacity = useTransform(pullY, [0, 35, TRIGGER], [0, 0.5, 1]);
   const indicatorScale = useTransform(pullY, [0, TRIGGER], [0.6, 1]);
   const indicatorRotate = useTransform(pullY, [0, TRIGGER, MAX_PULL], [0, 180, 270]);
+  // Indicator descends with the pull but offset by its own height so its
+  // BOTTOM tracks the bottom of the gap the content opens up. Without this
+  // offset, the spinner sat at top:2+pullY which crashed past the gap and
+  // overlapped the first row of content when refreshing.
+  const indicatorY = useTransform(pullY, v => v - INDICATOR_HEIGHT - 2);
 
   const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (refreshing) return;
@@ -105,11 +114,15 @@ export function PullToRefresh({ onRefresh, className, style, children }: Props) 
       className={className}
       style={style}
     >
-      {/* Indicator — sits above the content, follows the pull. */}
+      {/* Indicator — sits just above the content. As the user pulls, the
+          spinner descends into the gap that opens up (using `indicatorY`,
+          which is pullY offset by the spinner's own height so it never
+          spills past the bottom of the gap). At rest the spinner is
+          translated above the container and clipped out of view. */}
       <motion.div
         style={{
           opacity: indicatorOpacity,
-          y: pullY,
+          y: indicatorY,
           willChange: 'transform, opacity',
         }}
         className="absolute top-2 left-0 right-0 grid place-items-center pointer-events-none z-10"

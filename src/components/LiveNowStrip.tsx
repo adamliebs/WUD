@@ -61,11 +61,12 @@ export function LiveNowStrip() {
 
       {liveActivities.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
-          {liveActivities.map(a => (
+          {liveActivities.map((a, i) => (
             <LiveActivityCard
               key={a.id}
               activity={a}
               onTap={() => openActivity(a.id)}
+              tint={CARD_TINTS[i % CARD_TINTS.length]}
             />
           ))}
         </div>
@@ -93,11 +94,31 @@ function liveTimingLabel(a: Activity): string {
   return `${fmt(sinceStart)} ago · ${fmt(untilEnd)} left`;
 }
 
+/** Per-card tint palette — picked by index so adjacent cards never share
+ *  a color. Five entries keeps the cycle long enough that even a busy
+ *  feed doesn't repeat for ages. The Live pulse + label tint with the
+ *  same hue so each card reads as cohesive. */
+interface CardTint {
+  bg: string;       // tailwind gradient classes for the card surface
+  border: string;   // matching border color
+  dot: string;      // pulsing live-dot fill
+  label: string;    // "Live" text color
+}
+
+const CARD_TINTS: CardTint[] = [
+  { bg: 'from-rose-500/15 to-orange-500/10',  border: 'border-rose-400/30',    dot: 'bg-rose-400',    label: 'text-rose-200' },
+  { bg: 'from-sky-500/15 to-blue-500/10',     border: 'border-sky-400/30',     dot: 'bg-sky-400',     label: 'text-sky-200' },
+  { bg: 'from-emerald-500/15 to-teal-500/10', border: 'border-emerald-400/30', dot: 'bg-emerald-400', label: 'text-emerald-200' },
+  { bg: 'from-fuchsia-500/15 to-purple-500/10', border: 'border-fuchsia-400/30', dot: 'bg-fuchsia-400', label: 'text-fuchsia-200' },
+  { bg: 'from-amber-500/15 to-orange-500/10', border: 'border-amber-400/30',   dot: 'bg-amber-300',   label: 'text-amber-200' },
+];
+
 function LiveActivityCard({
-  activity, onTap,
+  activity, onTap, tint,
 }: {
   activity: Activity;
   onTap: () => void;
+  tint: CardTint;
 }) {
   const userById = useApp(s => s.userById);
   const host = userById(activity.hostId);
@@ -110,18 +131,19 @@ function LiveActivityCard({
     <motion.button
       whileTap={{ scale: 0.97 }}
       onClick={onTap}
-      className="shrink-0 w-[168px] rounded-2xl p-2.5 text-left relative overflow-hidden
-                 bg-gradient-to-br from-rose-500/15 to-orange-500/10
-                 border border-rose-400/30 hover:border-rose-400/50 transition"
+      className={`shrink-0 w-[168px] rounded-2xl p-2.5 text-left relative overflow-hidden
+                  bg-gradient-to-br ${tint.bg} ${tint.border} border hover:brightness-110 transition`}
     >
-      {/* faint category tint behind content */}
+      {/* faint category tint behind content — still respects the activity's
+          category color so two same-tint cards in the cycle still feel
+          distinct when their categories differ. */}
       <div className={`absolute -inset-1 opacity-30 bg-gradient-to-br ${cat.gradient}`} />
       <div className="relative">
         <div className="flex items-center gap-2">
           <Avatar user={host} size={28} />
           <div className="min-w-0 flex-1">
-            <div className="text-[9px] uppercase tracking-widest text-rose-200 font-bold flex items-center gap-1">
-              <span className="relative inline-block h-1 w-1 rounded-full bg-rose-400 live-dot" />
+            <div className={`text-[9px] uppercase tracking-widest font-bold flex items-center gap-1 ${tint.label}`}>
+              <span className={`relative inline-block h-1 w-1 rounded-full live-dot ${tint.dot}`} />
               Live
             </div>
             <div className="text-[13px] font-bold text-white truncate leading-tight">

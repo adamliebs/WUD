@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Calendar, Camera, ChevronDown, Clock, Globe2, Loader2, Lock, MapPin,
+  Calendar, Camera, ChevronDown, Clock, Globe2, Loader2, Lock,
   Radio, Sparkles, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -9,7 +9,7 @@ import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
 import { BottomSheet } from '../components/BottomSheet';
 import { uploadApi } from '../api/endpoints';
 import { mediaUrl } from '../api/client';
-import { useApp, clockTime, recurrenceLabel, relTime } from '../store';
+import { useApp, recurrenceLabel } from '../store';
 import type { CategoryKey, Recurrence } from '../types';
 
 function nextQuarterTime(): string {
@@ -90,12 +90,6 @@ export function PostSheet() {
   const squads = useApp(useShallow(s =>
     s.squads.filter(sq => sq.hostId === s.meId || sq.memberIds.includes(s.meId))
   ));
-  // Current user — drives the avatar + name in the live PreviewCard so the
-  // user sees themselves as the host before they hit Post.
-  const me = useApp(s => s.me());
-  const previewHostName = me.name;
-  const previewHostAvatar = me.avatar;
-  const previewHostColor = me.color;
   const [bannerUploading, setBannerUploading] = useState(false);
   // Controls the "More options" collapse below the primary fields.
   const [moreOpen, setMoreOpen] = useState(false);
@@ -173,19 +167,6 @@ export function PostSheet() {
 
   const audienceEmpty = !openInvite && selectedSquadIds.length === 0;
 
-  // Preview start/end — derived the same way `computedTimes` does at submit,
-  // so the live PreviewCard always matches what the user will actually post.
-  // For "now" mode, treat the start as right now in the preview; submitting
-  // re-computes it at the moment of submission.
-  const previewStartsAt = timeMode === 'now'
-    ? Date.now()
-    : computeStartsAt(dayOffset, time);
-  const previewEndsAt = timeMode === 'now'
-    ? previewStartsAt + durationMins * 60_000
-    : (customEnd
-        ? computeStartsAt(customEnd.dayOffset, customEnd.time)
-        : previewStartsAt + durationMins * 60_000);
-
   // Derived submit times — depend on the active mode + state.
   //   'now':       starts = right-now-at-submit; ends = starts + duration.
   //   'scheduled': starts = chosen day+time; ends = either a duration chip
@@ -241,7 +222,7 @@ export function PostSheet() {
   const submitDisabled = audienceEmpty || !title.trim();
 
   return (
-    <BottomSheet open={open} onClose={() => close(false)}>
+    <BottomSheet open={open} onClose={() => close(false)} size="tall">
       <div className="flex flex-col h-full">
         {/* Sticky header bar — replaces the old colored hero. X close on the
             left, page title centered, Post action on the right. Same shape as
@@ -269,36 +250,20 @@ export function PostSheet() {
           </motion.button>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-0 pb-12">
-          {/* Live preview card — sticky at the top of the scroll so the user
-              can always see what they're composing as they fill in the form.
-              The wrapper paints an opaque sheet-colored bg behind itself
-              (matching the sheet's surface) so scrolled content slides
-              cleanly under it. -top-px + extra pt + opaque bg close the
-              hairline gap that would otherwise show between the header
-              border and the preview as the user scrolls. */}
-          <div className="sticky -top-px -mx-4 px-4 pt-3 pb-3 z-20 glass-strong border-0 border-b border-white/5">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-1.5 px-1">
-              Preview
-            </div>
-            <PreviewCard
-              cat={cat}
-              title={title}
-              hostName={previewHostName}
-              hostAvatar={previewHostAvatar}
-              hostColor={previewHostColor}
-              startsAt={previewStartsAt}
-              endsAt={previewEndsAt}
-              place={place}
-              bannerUrl={bannerUrl}
-              isPrivate={openInvite ? isPrivate : false}
-              recurrence={recurrence}
-              timeMode={timeMode}
-              onPickBanner={onPickBanner}
-              onRemoveBanner={removeBanner}
-              bannerUploading={bannerUploading}
-            />
-          </div>
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 pb-12">
+          {/* Slim category banner — tints to the chosen category gradient (or
+              the user's uploaded banner photo) so the sheet still gets a hit
+              of color without taking the vertical space the live preview
+              card did. The camera button on the right corner lets the user
+              attach or replace a banner image. */}
+          <BannerStrip
+            cat={cat}
+            bannerUrl={bannerUrl}
+            onPickBanner={onPickBanner}
+            onRemoveBanner={removeBanner}
+            bannerUploading={bannerUploading}
+            title="New plan"
+          />
           {/* Category chips */}
           <Section title="Category">
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
@@ -389,22 +354,32 @@ export function PostSheet() {
               placeholder={`e.g. ${cat.label} sesh`}
               aria-required="true"
               aria-invalid={!title.trim()}
-              className={`w-full bg-white/5 border rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
+              className={`w-full bg-white/5 border rounded-2xl px-3.5 py-2.5 text-white placeholder:text-zinc-500
                           focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30
                           ${title.trim() ? 'border-white/10' : 'border-rose-400/40'}`}
             />
           </Section>
 
+          {/* Where */}
+          <Section title="Where">
+            <input
+              value={place}
+              onChange={e => setPlace(e.target.value)}
+              placeholder="Add a place"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-3.5 py-2.5 text-white placeholder:text-zinc-500
+                         focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30"
+            />
+          </Section>
+
           {/* Notes — small, optional context the host wants to share with
-              the audience. Lives right under Title because it's the same
-              "describing the plan" beat. */}
+              the audience. */}
           <Section title="Notes (optional)">
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="A little context for the squad..."
               rows={2}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-3.5 py-2.5 text-white placeholder:text-zinc-500
                          focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30 resize-none"
             />
           </Section>
@@ -633,17 +608,6 @@ export function PostSheet() {
                 </label>
               </motion.div>
             )}
-          </Section>
-
-          {/* Place */}
-          <Section title="Where">
-            <input
-              value={place}
-              onChange={e => setPlace(e.target.value)}
-              placeholder="Add a place"
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
-                         focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30"
-            />
           </Section>
 
           {/* Share with — promoted up from the bottom of the form because
@@ -882,8 +846,8 @@ function Section({
   title, trailing, children,
 }: { title: React.ReactNode; trailing?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="mt-5">
-      <div className="flex items-center justify-between mb-2 px-1">
+    <div className="mt-4">
+      <div className="flex items-center justify-between mb-1.5 px-1">
         <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">{title}</div>
         {trailing}
       </div>
@@ -893,48 +857,27 @@ function Section({
 }
 
 /**
- * Mini ActivityCard that mirrors the real card the user is composing. Pulls
- * its visual language from ActivityCard (header band with category gradient,
- * floating host avatar, body with title + meta) but is decoupled — the real
- * card takes a full Activity from the store, this one takes the in-progress
- * form state. Updates on every keystroke / selection.
+ * Slim banner strip at the top of the sheet — a single colored bar tinted
+ * to the currently-selected category gradient (or the user's uploaded
+ * banner photo). Carries the page title + category label + a camera button
+ * for picking/replacing the banner image. Replaces the previous full live
+ * preview card, which was visually heavy.
  */
-function PreviewCard({
-  cat, title, hostName, hostAvatar, hostColor, startsAt, endsAt, place,
-  bannerUrl, isPrivate, recurrence, timeMode,
-  onPickBanner, onRemoveBanner, bannerUploading,
+function BannerStrip({
+  cat, bannerUrl, onPickBanner, onRemoveBanner, bannerUploading, title,
 }: {
   cat: { key: string; label: string; emoji: string; gradient: string };
-  title: string;
-  hostName: string;
-  hostAvatar: string;
-  hostColor: string;
-  startsAt: number;
-  endsAt: number;
-  place: string;
   bannerUrl?: string;
-  isPrivate: boolean;
-  recurrence?: Recurrence;
-  timeMode: 'now' | 'scheduled';
-  /** Fired when the user picks an image from the inline overlay button.
-   *  Receives the change event from the hidden <input type="file">. */
   onPickBanner: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  /** Clear the existing banner — fires from the X button shown when one is set. */
   onRemoveBanner: () => void;
-  /** Disable the overlay button + show a spinner during upload. */
   bannerUploading: boolean;
+  title: string;
 }) {
-  const live = timeMode === 'now';
-  const displayedTitle = title.trim() || `${cat.label} sesh`;
-  const recurLabel = recurrenceLabel(recurrence);
-  // Inline file input — triggered by the small camera button on the banner.
-  // Lives inside PreviewCard so the whole upload affordance is self-contained
-  // and never blocks pointer events on the rest of the card.
   const fileRef = useRef<HTMLInputElement>(null);
   return (
-    <div className="relative overflow-hidden rounded-3xl glass border border-white/10
-                    shadow-[0_18px_40px_-22px_rgba(0,0,0,0.65)]">
-      {/* Hidden file input — triggered by the banner camera button below. */}
+    <div className="relative overflow-hidden rounded-2xl border border-white/10
+                    shadow-[0_18px_40px_-22px_rgba(0,0,0,0.6)]">
+      {/* Hidden file input — triggered by the camera button. */}
       <input
         ref={fileRef}
         type="file"
@@ -942,7 +885,6 @@ function PreviewCard({
         onChange={onPickBanner}
         className="hidden"
       />
-      {/* Header — banner image if provided, otherwise the category gradient */}
       <div className={`relative h-20 ${bannerUrl ? 'bg-zinc-900' : `bg-gradient-to-br ${cat.gradient}`}`}>
         {bannerUrl ? (
           <>
@@ -957,90 +899,40 @@ function PreviewCard({
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
         )}
-        <div className="absolute top-2.5 left-3 flex items-center gap-1.5 flex-wrap">
-          <span className="text-lg drop-shadow">{cat.emoji}</span>
-          <span className="text-white/90 text-[10px] font-bold uppercase tracking-widest">
-            {cat.label}
-          </span>
-          {isPrivate && (
-            <span className="ml-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
-              <Lock size={8} strokeWidth={3} />
-              Private
-            </span>
-          )}
-          {recurLabel && (
-            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
-              {recurLabel}
-            </span>
-          )}
-        </div>
-        {/* Top-right cluster: Live pill (when 'now' mode) and the
-            camera/remove banner controls. When the Live pill is present
-            the camera button slides under it; otherwise it sits at the
-            corner. */}
-        <div className="absolute top-2.5 right-3 flex items-center gap-1.5">
-          {live && (
-            <div className="inline-flex items-center gap-1.5 text-white text-[9px] font-bold uppercase tracking-widest bg-rose-500/85 backdrop-blur px-2 py-0.5 rounded-full">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-white" />
-              Live
+        <div className="absolute inset-0 flex items-center justify-between px-4">
+          <div className="min-w-0">
+            <div className="text-white/85 text-[10px] uppercase tracking-[0.18em] font-bold">
+              {title}
             </div>
-          )}
-          {bannerUrl && (
+            <div className="text-white text-lg font-black leading-tight truncate inline-flex items-center gap-2 mt-0.5">
+              <span className="text-2xl drop-shadow">{cat.emoji}</span>
+              <span className="truncate">{cat.label}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {bannerUrl && (
+              <button
+                type="button"
+                onClick={onRemoveBanner}
+                aria-label="Remove banner image"
+                className="h-8 w-8 grid place-items-center rounded-full bg-black/50 backdrop-blur text-white hover:bg-black/65 transition"
+              >
+                <X size={14} strokeWidth={3} />
+              </button>
+            )}
             <button
               type="button"
-              onClick={onRemoveBanner}
-              aria-label="Remove banner image"
-              className="h-7 w-7 grid place-items-center rounded-full bg-black/50 backdrop-blur text-white hover:bg-black/65 transition"
+              onClick={() => fileRef.current?.click()}
+              disabled={bannerUploading}
+              aria-label={bannerUrl ? 'Replace banner image' : 'Add a banner image'}
+              className="h-8 w-8 grid place-items-center rounded-full bg-black/50 backdrop-blur text-white hover:bg-black/65 transition disabled:opacity-60"
             >
-              <X size={13} strokeWidth={3} />
+              {bannerUploading
+                ? <Loader2 size={14} className="animate-spin" />
+                : <Camera size={14} />}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={bannerUploading}
-            aria-label={bannerUrl ? 'Replace banner image' : 'Add a banner image'}
-            className="h-7 w-7 grid place-items-center rounded-full bg-black/50 backdrop-blur text-white hover:bg-black/65 transition disabled:opacity-60"
-          >
-            {bannerUploading
-              ? <Loader2 size={13} className="animate-spin" />
-              : <Camera size={13} />}
-          </button>
-        </div>
-        <div className="absolute -bottom-5 left-3">
-          <div
-            className={`h-12 w-12 rounded-full grid place-items-center text-xl ring-4 ring-[#15121b]
-                        bg-gradient-to-br ${hostColor}`}
-          >
-            {hostAvatar}
           </div>
         </div>
-      </div>
-      <div className="px-3 pt-7 pb-3">
-        <div className="text-white text-sm font-semibold leading-tight truncate">
-          {displayedTitle}
-        </div>
-        <div className="text-zinc-400 text-[11px] mt-0.5 truncate">
-          <span className="text-zinc-200 font-medium">{hostName}</span>
-          {' · you\'re hosting'}
-        </div>
-        <div className="flex items-center gap-3 mt-2 text-zinc-300 text-[11px]">
-          <span className="inline-flex items-center gap-1 min-w-0">
-            <Clock size={11} className="text-zinc-500 shrink-0" />
-            <span className="truncate">
-              {clockTime(startsAt)}
-              <span className="text-zinc-500 mx-1">→</span>
-              {clockTime(endsAt)}
-            </span>
-            <span className="text-zinc-500 shrink-0">· {relTime(startsAt)}</span>
-          </span>
-        </div>
-        {place.trim() && (
-          <div className="mt-1 inline-flex items-center gap-1 text-zinc-300 text-[11px] min-w-0">
-            <MapPin size={11} className="text-zinc-500 shrink-0" />
-            <span className="truncate">{place.trim()}</span>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -90,7 +90,10 @@ function bannerTitle(type: NotificationType): string {
     case 'float_keen':      return 'Someone is keen';
     case 'float_locked':    return 'Locked in';
     case 'activity_created':return 'New plan';
+    case 'activity_updated':return 'Plan updated';
+    case 'activity_cancelled': return 'Plan cancelled';
     case 'chat_message':    return 'New message';
+    case 'friend_accepted': return 'New friend';
     default:                return 'WUD';
   }
 }
@@ -208,6 +211,8 @@ function shouldPushCategory(type: NotificationType, s: AppSettings): boolean {
     case 'host_offer':
     case 'host_taken':
     case 'activity_created':
+    case 'activity_updated':
+    case 'activity_cancelled':
       return s.notifyJoins;
     case 'chat_message':
       return s.notifyChat;
@@ -220,6 +225,9 @@ function shouldPushCategory(type: NotificationType, s: AppSettings): boolean {
     case 'ping':
       return s.pingsEnabled;
     case 'invite':
+    case 'friend_accepted':
+      // Friend social events bypass per-category gating — they're rare
+      // and almost always wanted. Master pushEnabled still applies.
       return true;
   }
 }

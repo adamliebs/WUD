@@ -2,7 +2,10 @@ import { motion } from 'framer-motion';
 // motion is still used by NotificationRow's "Pass" button; the row list itself
 // uses plain divs after Android WebView showed subpixel compositing gaps
 // between motion-wrapped children (regression of commit 79af4a7's fix).
-import { Bell, BellRing, CalendarPlus, Check, Clock, Crown, Megaphone, MessageSquare, Sparkles, Trash2, UserPlus } from 'lucide-react';
+import {
+  Bell, BellRing, CalendarPlus, CalendarX, Check, Clock, Crown, Megaphone,
+  MessageSquare, Pencil, Sparkles, Trash2, UserPlus, Users,
+} from 'lucide-react';
 import { useEffect } from 'react';
 import { Avatar } from '../components/Avatar';
 import { PullToRefresh } from '../components/PullToRefresh';
@@ -11,31 +14,37 @@ import { useApp, relTime } from '../store';
 import type { AppNotification, NotificationType } from '../types';
 
 const ICONS: Record<NotificationType, React.ReactNode> = {
-  join:           <Bell size={14} />,
-  host_offer:     <Crown size={14} />,
-  host_taken:     <Crown size={14} />,
-  ping:           <Megaphone size={14} />,
-  invite:         <UserPlus size={14} />,
-  reminder:       <Clock size={14} />,
-  float_received: <Sparkles size={14} />,
-  float_keen:     <Check size={14} />,
-  float_locked:   <Sparkles size={14} />,
-  activity_created: <CalendarPlus size={14} />,
-  chat_message:     <MessageSquare size={14} />,
+  join:               <Bell size={14} />,
+  host_offer:         <Crown size={14} />,
+  host_taken:         <Crown size={14} />,
+  ping:               <Megaphone size={14} />,
+  invite:             <UserPlus size={14} />,
+  reminder:           <Clock size={14} />,
+  float_received:     <Sparkles size={14} />,
+  float_keen:         <Check size={14} />,
+  float_locked:       <Sparkles size={14} />,
+  activity_created:   <CalendarPlus size={14} />,
+  chat_message:       <MessageSquare size={14} />,
+  friend_accepted:    <Users size={14} />,
+  activity_updated:   <Pencil size={14} />,
+  activity_cancelled: <CalendarX size={14} />,
 };
 
 const TONES: Record<NotificationType, string> = {
-  join:           'from-emerald-400 to-teal-600',
-  host_offer:     'from-amber-400 to-orange-600',
-  host_taken:     'from-zinc-400 to-zinc-700',
-  ping:           'from-rose-500 to-pink-600',
-  invite:         'from-sky-400 to-blue-600',
-  reminder:       'from-orange-400 to-rose-600',
-  float_received: 'from-fuchsia-500 to-rose-600',
-  float_keen:     'from-emerald-400 to-teal-600',
-  float_locked:   'from-fuchsia-500 to-orange-500',
-  activity_created: 'from-rose-500 to-orange-500',
-  chat_message:     'from-sky-500 to-indigo-600',
+  join:               'from-emerald-400 to-teal-600',
+  host_offer:         'from-amber-400 to-orange-600',
+  host_taken:         'from-amber-400 to-orange-600',
+  ping:               'from-rose-500 to-pink-600',
+  invite:             'from-sky-400 to-blue-600',
+  reminder:           'from-orange-400 to-rose-600',
+  float_received:     'from-fuchsia-500 to-rose-600',
+  float_keen:         'from-emerald-400 to-teal-600',
+  float_locked:       'from-fuchsia-500 to-orange-500',
+  activity_created:   'from-rose-500 to-orange-500',
+  chat_message:       'from-sky-500 to-indigo-600',
+  friend_accepted:    'from-emerald-400 to-teal-600',
+  activity_updated:   'from-amber-400 to-orange-500',
+  activity_cancelled: 'from-zinc-400 to-zinc-700',
 };
 
 export function NotificationsScreen() {
@@ -228,7 +237,12 @@ function NotificationRow({ n }: { n: AppNotification }) {
             </div>
           )}
 
-          {n.activityId && n.type !== 'host_offer' && (
+          {/* Plan link — applies to anything carrying an activityId EXCEPT
+              host_offer (which has its own CTA) and activity_cancelled
+              (the plan is dissolved server-side; tapping would 404). */}
+          {n.activityId
+            && n.type !== 'host_offer'
+            && n.type !== 'activity_cancelled' && (
             <button
               onClick={() => n.activityId && openActivity(n.activityId)}
               className="mt-2 text-xs font-semibold text-rose-300"
@@ -244,6 +258,16 @@ function NotificationRow({ n }: { n: AppNotification }) {
               className="mt-2 text-xs font-semibold text-rose-300"
             >
               {n.resolved ? 'View friends →' : 'Respond →'}
+            </button>
+          )}
+
+          {/* Friend request accepted — jump to your friend list. */}
+          {n.type === 'friend_accepted' && (
+            <button
+              onClick={() => openOverlay('friends')}
+              className="mt-2 text-xs font-semibold text-emerald-300"
+            >
+              View friends →
             </button>
           )}
 

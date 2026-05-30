@@ -129,6 +129,11 @@ interface State {
   overlay: Overlay;
   toasts: Toast[];
   settings: AppSettings;
+  /** True while an auth or signup flow is in flight (Apple/Google/email
+   *  sign-in, signup, or completing onboarding). Drives the global
+   *  LoadingOverlay + disables auth buttons so a slow network round-trip
+   *  can't be double-tapped into a wedged state. */
+  authBusy: boolean;
 
   // selectors
   me: () => User;
@@ -734,46 +739,48 @@ export const useApp = create<State>((set, get) => {
    * Lazy-imports the Capacitor plugin so the web build (which can't use it
    * natively) doesn't fail at module load time.
    */
-  const firebaseProviderSignin = async (provider: 'apple' | 'google') => {
-    try {
-      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      if (provider === 'apple') await FirebaseAuthentication.signInWithApple();
-      else                       await FirebaseAuthentication.signInWithGoogle();
-      const { token } = await FirebaseAuthentication.getIdToken();
-      if (!token) throw new Error('No ID token from Firebase');
-      await completeFirebaseSignin(token, provider, `Could not sign in with ${provider}`);
-    } catch (e) {
-      // Same diagnostic console.error trick — exposes the real Firebase code.
-      console.error(`[firebaseProviderSignin:${provider}] failed`, e);
-      const msg = friendlyFirebaseError(e, `Could not sign in with ${provider}`);
-      if (msg) toast(msg, 'warn');
-    }
-  };
+  const firebaseProviderSignin = (provider: 'apple' | 'google') =>
+    withAuthBusy(async () => {
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        if (provider === 'apple') await FirebaseAuthentication.signInWithApple();
+        else                       await FirebaseAuthentication.signInWithGoogle();
+        const { token } = await FirebaseAuthentication.getIdToken();
+        if (!token) throw new Error('No ID token from Firebase');
+        await completeFirebaseSignin(token, provider, `Could not sign in with ${provider}`);
+      } catch (e) {
+        // Same diagnostic console.error trick — exposes the real Firebase code.
+        console.error(`[firebaseProviderSignin:${provider}] failed`, e);
+        const msg = friendlyFirebaseError(e, `Could not sign in with ${provider}`);
+        if (msg) toast(msg, 'warn');
+      }
+    });
 
   /**
    * Sign up with email + password through Firebase. Creates the Firebase
    * user, fires a verification email, then routes to onboarding (which
    * completes the WUD account with handle + DOB).
    */
-  const firebaseEmailSignup = async (email: string, password: string) => {
-    try {
-      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      await FirebaseAuthentication.createUserWithEmailAndPassword({ email, password });
-      // Fire-and-forget — the verification email is sent in the background.
-      // If it fails the user can resend from the in-app banner.
-      void FirebaseAuthentication.sendEmailVerification().catch(() => undefined);
-      const { token } = await FirebaseAuthentication.getIdToken();
-      if (!token) throw new Error('No ID token from Firebase');
-      await completeFirebaseSignin(token, 'email', 'Could not create your account');
-    } catch (e) {
-      // Surface the raw Firebase error to the console so the iOS log captures
-      // exactly which code/message tripped us — friendlyFirebaseError swallows
-      // unfamiliar codes into the fallback string, hiding the real cause.
-      console.error('[firebaseEmailSignup] failed', e);
-      const msg = friendlyFirebaseError(e, 'Could not create your account');
-      if (msg) toast(msg, 'warn');
-    }
-  };
+  const firebaseEmailSignup = (email: string, password: string) =>
+    withAuthBusy(async () => {
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        await FirebaseAuthentication.createUserWithEmailAndPassword({ email, password });
+        // Fire-and-forget — the verification email is sent in the background.
+        // If it fails the user can resend from the in-app banner.
+        void FirebaseAuthentication.sendEmailVerification().catch(() => undefined);
+        const { token } = await FirebaseAuthentication.getIdToken();
+        if (!token) throw new Error('No ID token from Firebase');
+        await completeFirebaseSignin(token, 'email', 'Could not create your account');
+      } catch (e) {
+        // Surface the raw Firebase error to the console so the iOS log captures
+        // exactly which code/message tripped us — friendlyFirebaseError swallows
+        // unfamiliar codes into the fallback string, hiding the real cause.
+        console.error('[firebaseEmailSignup] failed', e);
+        const msg = friendlyFirebaseError(e, 'Could not create your account');
+        if (msg) toast(msg, 'warn');
+      }
+    });
 
   /**
    * Log in with email + password. Tries Firebase first (for accounts created
@@ -781,31 +788,32 @@ export const useApp = create<State>((set, get) => {
    * login endpoint (for users like the demo admin that pre-date Firebase).
    * Either path produces a WUD session.
    */
-  const firebaseEmailLogin = async (email: string, password: string) => {
-    let firebaseError: unknown;
-    try {
-      const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-      await FirebaseAuthentication.signInWithEmailAndPassword({ email, password });
-      const { token } = await FirebaseAuthentication.getIdToken();
-      if (!token) throw new Error('No ID token from Firebase');
-      await completeFirebaseSignin(token, 'email', 'Could not log in');
-      return;
-    } catch (e) {
-      firebaseError = e;
-    }
-    // Firebase failed — could be wrong password OR a legacy user not in
-    // Firebase. Try the legacy path; if THAT also fails, surface the legacy
-    // error (it's the more informative one for password-mismatch cases).
-    try {
-      const r = await authApi.login(email, password);
-      tokens.set(r.accessToken, r.refreshToken);
-      await doBootstrap();
-    } catch (legacyError) {
-      const msg = friendlyFirebaseError(firebaseError,
-        legacyError instanceof ApiError ? legacyError.message : 'Could not log in');
-      if (msg) toast(msg, 'warn');
-    }
-  };
+  const firebaseEmailLogin = (email: string, password: string) =>
+    withAuthBusy(async () => {
+      let firebaseError: unknown;
+      try {
+        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+        await FirebaseAuthentication.signInWithEmailAndPassword({ email, password });
+        const { token } = await FirebaseAuthentication.getIdToken();
+        if (!token) throw new Error('No ID token from Firebase');
+        await completeFirebaseSignin(token, 'email', 'Could not log in');
+        return;
+      } catch (e) {
+        firebaseError = e;
+      }
+      // Firebase failed — could be wrong password OR a legacy user not in
+      // Firebase. Try the legacy path; if THAT also fails, surface the legacy
+      // error (it's the more informative one for password-mismatch cases).
+      try {
+        const r = await authApi.login(email, password);
+        tokens.set(r.accessToken, r.refreshToken);
+        await doBootstrap();
+      } catch (legacyError) {
+        const msg = friendlyFirebaseError(firebaseError,
+          legacyError instanceof ApiError ? legacyError.message : 'Could not log in');
+        if (msg) toast(msg, 'warn');
+      }
+    });
 
   /**
    * Best-effort Firebase signout. Used on app signout + delete-account so we
@@ -833,6 +841,19 @@ export const useApp = create<State>((set, get) => {
     } catch (e) {
       if (e instanceof ApiError) toast(e.message, 'warn');
       else console.error('[savePhone] unexpected error:', e);
+    }
+  };
+
+  /** Wrap an async auth-flow with a global `authBusy` flag so the UI can
+   *  render a loading overlay and disable buttons while it's in flight.
+   *  Always clears the flag in finally — a thrown error doesn't strand
+   *  the user inside a permanent loading state. */
+  const withAuthBusy = async <T>(fn: () => Promise<T>): Promise<T> => {
+    set({ authBusy: true });
+    try {
+      return await fn();
+    } finally {
+      set({ authBusy: false });
     }
   };
 
@@ -881,6 +902,7 @@ export const useApp = create<State>((set, get) => {
     feedFilters: { timeWindow: 'all', sort: 'soonest' },
     overlay: null,
     toasts: [],
+    authBusy: false,
     settings: {
       pushEnabled: true,
       notifyJoins: true,
@@ -1281,7 +1303,7 @@ export const useApp = create<State>((set, get) => {
     },
 
     signUp: ({ name, handle, avatar, color, dateOfBirth, phone }) => {
-      void guard(async () => {
+      void guard(() => withAuthBusy(async () => {
         const pending = get().pendingSignup;
         // Firebase path — onboarding completes the signin with an ID token
         // captured when the user tapped Apple / Google on the welcome screen.
@@ -1318,7 +1340,7 @@ export const useApp = create<State>((set, get) => {
         // Legacy email register has no Firebase user, so email is unverified
         // by definition. Same gate so the user lands on verify-email.
         if (pending?.kind === 'email') enforceEmailVerificationGate('email');
-      });
+      }));
     },
 
     logIn: (email, password) => {

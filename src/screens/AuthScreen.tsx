@@ -28,6 +28,10 @@ export function AuthScreen() {
   const signInWithGoogle = useApp(s => s.signInWithGoogle);
   const pushToast = useApp(s => s.pushToast);
   const sendPasswordReset = useApp(s => s.sendPasswordReset);
+  // Disable all sign-in buttons while an auth flow is in flight so the user
+  // can't double-tap a slow request into a wedged state. The full-screen
+  // LoadingOverlay handles the visible feedback.
+  const authBusy = useApp(s => s.authBusy);
 
   const isSignup = intent === 'signup';
 
@@ -150,9 +154,10 @@ export function AuthScreen() {
           {platform === 'ios' && (
             <button
               onClick={() => void signInWithApple()}
+              disabled={authBusy}
               className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl
                          bg-white text-zinc-900 font-semibold text-[15px]
-                         active:bg-zinc-200 transition"
+                         active:bg-zinc-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <AppleLogo />
               {isSignup ? 'Sign up with Apple' : 'Continue with Apple'}
@@ -160,9 +165,10 @@ export function AuthScreen() {
           )}
           <button
             onClick={() => void signInWithGoogle()}
+            disabled={authBusy}
             className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl
                        bg-white text-zinc-900 font-semibold text-[15px]
-                       active:bg-zinc-200 transition"
+                       active:bg-zinc-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <GoogleLogo />
             {isSignup ? 'Sign up with Google' : 'Continue with Google'}
@@ -250,7 +256,7 @@ export function AuthScreen() {
         <div className="mt-5">
           <PulseButton
             onClick={proceedEmail}
-            disabled={!emailValid || !passwordValid || !passwordMatches}
+            disabled={!emailValid || !passwordValid || !passwordMatches || authBusy}
           >
             {isSignup ? 'Continue' : 'Log in'}
           </PulseButton>
