@@ -16,7 +16,6 @@
     "seed:prod": "node dist/db/seed.js"
   },
   "dependencies": {
-    "@capacitor-community/contacts": "^7.2.0",
     "@sentry/node": "^10.53.1",
     "better-sqlite3": "^12.10.0",
     "cors": "^2.8.5",
