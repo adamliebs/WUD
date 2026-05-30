@@ -3,13 +3,14 @@ import { Eye, EyeOff, Radio, Search, Sparkles, Users, UsersRound } from 'lucide-
 import { useShallow } from 'zustand/react/shallow';
 import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
-import { EmailVerificationBanner } from '../components/EmailVerificationBanner';
 import { FeedFilters } from '../components/FeedFilters';
 import { LiveNowStrip } from '../components/LiveNowStrip';
+import { PullToRefresh } from '../components/PullToRefresh';
 import { SmartSuggestions } from '../components/SmartSuggestions';
 
 export function FeedScreen() {
   const me = useApp(s => s.me());
+  const refreshAll = useApp(s => s.refreshAll);
   const allActivities = useApp(useShallow(s => s.visibleActivities()));
   // Live activities are surfaced in the LiveNowStrip above, so hide them from
   // the main scrolling feed by default to avoid showing the same plan twice.
@@ -94,8 +95,10 @@ export function FeedScreen() {
       </div>
 
       {/* Scroll list */}
-      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
-        <EmailVerificationBanner />
+      <PullToRefresh
+        onRefresh={refreshAll}
+        className="relative flex-1 overflow-y-auto no-scrollbar pb-32 pt-2"
+      >
         <LiveNowStrip />
         <SmartSuggestions />
         {/* Anchor target for For You "tap to filter" jumps — when the For You
@@ -187,7 +190,7 @@ export function FeedScreen() {
             </div>
           )}
         </motion.div>
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

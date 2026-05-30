@@ -45,6 +45,15 @@ export function runMigrations(db: Database.Database): void {
     const version = file.replace(/\.sql$/, '');
     if (applied.has(version)) continue;
 
+    // Per-migration prelude: heal known schema-drift cases before applying
+    // the SQL. Some dev DBs have ended up with the 0006 row in
+    // schema_migrations but without the float_id column on notifications
+    // (e.g. partial restore, manual DB reset). 0007's rebuild SELECTs
+    // float_id explicitly, so add it back idempotently before running.
+    if (version === '0007_notification_types') {
+      ensureNotificationsHasFloatId(db);
+    }
+
     const sql = readFileSync(join(migrationsDir, file), 'utf8');
     db.transaction(() => {
       db.exec(sql);
@@ -60,4 +69,17 @@ export function runMigrations(db: Database.Database): void {
       ? '[migrate] database up to date'
       : `[migrate] applied ${appliedCount} migration(s)`,
   );
+}
+
+interface ColumnInfo { name: string }
+
+/** Adds `notifications.float_id` if it's missing. No-op if the column exists. */
+function ensureNotificationsHasFloatId(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(notifications)').all() as ColumnInfo[];
+  const hasFloatId = cols.some(c => c.name === 'float_id');
+  if (hasFloatId) return;
+  db.exec(
+    'ALTER TABLE notifications ADD COLUMN float_id TEXT REFERENCES floats(id) ON DELETE SET NULL',
+  );
+  console.log('[migrate] healed notifications.float_id (was missing before 0007)');
 }

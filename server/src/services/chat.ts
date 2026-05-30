@@ -3,6 +3,8 @@ import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { newId, now } from '../lib/ids.js';
 import { publish } from '../realtime/bus.js';
 import type { ChatMessage, PollOption } from '../types.js';
+import { createNotification } from './notifications.js';
+import { getUserRow } from './users.js';
 
 /** A chat thread parent — exactly one of these is set. */
 export type ThreadParent = { activityId: string } | { squadId: string };
@@ -100,16 +102,70 @@ function emitMessage(parent: ThreadParent, messageId: string): ChatMessage {
 export function sendText(parent: ThreadParent, authorId: string, text: string): ChatMessage {
   const trimmed = text.trim();
   if (!trimmed) throw badRequest('EMPTY_MESSAGE', 'Message cannot be empty', 'text');
-  return emitMessage(parent, insertMessage(parent, authorId, 'text', { body: trimmed }));
+  const message = emitMessage(parent, insertMessage(parent, authorId, 'text', { body: trimmed }));
+  notifyActivityChat(parent, authorId, previewLine(trimmed));
+  return message;
 }
 
 export function sendPhoto(
   parent: ThreadParent, authorId: string, photoUrl: string, caption?: string,
 ): ChatMessage {
   if (!photoUrl) throw badRequest('MISSING_PHOTO', 'photoUrl is required', 'photoUrl');
-  return emitMessage(parent, insertMessage(parent, authorId, 'photo', {
+  const message = emitMessage(parent, insertMessage(parent, authorId, 'photo', {
     photoUrl, body: caption?.trim() || null,
   }));
+  notifyActivityChat(parent, authorId, caption?.trim() ? `📷 ${previewLine(caption)}` : '📷 Photo');
+  return message;
+}
+
+/** Truncate a chat preview for notification bodies — long messages are noisy
+ *  on lockscreens. */
+function previewLine(text: string): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length > 80 ? `${oneLine.slice(0, 77)}…` : oneLine;
+}
+
+/** Fan a `chat_message` notification to every activity participant except the
+ *  sender. Skips squad chats (they'd be too noisy in MVP). The body is the
+ *  sender's name + the message preview so the lockscreen tells you who said
+ *  what without opening the app.
+ *
+ *  Wrapped in try/catch via the underlying createNotification — a failed
+ *  notification never aborts the send. */
+function notifyActivityChat(parent: ThreadParent, authorId: string, preview: string): void {
+  if (!('activityId' in parent)) return;
+  const { activityId } = parent;
+
+  const activity = q.get<{ host_id: string; title: string }>(
+    'SELECT host_id, title FROM activities WHERE id = ?', activityId,
+  );
+  if (!activity) return;
+
+  // Recipients = host + every `going` RSVP, minus the sender.
+  const recipientIds = new Set<string>();
+  if (activity.host_id !== authorId) recipientIds.add(activity.host_id);
+  const goers = q.all<{ user_id: string }>(
+    "SELECT user_id FROM rsvps WHERE activity_id = ? AND state = 'going'",
+    activityId,
+  );
+  for (const g of goers) {
+    if (g.user_id !== authorId) recipientIds.add(g.user_id);
+  }
+  if (recipientIds.size === 0) return;
+
+  const author = getUserRow(authorId);
+  const authorName = author?.name ?? 'Someone';
+  const body = `${authorName} in "${activity.title}": ${preview}`;
+
+  for (const userId of recipientIds) {
+    createNotification({
+      userId,
+      type: 'chat_message',
+      fromId: authorId,
+      activityId,
+      body,
+    });
+  }
 }
 
 /** System message — no author; used for host-transfer notices etc. */

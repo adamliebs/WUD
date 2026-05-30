@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
 import { Avatar, AvatarStack } from '../components/Avatar';
+import { ImageViewer } from '../components/ImageViewer';
 import { PulseButton } from '../components/PulseButton';
 import { SwipeBackPage } from '../components/SwipeBackPage';
 import { categoryFor } from '../data/categories';
@@ -620,6 +621,7 @@ function SquadChatPane({ squadId }: { squadId: string }) {
   const sendPhoto = useApp(s => s.sendSquadChatPhoto);
   const [draft, setDraft] = useState('');
   const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
+  const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = sq?.chat.length ?? 0;
@@ -691,12 +693,18 @@ function SquadChatPane({ squadId }: { squadId: string }) {
                       {!mine && (
                         <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
                       )}
-                      <img
-                        src={mediaUrl(m.photoUrl)}
-                        alt={m.text ?? 'shared photo'}
-                        className="block max-h-64 w-full object-cover"
-                        draggable={false}
-                      />
+                      <button
+                        onClick={() => setViewerSrc(mediaUrl(m.photoUrl) ?? null)}
+                        className="block w-full"
+                        aria-label="Open photo"
+                      >
+                        <img
+                          src={mediaUrl(m.photoUrl)}
+                          alt={m.text ?? 'shared photo'}
+                          className="block max-h-64 w-full object-cover"
+                          draggable={false}
+                        />
+                      </button>
                       {m.text && (
                         <div className={`px-3 py-2 text-sm ${mine ? 'text-white' : 'text-zinc-100'}`}>
                           {m.text}
@@ -772,6 +780,12 @@ function SquadChatPane({ squadId }: { squadId: string }) {
           </motion.button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {viewerSrc && (
+          <ImageViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

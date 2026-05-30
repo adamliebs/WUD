@@ -1,6 +1,7 @@
 import { q, tx } from '../db/index.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { newId, now } from '../lib/ids.js';
+import { logger } from '../lib/logger.js';
 import { publish } from '../realtime/bus.js';
 import type { Activity, CategoryKey, Reaction, Recurrence, RsvpState } from '../types.js';
 import { messagesForActivity, sendSystem } from './chat.js';
@@ -267,10 +268,37 @@ export function createActivity(hostId: string, input: {
     }
     return getActivity(id);
   });
-  // Tell every potential viewer that their feed just changed so the new plan
-  // lands on their home screen without waiting for a manual refresh.
-  const row = getActivityRow(id);
-  if (row) publishFeedChange(row, 'created');
+  // Post-commit side effects (realtime fan-out + notification fan-out) are
+  // best-effort. The activity is already persisted in the TX above; if
+  // anything in here throws we'd 500 the user's POST and they'd see the plan
+  // they just created vanish into "something went wrong". Wrap in try/catch
+  // so failures here surface only in logs.
+  try {
+    const row = getActivityRow(id);
+    if (row) {
+      publishFeedChange(row, 'created');
+      // In-app notification fan-out: direct friends of the host only — squad
+      // members and FoF discover via the realtime feed.changed event.
+      const host = getUserRow(hostId);
+      const hostName = host?.name ?? 'Someone';
+      const isLive = row.starts_at <= ts && ts <= row.ends_at;
+      const body = isLive
+        ? `${hostName} is live: "${row.title}"`
+        : `${hostName} posted a plan: "${row.title}"`;
+      for (const friendId of friendIds(hostId)) {
+        if (!canSeeActivity(friendId, row)) continue;
+        createNotification({
+          userId: friendId,
+          type: 'activity_created',
+          fromId: hostId,
+          activityId: id,
+          body,
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, activityId: id }, '[createActivity] post-commit side effects failed');
+  }
   return created;
 }
 

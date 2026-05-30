@@ -1,10 +1,11 @@
 import confetti from 'canvas-confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, ShieldOff, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
 import { BottomSheet } from '../components/BottomSheet';
+import { ImageViewer } from '../components/ImageViewer';
 import { PollBubble } from '../components/PollBubble';
 import { ReactionBar } from '../components/ReactionBar';
 import { categoryFor } from '../data/categories';
@@ -115,13 +116,22 @@ function Inner({ activityId }: { activityId: string }) {
         >
           <X size={16} />
         </button>
+        {/* Share — visible to everyone. Uses the native share sheet so users
+            can pop the plan into iMessage, Slack, etc. */}
+        <button
+          onClick={() => void shareActivity(activity, host.name, isHost)}
+          aria-label="Share plan"
+          className="absolute top-2 right-12 h-8 w-8 rounded-full grid place-items-center bg-black/30 text-white backdrop-blur"
+        >
+          <Share2 size={14} />
+        </button>
         {/* Edit pencil — host-only. Opens the EditActivitySheet pre-filled
             with this plan's current fields. */}
         {isHost && !over && (
           <button
             onClick={() => openEdit(activity.id)}
             aria-label="Edit plan"
-            className="absolute top-2 right-12 h-8 w-8 rounded-full grid place-items-center bg-black/30 text-white backdrop-blur"
+            className="absolute top-2 right-[5.5rem] h-8 w-8 rounded-full grid place-items-center bg-black/30 text-white backdrop-blur"
           >
             <Pencil size={14} />
           </button>
@@ -130,7 +140,7 @@ function Inner({ activityId }: { activityId: string }) {
             host (you can't report/block yourself). Required surface for Apple
             Guideline 1.2 review. */}
         {!isHost && (
-          <div ref={moreRef} className="absolute top-2 right-12">
+          <div ref={moreRef} className="absolute top-2 right-[5.5rem]">
             <button
               onClick={() => setMoreOpen(o => !o)}
               aria-haspopup="menu"
@@ -594,6 +604,73 @@ function SquadTagRow({ squadIds, isOpenInvite }: { squadIds: string[]; isOpenInv
 
 /** "Started Xm ago · Ym left" — used when the activity is currently in its
  *  [startsAt, endsAt] window. Uses "Xh Ym" once the value crosses an hour. */
+/** Open the system share sheet for an activity.
+ *
+ *  Prefers the Capacitor Share plugin on native (iOS/Android) so we get the
+ *  real OS UIActivityViewController / Share Intent every time — Capacitor
+ *  WKWebView's `navigator.share` can be flaky inside non-standard origins.
+ *  Falls back to `navigator.share` on the web, and finally to a clipboard
+ *  copy with a toast.
+ *
+ *  The copy is tailored to the viewer's relationship to the plan:
+ *    • Host:    "Come join my plan"
+ *    • Non-host: "Come check out {Host}'s plan" — sharing on someone else's
+ *      behalf reads weird with "wants you to join their plan".
+ *
+ *  The URL is the canonical https://app.wud.app link — iOS universal links
+ *  resolve back to the native app, and the web build gracefully renders for
+ *  recipients without WUD installed. */
+async function shareActivity(
+  activity: import('../types').Activity,
+  hostName: string,
+  isHost: boolean,
+): Promise<void> {
+  const url = `https://app.wud.app/plan/${activity.id}`;
+  const text = isHost
+    ? `Hey! What U Doing? Come join my plan: "${activity.title}"`
+    : `Hey! What U Doing? I want you to come to ${hostName}'s plan: "${activity.title}"`;
+
+  // Capacitor native share — preferred on iOS/Android.
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (Capacitor.isNativePlatform()) {
+      const { Share } = await import('@capacitor/share');
+      const canShare = await Share.canShare();
+      if (canShare.value) {
+        await Share.share({ title: 'WUD?', text, url, dialogTitle: 'Share plan' });
+        return;
+      }
+    }
+  } catch (e) {
+    // Capacitor cancel surfaces as a throw — treat as a silent no-op.
+    if (looksLikeShareCancel(e)) return;
+  }
+
+  // Web fallback — desktop browsers and Capacitor configurations that don't
+  // expose the native plugin.
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      await navigator.share({ title: 'WUD?', text, url });
+      return;
+    }
+  } catch (e) {
+    if ((e as { name?: string })?.name === 'AbortError') return;
+  }
+
+  // Clipboard last-resort.
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    useApp.getState().pushToast('Plan copied to clipboard', 'success');
+  } catch {
+    useApp.getState().pushToast('Could not share the plan', 'warn');
+  }
+}
+
+function looksLikeShareCancel(e: unknown): boolean {
+  const msg = (e as { message?: string } | null)?.message?.toLowerCase() ?? '';
+  return msg.includes('cancel') || msg.includes('abort');
+}
+
 function liveTimingLabel(a: import('../types').Activity): string {
   const now = Date.now();
   const sinceStart = Math.max(0, now - a.startsAt);
@@ -688,6 +765,8 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
   const openPollComposer = useApp(s => s.setPollComposerActivityId);
   const [draft, setDraft] = useState('');
   const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
+  // Photo viewer state — null when closed; the resolved media URL when open.
+  const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = activity?.chat.length ?? 0;
@@ -783,12 +862,18 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
                     {!mine && (
                       <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
                     )}
-                    <img
-                      src={mediaUrl(m.photoUrl)}
-                      alt={m.text ?? 'shared photo'}
-                      className="block max-h-64 w-full object-cover"
-                      draggable={false}
-                    />
+                    <button
+                      onClick={() => setViewerSrc(mediaUrl(m.photoUrl) ?? null)}
+                      className="block w-full"
+                      aria-label="Open photo"
+                    >
+                      <img
+                        src={mediaUrl(m.photoUrl)}
+                        alt={m.text ?? 'shared photo'}
+                        className="block max-h-64 w-full object-cover"
+                        draggable={false}
+                      />
+                    </button>
                     {m.text && (
                       <div className={`px-3 py-2 text-sm ${mine ? 'text-white' : 'text-zinc-100'}`}>
                         {m.text}
@@ -876,6 +961,13 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
           </motion.button>
         </div>
       </div>
+
+      {/* Photo viewer — wrapped in AnimatePresence so the fade animates. */}
+      <AnimatePresence>
+        {viewerSrc && (
+          <ImageViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

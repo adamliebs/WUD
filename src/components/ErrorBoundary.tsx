@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
             WUD hit an unexpected snag and stopped rendering. Reloading usually
             fixes it. If it keeps happening, drop us a note at
             {' '}
-            <span className="text-rose-300">hello@wud.app</span>.
+            <span className="text-rose-300">adam@lieberman.co.za</span>.
           </div>
           <button
             onClick={this.reload}

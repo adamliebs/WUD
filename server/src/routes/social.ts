@@ -4,7 +4,7 @@ import { handler, optionalString, requireString } from '../lib/http.js';
 import {
   acceptFriendRequest, addSquadMember, createSquad, declineFriendRequest, deleteSquad,
   discoverUsers, getSquad, incomingRequests, leaveSquad, listFriends, listSquadsForUser,
-  removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
+  matchContacts, removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
 } from '../services/social.js';
 import { blockUser, listBlockedByMe, unblockUser } from '../services/safety.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
@@ -23,6 +23,22 @@ socialRouter.get('/friends', handler((req, res) => {
 
 socialRouter.get('/friends/discover', handler((req, res) => {
   res.json({ users: discoverUsers(uid(req), String(req.query.q ?? '')) });
+}));
+
+/** POST /v1/friends/contact-match
+ *  Body: { emails?: string[]; phones?: string[] } — raw contact entries
+ *  read from the device. Both fields are optional; provide either or both.
+ *  Response: { users: PublicUser[] } — matched WUD users, minus the caller,
+ *  current friends, and blocked-either-side pairs. */
+socialRouter.post('/friends/contact-match', handler((req, res) => {
+  const body = req.body ?? {};
+  const emails = Array.isArray(body.emails)
+    ? body.emails.filter((x: unknown): x is string => typeof x === 'string')
+    : [];
+  const phones = Array.isArray(body.phones)
+    ? body.phones.filter((x: unknown): x is string => typeof x === 'string')
+    : [];
+  res.json({ users: matchContacts(uid(req), { emails, phones }) });
 }));
 
 socialRouter.delete('/friends/:userId', handler((req, res) => {

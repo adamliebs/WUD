@@ -37,9 +37,7 @@ export function VerifyEmailScreen() {
 
   // Auto-advance the moment the server reports we're verified.
   useEffect(() => {
-    if (me.emailVerified) {
-      setAuthState('app');
-    }
+    if (me.emailVerified) setAuthState('app');
   }, [me.emailVerified, setAuthState]);
 
   // Poll Firebase + server for verification status. Cleans up on unmount,
@@ -107,7 +105,7 @@ export function VerifyEmailScreen() {
               animate={{ y: [0, -6, 0], rotate: [0, 3, 0, -3, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
               className="relative h-20 w-20 mx-auto rounded-full grid place-items-center
-                         bg-gradient-to-br from-rose-500 via-pink-500 to-orange-500
+                         bg-gradient-to-br from-rose-500 to-orange-500
                          text-white shadow-[0_24px_50px_-18px_rgba(244,63,94,0.65)]
                          ring-1 ring-white/15"
             >

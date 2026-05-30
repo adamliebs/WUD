@@ -4,6 +4,7 @@ import { Check, ChevronRight, MapPin, Send, Sparkles, Timer, Trash2 } from 'luci
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar, AvatarStack } from '../components/Avatar';
+import { PullToRefresh } from '../components/PullToRefresh';
 import { useApp } from '../store';
 import type { Float, FloatResponseState, FloatTiming } from '../types';
 
@@ -24,6 +25,7 @@ export function FloatsScreen() {
   const me = useApp(s => s.me());
   const floats = useApp(useShallow(s => s.floats));
   const myId = useApp(s => s.meId);
+  const refreshAll = useApp(s => s.refreshAll);
 
   const now = Date.now();
   const active = useMemo(
@@ -67,7 +69,10 @@ export function FloatsScreen() {
         </motion.div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-36">
+      <PullToRefresh
+        onRefresh={refreshAll}
+        className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-36"
+      >
         <Composer />
 
         {active.length > 0 ? (
@@ -100,7 +105,7 @@ export function FloatsScreen() {
             </div>
           </>
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

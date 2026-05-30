@@ -20,6 +20,11 @@ export interface PublicUser {
    *  true for OAuth (Apple/Google) signups; false for new email signups until
    *  they click the verification link. */
   emailVerified?: boolean;
+  /** E.164 phone number (e.g. +27821234567). ONLY populated when the row is
+   *  the requester's own profile (the /me endpoint). The public-facing
+   *  serializer (toPublicUser) deliberately omits it so phone numbers never
+   *  leak through user lookups, friend lists, or activity payloads. */
+  phone?: string;
 }
 
 export interface Reaction {
@@ -92,7 +97,13 @@ export interface Squad {
 
 export type NotificationType =
   | 'join' | 'host_offer' | 'host_taken' | 'ping' | 'invite' | 'reminder'
-  | 'float_received' | 'float_keen' | 'float_locked';
+  | 'float_received' | 'float_keen' | 'float_locked'
+  // Friend posted a new plan you can see. Includes the "going live" case
+  // (activity created with starts_at ≈ now); the body line differentiates.
+  | 'activity_created'
+  // New chat message in an activity you're a participant of (host or going).
+  // Fans to other participants only — the sender is muted on their own send.
+  | 'chat_message';
 
 export interface AppNotification {
   id: string;
@@ -107,8 +118,21 @@ export interface AppNotification {
 }
 
 export interface AppSettings {
+  /** Master push switch — when false, dispatchPush is a no-op for every type. */
   pushEnabled: boolean;
+  /** Per-category push toggles (only consulted when pushEnabled is true).
+   *  In-app notifications in the Alerts tab are always created; these flags
+   *  only gate the lock-screen push delivery, so the user can still see the
+   *  event history without being interrupted. */
+  notifyJoins: boolean;
+  notifyChat: boolean;
+  notifyFloats: boolean;
+  notifyReminders: boolean;
+  /** Whether friends can ping you with a "WUD?" prompt. */
   pingsEnabled: boolean;
+  /** Whether anyone can send you a friend request. When false, /v1/friends/request
+   *  responds 403 with a generic message and creates no record. */
+  allowFriendRequests: boolean;
   defaultReminderMins: number | null;
 }
 

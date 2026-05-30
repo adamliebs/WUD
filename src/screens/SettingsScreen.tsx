@@ -1,5 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, ChevronLeft, FileText, LogOut, Megaphone, ShieldCheck, ShieldOff, Trash2, UserCircle } from 'lucide-react';
+import {
+  Bell, ChevronLeft, Download, FileText, Heart, LogOut, MessageCircle,
+  Megaphone, ShieldCheck, ShieldOff, Trash2, UserCircle, UserPlus, Zap, Clock,
+} from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { SwipeBackPage } from '../components/SwipeBackPage';
 import { Toggle } from '../components/Toggle';
@@ -127,26 +130,90 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
       {/* Account header card */}
       <AccountCard />
 
-      {/* Notifications */}
+      {/* Notifications — master switch up top, per-category toggles below.
+          The master switch acts as a fast off; the category switches let the
+          user keep, say, joins on while silencing chat. Friend-request
+          invites are intentionally not user-gateable — they're infrequent and
+          usually something the recipient wants. */}
       <Group title="Notifications">
         <Row
           icon={<Bell size={16} />}
           label="Push notifications"
-          sub="Joins, host transfers, pings"
+          sub="Master switch — turn off to silence everything"
           right={<Toggle value={settings.pushEnabled} onChange={set('pushEnabled')} ariaLabel="Push notifications" />}
         />
         <Row
-          icon={<Megaphone size={16} />}
-          label="Allow pings from friends"
-          sub="Friends can ping you with 'WUD?'"
-          right={<Toggle value={settings.pingsEnabled} onChange={set('pingsEnabled')} ariaLabel="Allow pings" />}
+          icon={<UserPlus size={16} />}
+          label="Joins + RSVPs"
+          sub="Friends RSVPing to your plans, host transfers, new plans from friends"
+          right={
+            <Toggle
+              value={settings.notifyJoins}
+              onChange={set('notifyJoins')}
+              disabled={!settings.pushEnabled}
+              ariaLabel="Joins and RSVPs"
+            />
+          }
+        />
+        <Row
+          icon={<MessageCircle size={16} />}
+          label="Chat messages"
+          sub="New messages in plans you're part of"
+          right={
+            <Toggle
+              value={settings.notifyChat}
+              onChange={set('notifyChat')}
+              disabled={!settings.pushEnabled}
+              ariaLabel="Chat messages"
+            />
+          }
+        />
+        <Row
+          icon={<Heart size={16} />}
+          label="Floats"
+          sub="New floats, keen responses, lock-ins"
+          right={
+            <Toggle
+              value={settings.notifyFloats}
+              onChange={set('notifyFloats')}
+              disabled={!settings.pushEnabled}
+              ariaLabel="Floats"
+            />
+          }
+        />
+        <Row
+          icon={<Clock size={16} />}
+          label="Reminders"
+          sub={`"Starts in 30 minutes" alerts before plans you're going to`}
+          right={
+            <Toggle
+              value={settings.notifyReminders}
+              onChange={set('notifyReminders')}
+              disabled={!settings.pushEnabled}
+              ariaLabel="Reminders"
+            />
+          }
+        />
+        <Row
+          icon={<Zap size={16} />}
+          label="Pings"
+          sub='Friends asking "WUD?" — counts as a push too'
+          right={
+            <Toggle
+              value={settings.pingsEnabled}
+              onChange={set('pingsEnabled')}
+              disabled={!settings.pushEnabled}
+              ariaLabel="Pings"
+            />
+          }
         />
       </Group>
 
-      {/* Reminders */}
+      {/* Reminders — default lead time. Separate from the on/off toggle above
+          since the lead time is a preference, not a privacy gate. */}
       <Group title="Reminders">
         <div className="px-4 py-3">
-          <div className="text-sm font-semibold text-white mb-0.5">Default reminder</div>
+          <div className="text-sm font-semibold text-white mb-0.5">Default reminder lead time</div>
           <div className="text-[11px] text-zinc-400 mb-3">
             Fired for plans you're hosting or going to. Override per-plan from any event.
           </div>
@@ -176,6 +243,30 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
         </div>
       </Group>
 
+      {/* Privacy — who can reach you. Pings live here too (mirrored from the
+          notifications group via the same store field). Friends-list / block
+          list lives under Safety. */}
+      <Group title="Privacy">
+        <Row
+          icon={<UserPlus size={16} />}
+          label="Allow friend requests"
+          sub="Let other users send you a friend request"
+          right={
+            <Toggle
+              value={settings.allowFriendRequests}
+              onChange={set('allowFriendRequests')}
+              ariaLabel="Allow friend requests"
+            />
+          }
+        />
+        <Row
+          icon={<Megaphone size={16} />}
+          label="Allow pings from friends"
+          sub="Friends can prompt you with 'WUD?'"
+          right={<Toggle value={settings.pingsEnabled} onChange={set('pingsEnabled')} ariaLabel="Allow pings" />}
+        />
+      </Group>
+
       {/* Safety — Apple Guideline 1.2 */}
       <Group title="Safety">
         <Row
@@ -185,6 +276,12 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
           chevron
           onClick={() => onGo('blocked')}
         />
+      </Group>
+
+      {/* Your data — POPIA / GDPR self-service. Account deletion is in Danger
+          zone (below); this group covers the read/export half of user rights. */}
+      <Group title="Your data">
+        <RequestDataRow />
       </Group>
 
       {/* Legal */}
@@ -208,7 +305,7 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
         <Row
           icon={<UserCircle size={16} />}
           label="Version"
-          sub="WUD 0.1"
+          sub={`WUD ${__APP_VERSION__}`}
         />
       </Group>
 
@@ -223,6 +320,32 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
         <DeleteAccountRow />
       </Group>
     </div>
+  );
+}
+
+/** "Request a copy of my data" row — opens the user's mail composer pre-
+ *  filled with the standard POPIA / GDPR access request, addressed to our
+ *  privacy mailbox. We deliberately do not implement a self-serve download
+ *  endpoint yet: WUD's data model is small enough that a human reply within
+ *  the legal window is more honest than a half-baked zip export. */
+function RequestDataRow() {
+  const me = useApp(s => s.me());
+  const onTap = () => {
+    const subject = encodeURIComponent('WUD data access request');
+    const body = encodeURIComponent(
+      `Hi,\n\nI'd like a copy of the personal information WUD holds about my account.\n\n` +
+      `Handle: @${me.handle}\nName: ${me.name}\n\nThanks.`,
+    );
+    window.location.href = `mailto:adam@lieberman.co.za?subject=${subject}&body=${body}`;
+  };
+  return (
+    <Row
+      icon={<Download size={16} />}
+      label="Request a copy of my data"
+      sub="We reply within 30 days"
+      chevron
+      onClick={onTap}
+    />
   );
 }
 

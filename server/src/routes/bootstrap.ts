@@ -6,7 +6,7 @@ import { floatsFor } from '../services/floats.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
 import { listNotifications, unreadCount } from '../services/notifications.js';
 import { friendIds, listFriends, listSquadsForUser } from '../services/social.js';
-import { getPublicUser, getSettings } from '../services/users.js';
+import { getPrivateUser, getSettings } from '../services/users.js';
 
 export const bootstrapRouter = Router();
 
@@ -35,7 +35,7 @@ bootstrapRouter.get('/bootstrap', handler((req, res) => {
   });
 
   res.json({
-    user: getPublicUser(me),
+    user: getPrivateUser(me),
     settings: getSettings(me),
     friendIds: friendIds(me),
     squads,

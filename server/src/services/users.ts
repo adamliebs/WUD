@@ -1,6 +1,7 @@
 import { q } from '../db/index.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { newId, now, shortId } from '../lib/ids.js';
+import { hashPhone, normalizePhone } from '../lib/phone.js';
 import type { AppSettings, PublicUser } from '../types.js';
 
 interface UserRow {
@@ -12,6 +13,11 @@ interface UserRow {
   photo_url: string | null;
   /** 1 once Firebase Auth confirms the user clicked the verification link. */
   email_verified: number;
+  /** E.164 normalized phone, or null if the user hasn't set one. */
+  phone_e164: string | null;
+  /** HMAC-SHA256(phone_e164, pepper). Indexed for contact-match lookups.
+   *  Kept in sync with phone_e164 — both are set/cleared together. */
+  phone_hash: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -27,7 +33,9 @@ export function handleAvailable(handle: string): boolean {
   return !q.get('SELECT 1 FROM users WHERE handle = ? COLLATE NOCASE', handle);
 }
 
-/** Serialize a user row → API PublicUser. */
+/** Serialize a user row → API PublicUser. Phone is intentionally omitted
+ *  so this serializer is safe to use everywhere a user surfaces to anyone
+ *  other than themselves (friend lists, activity payloads, search). */
 export function toPublicUser(row: UserRow): PublicUser {
   return {
     id: row.id,
@@ -37,6 +45,16 @@ export function toPublicUser(row: UserRow): PublicUser {
     color: row.color,
     photoUrl: row.photo_url ?? undefined,
     emailVerified: !!row.email_verified,
+  };
+}
+
+/** Serialize the requester's OWN user row, including phone. Only the /me
+ *  endpoint should call this — every other path goes through toPublicUser
+ *  to avoid leaking the phone number to other users. */
+export function toPrivateUser(row: UserRow): PublicUser {
+  return {
+    ...toPublicUser(row),
+    phone: row.phone_e164 ?? undefined,
   };
 }
 
@@ -56,6 +74,13 @@ export function getPublicUser(id: string): PublicUser {
   const row = getUserRow(id);
   if (!row) throw notFound('USER_NOT_FOUND', 'User not found');
   return toPublicUser(row);
+}
+
+/** Like getPublicUser, but includes private fields (phone). Use for /me only. */
+export function getPrivateUser(id: string): PublicUser {
+  const row = getUserRow(id);
+  if (!row) throw notFound('USER_NOT_FOUND', 'User not found');
+  return toPrivateUser(row);
 }
 
 /** Minimum age (years) — Apple/COPPA gate on a social/UGC app. */
@@ -120,10 +145,24 @@ export function createUser(input: {
   return getPublicUser(id);
 }
 
-/** Patch the current user's profile. */
+/** Patch the current user's profile.
+ *
+ * Phone handling: an explicit null clears the phone; a string is normalized
+ * and stored alongside its HMAC hash. Garbage strings that don't normalize
+ * to E.164 throw INVALID_PHONE rather than silently saving nothing — better
+ * to surface the error so the user knows their phone wasn't saved. Pass
+ * `undefined` (or omit) to leave the phone untouched. Returns the private
+ * shape (includes the new phone) because /me is the only caller. */
 export function updateUser(
   id: string,
-  patch: Partial<{ name: string; handle: string; avatar: string; color: string; photoUrl: string | null }>,
+  patch: Partial<{
+    name: string;
+    handle: string;
+    avatar: string;
+    color: string;
+    photoUrl: string | null;
+    phone: string | null;
+  }>,
 ): PublicUser {
   const row = getUserRow(id);
   if (!row) throw notFound('USER_NOT_FOUND', 'User not found');
@@ -138,25 +177,48 @@ export function updateUser(
       throw conflict('HANDLE_TAKEN', 'That handle is already taken', 'handle');
     }
   }
+
+  let phoneE164 = row.phone_e164;
+  let phoneHash = row.phone_hash;
+  if (patch.phone === null) {
+    phoneE164 = null;
+    phoneHash = null;
+  } else if (typeof patch.phone === 'string') {
+    const normalized = normalizePhone(patch.phone);
+    if (!normalized) {
+      throw badRequest('INVALID_PHONE', 'Enter a valid phone number', 'phone');
+    }
+    phoneE164 = normalized;
+    phoneHash = hashPhone(normalized);
+  }
+
   q.run(
-    `UPDATE users SET name = ?, handle = ?, avatar_emoji = ?, color = ?, photo_url = ?, updated_at = ?
+    `UPDATE users SET name = ?, handle = ?, avatar_emoji = ?, color = ?, photo_url = ?,
+       phone_e164 = ?, phone_hash = ?, updated_at = ?
      WHERE id = ?`,
     patch.name?.trim() || row.name,
     handle,
     patch.avatar ?? row.avatar_emoji,
     patch.color ?? row.color,
     patch.photoUrl === undefined ? row.photo_url : patch.photoUrl,
+    phoneE164,
+    phoneHash,
     now(),
     id,
   );
-  return getPublicUser(id);
+  return getPrivateUser(id);
 }
 
 /* --- settings ------------------------------------------------------------- */
 
 interface SettingsRow {
   push_enabled: number;
+  notify_joins: number;
+  notify_chat: number;
+  notify_floats: number;
+  notify_reminders: number;
   pings_enabled: number;
+  allow_friend_requests: number;
   default_reminder_minutes: number | null;
 }
 
@@ -168,8 +230,13 @@ export function getSettings(userId: string): AppSettings {
     return getSettings(userId);
   }
   return {
-    pushEnabled: !!r.push_enabled,
-    pingsEnabled: !!r.pings_enabled,
+    pushEnabled:         !!r.push_enabled,
+    notifyJoins:         !!r.notify_joins,
+    notifyChat:          !!r.notify_chat,
+    notifyFloats:        !!r.notify_floats,
+    notifyReminders:     !!r.notify_reminders,
+    pingsEnabled:        !!r.pings_enabled,
+    allowFriendRequests: !!r.allow_friend_requests,
     defaultReminderMins: r.default_reminder_minutes,
   };
 }
@@ -179,10 +246,22 @@ export function updateSettings(userId: string, patch: Partial<AppSettings>): App
   const next = { ...cur, ...patch };
   q.run(
     `UPDATE user_settings SET
-       push_enabled = ?, pings_enabled = ?, default_reminder_minutes = ?
+       push_enabled            = ?,
+       notify_joins            = ?,
+       notify_chat             = ?,
+       notify_floats           = ?,
+       notify_reminders        = ?,
+       pings_enabled           = ?,
+       allow_friend_requests   = ?,
+       default_reminder_minutes = ?
      WHERE user_id = ?`,
-    next.pushEnabled ? 1 : 0,
-    next.pingsEnabled ? 1 : 0,
+    next.pushEnabled         ? 1 : 0,
+    next.notifyJoins         ? 1 : 0,
+    next.notifyChat          ? 1 : 0,
+    next.notifyFloats        ? 1 : 0,
+    next.notifyReminders     ? 1 : 0,
+    next.pingsEnabled        ? 1 : 0,
+    next.allowFriendRequests ? 1 : 0,
     next.defaultReminderMins,
     userId,
   );

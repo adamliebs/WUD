@@ -15,7 +15,6 @@ import { useApp } from '../store';
 export function WelcomeScreen() {
   const setAuthState = useApp(s => s.setAuthState);
   const setAuthIntent = useApp(s => s.setAuthIntent);
-  const loadDemoData = useApp(s => s.loadDemoData);
 
   const goAuth = (intent: 'signup' | 'login') => {
     setAuthIntent(intent);
@@ -136,7 +135,7 @@ export function WelcomeScreen() {
             transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
             onClick={() => goAuth('signup')}
             className="relative w-full py-4 rounded-2xl text-[15px] font-bold text-white tracking-wide
-                       bg-gradient-to-br from-rose-500 via-pink-500 to-orange-500
+                       bg-gradient-to-br from-rose-500 to-orange-500
                        shadow-[0_24px_50px_-18px_rgba(244,63,94,0.7)] ring-1 ring-white/15"
           >
             Sign up
@@ -150,15 +149,6 @@ export function WelcomeScreen() {
                      bg-white/5 border border-white/10 hover:bg-white/10 transition"
         >
           Already have an account? <span className="text-rose-300 font-bold">Log in</span>
-        </button>
-
-        {/* Admin / demo entry — small + out of the way. */}
-        <button
-          onClick={loadDemoData}
-          className="mt-3 mx-auto block text-[10.5px] uppercase tracking-[0.18em]
-                     text-zinc-500 hover:text-zinc-300 transition"
-        >
-          🎬 Admin · view demo data
         </button>
       </motion.div>
 

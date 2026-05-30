@@ -33,6 +33,11 @@ export interface User {
   /** Firebase Auth has verified the user owns their email. Always true for
    *  OAuth signups; false for new email signups until they click the link. */
   emailVerified?: boolean;
+  /** Normalized E.164 phone (e.g. +27821234567). ONLY populated on the
+   *  current user (the `me` profile) — the server omits it from every other
+   *  user serialization, so this field is reliably blank for friends/
+   *  joiners/etc. Used for contact-match opt-in. */
+  phone?: string;
 }
 
 export type ChatMessageType = 'text' | 'photo' | 'poll';
@@ -122,7 +127,9 @@ export type NotificationType =
   | 'reminder'         // your joined plan is starting soon
   | 'float_received'   // a friend floated a soft proposal to you
   | 'float_keen'       // someone is keen on your float
-  | 'float_locked';    // a float you were keen on became a real plan
+  | 'float_locked'     // a float you were keen on became a real plan
+  | 'activity_created' // a friend posted a plan (or went live)
+  | 'chat_message';    // new chat in an activity you're a participant of
 
 export interface AppNotification {
   id: string;

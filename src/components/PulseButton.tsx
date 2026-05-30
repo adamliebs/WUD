@@ -27,7 +27,7 @@ export function PulseButton({
   const gradient =
     tone === 'amber'
       ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500'
-      : 'bg-gradient-to-r from-rose-500 via-pink-500 to-orange-500';
+      : 'bg-gradient-to-r from-rose-500 to-orange-500';
   const shadow =
     tone === 'amber'
       ? 'shadow-[0_18px_40px_-10px_rgba(251,146,60,0.6)]'

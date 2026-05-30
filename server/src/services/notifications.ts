@@ -3,7 +3,7 @@ import { newId, now } from '../lib/ids.js';
 import { logger } from '../lib/logger.js';
 import { sendFcm } from '../lib/push.js';
 import { publish } from '../realtime/bus.js';
-import type { AppNotification, NotificationType } from '../types.js';
+import type { AppNotification, AppSettings, NotificationType } from '../types.js';
 import { getSettings } from './users.js';
 
 interface NotifRow {
@@ -89,6 +89,8 @@ function bannerTitle(type: NotificationType): string {
     case 'float_received':  return 'New float';
     case 'float_keen':      return 'Someone is keen';
     case 'float_locked':    return 'Locked in';
+    case 'activity_created':return 'New plan';
+    case 'chat_message':    return 'New message';
     default:                return 'WUD';
   }
 }
@@ -109,7 +111,7 @@ function dispatchPush(
   activityId?: string,
 ): void {
   const settings = getSettings(userId);
-  if (!settings.pushEnabled) return;
+  if (!shouldPushCategory(type, settings)) return;
   const devices = q.all<{ id: string; push_token: string }>(
     'SELECT id, push_token FROM devices WHERE user_id = ?', userId,
   );
@@ -186,6 +188,40 @@ export function resolveHostOffers(userId: string, activityId: string): void {
       WHERE user_id = ? AND activity_id = ? AND type = 'host_offer'`,
     userId, activityId,
   );
+}
+
+/**
+ * Decide whether a specific notification type should be pushed to this user.
+ * The master `pushEnabled` switch always wins; when it's on, the per-category
+ * toggle for that type's bucket determines delivery. The in-app notification
+ * (Alerts tab) is created regardless — only the lock-screen push is gated, so
+ * users can quiet a category without losing the event history.
+ *
+ * Friend-request invites are intentionally not per-category gated: they're
+ * infrequent and almost always something the recipient wants to know about
+ * right away, so the master push toggle is the only gate.
+ */
+function shouldPushCategory(type: NotificationType, s: AppSettings): boolean {
+  if (!s.pushEnabled) return false;
+  switch (type) {
+    case 'join':
+    case 'host_offer':
+    case 'host_taken':
+    case 'activity_created':
+      return s.notifyJoins;
+    case 'chat_message':
+      return s.notifyChat;
+    case 'float_received':
+    case 'float_keen':
+    case 'float_locked':
+      return s.notifyFloats;
+    case 'reminder':
+      return s.notifyReminders;
+    case 'ping':
+      return s.pingsEnabled;
+    case 'invite':
+      return true;
+  }
 }
 
 /**

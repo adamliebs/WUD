@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Search, UserMinus, UserPlus, Users } from 'lucide-react';
+import { Contact2, Search, Send, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -8,14 +8,54 @@ import { socialApi } from '../api/endpoints';
 import { useApp } from '../store';
 import type { User } from '../types';
 
+/** Build the invite link + body for the native share sheet. The recipient
+ *  taps it and either lands in the iOS app (universal link) or in the web
+ *  build's Welcome screen (which can read ?from to greet them by name). */
+async function shareInvite(me: User): Promise<void> {
+  const url = `https://app.wud.app/invite?from=${encodeURIComponent(me.handle)}`;
+  const text = `Hey! What U Doing? "${me.name}" wants you on WUD — come hang out.`;
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (Capacitor.isNativePlatform()) {
+      const { Share } = await import('@capacitor/share');
+      const can = await Share.canShare();
+      if (can.value) {
+        await Share.share({ title: 'Join me on WUD', text, url, dialogTitle: 'Invite friends' });
+        return;
+      }
+    }
+  } catch (e) {
+    // User dismissal surfaces as a throw; treat as silent no-op.
+    const msg = (e as { message?: string })?.message?.toLowerCase() ?? '';
+    if (msg.includes('cancel') || msg.includes('abort')) return;
+  }
+  // Web fallback.
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      await navigator.share({ title: 'Join me on WUD', text, url });
+      return;
+    }
+  } catch (e) {
+    if ((e as { name?: string })?.name === 'AbortError') return;
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    useApp.getState().pushToast('Invite copied to clipboard', 'success');
+  } catch {
+    useApp.getState().pushToast('Could not share the invite', 'warn');
+  }
+}
+
 type Tab = 'friends' | 'discover';
 
 export function FriendsScreen() {
   const openOverlay = useApp(s => s.openOverlay);
   const closeOverlay = () => openOverlay(null);
+  const me = useApp(s => s.me());
   const friends = useApp(useShallow(s => s.friendIds.map(id => s.userById(id))));
 
   const [tab, setTab] = useState<Tab>('friends');
+  const [contactsOpen, setContactsOpen] = useState(false);
   const [q, setQ] = useState('');
   // Discover results come from the server (the store only caches known users).
   const [discoverResults, setDiscoverResults] = useState<User[]>([]);
@@ -49,6 +89,50 @@ export function FriendsScreen() {
   return (
     <OverlayShell title="Friends" onClose={closeOverlay}>
       <div className="px-4 pt-4 pb-32">
+        {/* Two stacked CTAs: pull from contacts (matches already-on-WUD users)
+            + share an invite link (covers everyone else). */}
+        <div className="grid grid-cols-1 gap-2 mb-3">
+          <motion.button
+            whileTap={{ scale: 0.985 }}
+            onClick={() => setContactsOpen(true)}
+            className="w-full inline-flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-left
+                       bg-gradient-to-br from-sky-500/15 via-cyan-500/10 to-blue-500/10
+                       border border-sky-400/30
+                       hover:from-sky-500/20 hover:via-cyan-500/15 hover:to-blue-500/15 transition"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-9 w-9 rounded-full grid place-items-center
+                              bg-gradient-to-br from-sky-500 to-blue-600 text-white shrink-0">
+                <Contact2 size={15} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-white">Find friends in your contacts</div>
+                <div className="text-[11px] text-zinc-300 truncate">See who's already on WUD.</div>
+              </div>
+            </div>
+          </motion.button>
+
+          <motion.button
+            whileTap={{ scale: 0.985 }}
+            onClick={() => void shareInvite(me)}
+            className="w-full inline-flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-left
+                       bg-gradient-to-br from-rose-500/15 via-pink-500/10 to-orange-500/10
+                       border border-rose-400/30
+                       hover:from-rose-500/20 hover:via-pink-500/15 hover:to-orange-500/15 transition"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-9 w-9 rounded-full grid place-items-center
+                              bg-gradient-to-br from-rose-500 to-orange-500 text-white shrink-0">
+                <Send size={15} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-white">Invite friends</div>
+                <div className="text-[11px] text-zinc-300 truncate">Share a link and bring your crew over.</div>
+              </div>
+            </div>
+          </motion.button>
+        </div>
+
         {/* Search */}
         <div className="relative">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -134,7 +218,201 @@ export function FriendsScreen() {
           )}
         </motion.div>
       </div>
+
+      {/* Contact-matching modal — overlays the FriendsScreen. Kept inside
+          OverlayShell so its z-index inherits the overlay stack. */}
+      <AnimatePresence>
+        {contactsOpen && (
+          <ContactFinderModal onClose={() => setContactsOpen(false)} />
+        )}
+      </AnimatePresence>
     </OverlayShell>
+  );
+}
+
+/**
+ * Modal that asks for contacts permission, reads the device address book,
+ * matches emails against registered WUD users, and lets you send friend
+ * requests to the matches.
+ *
+ * Phases:
+ *   • idle       → "Tap to allow" intro
+ *   • working    → reading + matching spinner
+ *   • matched    → list of matches with Add buttons
+ *   • empty      → matched, but nothing came back
+ *   • denied     → permission refused
+ *   • unavailable → not running natively (web build)
+ */
+function ContactFinderModal({ onClose }: { onClose: () => void }) {
+  type Phase = 'idle' | 'working' | 'matched' | 'empty' | 'denied' | 'unavailable';
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [matches, setMatches] = useState<User[]>([]);
+  const addFriend = useApp(s => s.addFriend);
+  const pushToast = useApp(s => s.pushToast);
+
+  const findInContacts = async () => {
+    setPhase('working');
+    try {
+      const { Capacitor } = await import('@capacitor/core');
+      if (!Capacitor.isNativePlatform()) {
+        setPhase('unavailable');
+        return;
+      }
+      const { Contacts } = await import('@capacitor-community/contacts');
+
+      const perm = await Contacts.requestPermissions();
+      if (perm.contacts !== 'granted') {
+        setPhase('denied');
+        return;
+      }
+
+      // Pull both emails and phone numbers. We send them raw to the server
+      // over TLS; the server normalizes + HMAC-hashes phones in memory and
+      // discards them after matching — they're never persisted.
+      const { contacts } = await Contacts.getContacts({
+        projection: { emails: true, phones: true, name: false, postalAddresses: false,
+                      organization: false, birthday: false, urls: false, image: false, note: false },
+      });
+      const emails: string[] = [];
+      const phones: string[] = [];
+      for (const c of contacts) {
+        for (const e of c.emails ?? []) {
+          if (e?.address) emails.push(e.address);
+        }
+        for (const p of c.phones ?? []) {
+          if (p?.number) phones.push(p.number);
+        }
+      }
+      if (emails.length === 0 && phones.length === 0) {
+        setMatches([]);
+        setPhase('empty');
+        return;
+      }
+      const { users } = await socialApi.contactMatch({ emails, phones });
+      setMatches(users);
+      setPhase(users.length === 0 ? 'empty' : 'matched');
+    } catch (e) {
+      pushToast(
+        (e as { message?: string })?.message?.includes('cancel')
+          ? "Contacts access cancelled"
+          : "Couldn't read your contacts",
+        'warn',
+      );
+      setPhase('idle');
+    }
+  };
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 z-50 bg-black/60"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 24, scale: 0.96 }}
+        transition={{ type: 'spring', stiffness: 360, damping: 32 }}
+        className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-50 rounded-3xl bg-[#15121b]
+                   border border-white/10 p-5 shadow-2xl max-h-[70vh] flex flex-col"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-base font-bold text-white inline-flex items-center gap-2">
+            <Contact2 size={16} className="text-sky-300" />
+            Find friends from contacts
+          </div>
+          <button
+            onClick={onClose}
+            className="h-8 w-8 grid place-items-center rounded-full text-zinc-300 hover:bg-white/5"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {phase === 'idle' && (
+          <>
+            <div className="text-sm text-zinc-300 leading-relaxed mb-4">
+              We'll match the emails in your contacts against WUD accounts. Nothing else
+              is stored or shared — we just check who's already here.
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => void findInContacts()}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white
+                         bg-gradient-to-br from-sky-500 to-blue-600
+                         shadow-[0_14px_30px_-12px_rgba(56,189,248,0.55)]"
+            >
+              Allow contacts access
+            </motion.button>
+          </>
+        )}
+
+        {phase === 'working' && (
+          <div className="text-center py-8">
+            <div className="text-sm text-zinc-300">Reading your contacts…</div>
+          </div>
+        )}
+
+        {phase === 'matched' && (
+          <>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-bold mb-2">
+              {matches.length} on WUD
+            </div>
+            <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-2">
+              {matches.map(u => (
+                <ContactMatchRow key={u.id} user={u} onAdd={() => addFriend(u.id)} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {phase === 'empty' && (
+          <div className="text-center py-6 text-sm text-zinc-400">
+            Nobody from your contacts is on WUD yet. Try the invite link — bring them over.
+          </div>
+        )}
+
+        {phase === 'denied' && (
+          <div className="text-center py-6 text-sm text-zinc-400">
+            Contacts access was denied. You can re-enable it in Settings.
+          </div>
+        )}
+
+        {phase === 'unavailable' && (
+          <div className="text-center py-6 text-sm text-zinc-400">
+            Contact matching is only available in the native app.
+          </div>
+        )}
+      </motion.div>
+    </>
+  );
+}
+
+function ContactMatchRow({ user, onAdd }: { user: User; onAdd: () => void }) {
+  const [added, setAdded] = useState(false);
+  return (
+    <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-white/[0.04] border border-white/10">
+      <Avatar user={user} size={36} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-white truncate">{user.name}</div>
+        <div className="text-[11px] text-zinc-400 truncate">@{user.handle}</div>
+      </div>
+      <motion.button
+        whileTap={{ scale: 0.95 }}
+        onClick={() => { if (!added) { onAdd(); setAdded(true); } }}
+        disabled={added}
+        className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition
+                    ${added
+                      ? 'bg-white/5 text-zinc-400 cursor-default'
+                      : 'bg-gradient-to-br from-rose-500 to-orange-500 text-white'}`}
+      >
+        {added ? 'Sent' : 'Add'}
+      </motion.button>
+    </div>
   );
 }
 

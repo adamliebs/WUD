@@ -25,16 +25,17 @@ export function TabBar() {
         {/* Floating create button */}
         <div className="absolute left-1/2 -translate-x-1/2 -top-8 z-10">
           <div className="relative h-16 w-16">
-            {/* Soft pulsing halos behind the button */}
+            {/* Soft pulsing halos behind the button. Both shifted warm/orange
+                so the button reads as a sunset rather than the previous pink. */}
             <motion.span
               aria-hidden
-              className="absolute inset-0 rounded-full bg-rose-500/40 blur-md"
+              className="absolute inset-0 rounded-full bg-orange-500/45 blur-md"
               animate={{ scale: [1, 1.6, 1], opacity: [0.55, 0, 0.55] }}
               transition={{ duration: 2.6, repeat: Infinity, ease: 'easeOut' }}
             />
             <motion.span
               aria-hidden
-              className="absolute inset-0 rounded-full bg-orange-400/30 blur-lg"
+              className="absolute inset-0 rounded-full bg-amber-400/30 blur-lg"
               animate={{ scale: [1, 1.9, 1], opacity: [0.45, 0, 0.45] }}
               transition={{ duration: 2.6, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
             />
@@ -45,9 +46,9 @@ export function TabBar() {
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
               onClick={() => setShowPostSheet(true)}
               className="relative h-16 w-16 rounded-full grid place-items-center
-                         text-white shadow-[0_18px_40px_-10px_rgba(244,63,94,0.7)]
+                         text-white shadow-[0_18px_40px_-10px_rgba(251,146,60,0.7)]
                          ring-1 ring-white/15
-                         bg-gradient-to-br from-rose-500 via-pink-500 to-orange-500"
+                         bg-gradient-to-br from-orange-500 to-rose-500"
               aria-label="Post activity"
             >
               <Plus size={28} strokeWidth={3} />

@@ -71,6 +71,7 @@ export function OnboardingScreen() {
 
   const [name, setName] = useState(pendingSignup?.kind === 'firebase' ? pendingSignup.suggestedName ?? '' : '');
   const [handle, setHandle] = useState('');
+  const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
@@ -111,7 +112,13 @@ export function OnboardingScreen() {
     // Convert the ISO date string to epoch ms for the server. Use UTC noon to
     // avoid timezone-boundary off-by-one issues.
     const dateOfBirth = new Date(`${dob}T12:00:00Z`).getTime();
-    signUp({ name, handle: effectiveHandle, avatar, color, dateOfBirth });
+    // Trim & pass phone only if the user entered something — empty string
+    // means "skipped, leave my profile without a phone".
+    const trimmedPhone = phone.trim();
+    signUp({
+      name, handle: effectiveHandle, avatar, color, dateOfBirth,
+      phone: trimmedPhone || undefined,
+    });
   };
 
   const previewUser = useMemo(
@@ -212,6 +219,24 @@ export function OnboardingScreen() {
               {handleState === 'free' && (
                 <span className="text-emerald-300">@{effectiveHandle} is available.</span>
               )}
+            </div>
+          </Field>
+
+          {/* Phone — optional. Used to find friends who already have you in
+              their contacts. Stored as an HMAC hash server-side; never
+              visible to other users. */}
+          <Field label="Phone (optional)">
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+27 82 123 4567"
+              className="auth-input"
+            />
+            <div className="text-[11px] mt-1 px-1 text-zinc-500">
+              Lets friends find you on WUD. Not shown to anyone — only matched.
             </div>
           </Field>
 

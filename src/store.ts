@@ -84,7 +84,12 @@ export type RsvpState = 'going' | 'maybe' | 'cant' | 'none';
 
 export interface AppSettings {
   pushEnabled: boolean;
+  notifyJoins: boolean;
+  notifyChat: boolean;
+  notifyFloats: boolean;
+  notifyReminders: boolean;
   pingsEnabled: boolean;
+  allowFriendRequests: boolean;
   defaultReminderMins: number | null;
 }
 
@@ -147,7 +152,15 @@ interface State {
   /** Auth-screen → onboarding: stash email/password for signUp(). */
   beginEmailSignup: (email: string, password: string) => void;
   /** Onboarding finish — registers the account and enters the app. */
-  signUp: (input: { name: string; handle: string; avatar?: string; color?: string; dateOfBirth: number }) => void;
+  signUp: (input: {
+    name: string;
+    handle: string;
+    avatar?: string;
+    color?: string;
+    dateOfBirth: number;
+    /** Optional E.164 phone number — feeds the friend-discovery flow. */
+    phone?: string;
+  }) => void;
   /** Email log in via Firebase, with legacy fallback for pre-migration accounts. */
   logIn: (email: string, password: string) => void;
   /** Email sign up — creates the Firebase user and routes to onboarding. */
@@ -166,8 +179,6 @@ interface State {
    *  server picks up the latest email_verified claim. Returns the new
    *  verification status. Used by the verify-email gate while polling. */
   syncFirebaseUser: () => Promise<boolean>;
-  /** Admin/demo login — loads the seeded sample dataset. */
-  loadDemoData: () => void;
   signOut: () => void;
   /** Permanently erase the account, then return to the welcome screen. */
   deleteAccount: () => void;
@@ -194,7 +205,17 @@ interface State {
   removeFriend: (userId: string) => void;
   acceptFriendRequest: (requestId: string) => void;
   declineFriendRequest: (requestId: string) => void;
-  updateMe: (patch: Partial<Pick<User, 'name' | 'handle' | 'avatar' | 'color' | 'photoUrl'>>) => void;
+  /** Patch the current user's profile. Pass `null` for a nullable field
+   *  (`phone`, `photoUrl`) to explicitly clear it; omit the key to leave
+   *  it unchanged. */
+  updateMe: (patch: {
+    name?: string;
+    handle?: string;
+    avatar?: string;
+    color?: string;
+    photoUrl?: string | null;
+    phone?: string | null;
+  }) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
 
   /* ---- trust & safety ---- */
@@ -329,6 +350,10 @@ interface State {
 
   pushToast: (text: string, tone?: Toast['tone']) => void;
   dismissToast: (id: string) => void;
+  /** Re-pull every live slice (feed, floats, notifications, friend list).
+   *  Backs the pull-to-refresh gesture on each tab. */
+  refreshAll: () => Promise<void>;
+
 }
 
 export const useApp = create<State>((set, get) => {
@@ -794,12 +819,36 @@ export const useApp = create<State>((set, get) => {
     } catch { /* swallow — sign-out is best effort */ }
   };
 
+  /**
+   * Persist a phone number set during signup. Done as a follow-up call so a
+   * server-side rejection (bad format, normalization fails) shows as a toast
+   * without rolling back the signup itself — the user can fix it later from
+   * Edit Profile. Merges the returned `user` row back in so the store reflects
+   * the normalized E.164 form.
+   */
+  const savePhoneBestEffort = async (phone: string): Promise<void> => {
+    try {
+      const { user } = await meApi.update({ phone });
+      set(s => ({ users: dedupeUsers([...s.users, user]) }));
+    } catch (e) {
+      if (e instanceof ApiError) toast(e.message, 'warn');
+      else console.error('[savePhone] unexpected error:', e);
+    }
+  };
+
   /** Wrap an async action: surface ApiErrors as toasts, never throw to the UI. */
   const guard = async (fn: () => Promise<void>) => {
     try {
       await fn();
     } catch (e) {
-      toast(e instanceof ApiError ? e.message : 'Something went wrong', 'warn');
+      if (e instanceof ApiError) {
+        toast(e.message, 'warn');
+      } else {
+        // Unknown throw — log to console so iOS/desktop devtools shows the real
+        // cause instead of just our generic toast.
+        console.error('[guard] unhandled error in store action:', e);
+        toast('Something went wrong', 'warn');
+      }
     }
   };
 
@@ -834,7 +883,12 @@ export const useApp = create<State>((set, get) => {
     toasts: [],
     settings: {
       pushEnabled: true,
+      notifyJoins: true,
+      notifyChat: true,
+      notifyFloats: true,
+      notifyReminders: true,
       pingsEnabled: true,
+      allowFriendRequests: true,
       defaultReminderMins: 30,
     },
 
@@ -1226,7 +1280,7 @@ export const useApp = create<State>((set, get) => {
       set({ pendingSignup: { kind: 'email', email, password }, authState: 'onboarding' });
     },
 
-    signUp: ({ name, handle, avatar, color, dateOfBirth }) => {
+    signUp: ({ name, handle, avatar, color, dateOfBirth, phone }) => {
       void guard(async () => {
         const pending = get().pendingSignup;
         // Firebase path — onboarding completes the signin with an ID token
@@ -1240,6 +1294,11 @@ export const useApp = create<State>((set, get) => {
           const provider = pending.provider;
           set({ pendingSignup: null });
           await doBootstrap();
+          // Phone is optional — only persist if the user entered one. Done as
+          // a follow-up PATCH so the auth endpoints don't need to thread the
+          // phone field through (and a network blip on the phone save won't
+          // strand the user without an account).
+          if (phone && phone.trim()) await savePhoneBestEffort(phone);
           // Apple/Google users are pre-verified; only email-provider signups
           // see the verify-email gate.
           enforceEmailVerificationGate(provider);
@@ -1255,6 +1314,7 @@ export const useApp = create<State>((set, get) => {
         tokens.set(r.accessToken, r.refreshToken);
         set({ pendingSignup: null });
         await doBootstrap();
+        if (phone && phone.trim()) await savePhoneBestEffort(phone);
         // Legacy email register has no Firebase user, so email is unverified
         // by definition. Same gate so the user lands on verify-email.
         if (pending?.kind === 'email') enforceEmailVerificationGate('email');
@@ -1313,19 +1373,6 @@ export const useApp = create<State>((set, get) => {
       } catch {
         return false;
       }
-    },
-
-    loadDemoData: () => {
-      void guard(async () => {
-        try {
-          const r = await authApi.login('admin@wud.app', 'admin1234');
-          tokens.set(r.accessToken, r.refreshToken);
-          await doBootstrap();
-          toast('Loaded demo data 🎬', 'success');
-        } catch {
-          toast('Run the backend seed first: cd server && npm run seed', 'warn');
-        }
-      });
     },
 
     signOut: () => {
@@ -1817,6 +1864,18 @@ export const useApp = create<State>((set, get) => {
     /* ---- toasts ---- */
 
     pushToast: (text, tone = 'default') => toast(text, tone),
+
+    refreshAll: async () => {
+      // Re-pull everything that's served by the long-lived realtime + 30-s
+      // background tick. Each is independent so we fire them in parallel.
+      await Promise.allSettled([
+        refreshFeed(),
+        refreshFloats(),
+        refreshNotifications(),
+        refreshFriends(),
+      ]);
+    },
+
     dismissToast: (id) => set(state => ({ toasts: state.toasts.filter(t => t.id !== id) })),
   };
 });

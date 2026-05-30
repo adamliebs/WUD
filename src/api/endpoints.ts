@@ -83,8 +83,14 @@ export const getBootstrap = () => api.get<Bootstrap>('/bootstrap');
 
 export const meApi = {
   get: () => api.get<{ user: User; settings: AppSettings }>('/me'),
-  update: (patch: Partial<Pick<User, 'name' | 'handle' | 'avatar' | 'color' | 'photoUrl'>>) =>
-    api.patch<{ user: User }>('/me', patch),
+  update: (patch: {
+    name?: string;
+    handle?: string;
+    avatar?: string;
+    color?: string;
+    photoUrl?: string | null;
+    phone?: string | null;
+  }) => api.patch<{ user: User }>('/me', patch),
   updateSettings: (patch: Partial<AppSettings>) =>
     api.patch<{ settings: AppSettings }>('/me/settings', patch),
   /** Permanently erase the account and all owned data. */
@@ -183,6 +189,13 @@ export interface IncomingRequest { id: string; from: User; at: number }
 export const socialApi = {
   friends: () => api.get<{ friends: User[] }>('/friends'),
   discover: (q: string) => api.get<{ users: User[] }>(`/friends/discover?q=${encodeURIComponent(q)}`),
+  /** Match contact-book entries against WUD users — used by the "Find friends
+   *  from your contacts" flow on iOS/Android. Both fields are optional; the
+   *  server returns the union of matches. Raw phone numbers are sent over
+   *  TLS and never stored — the server normalizes + HMAC-hashes them in
+   *  memory and compares to the stored phone_hash. */
+  contactMatch: (input: { emails?: string[]; phones?: string[] }) =>
+    api.post<{ users: User[] }>('/friends/contact-match', input),
   addFriend: (recipientId: string) =>
     api.post<{ requestId: string }>('/friend-requests', { recipientId }),
   removeFriend: (userId: string) => api.del(`/friends/${userId}`),

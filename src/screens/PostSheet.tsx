@@ -1,15 +1,16 @@
-import { motion } from 'framer-motion';
-import { Calendar, Camera, Clock, Globe2, Loader2, Lock, Radio, Sparkles } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  Calendar, Camera, ChevronDown, Clock, Globe2, Loader2, Lock, MapPin,
+  Radio, Sparkles, X,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
 import { BottomSheet } from '../components/BottomSheet';
-import { PulseButton } from '../components/PulseButton';
 import { uploadApi } from '../api/endpoints';
 import { mediaUrl } from '../api/client';
-import { useApp } from '../store';
+import { useApp, clockTime, recurrenceLabel, relTime } from '../store';
 import type { CategoryKey, Recurrence } from '../types';
-import { recurrenceLabel } from '../store';
 
 function nextQuarterTime(): string {
   const d = new Date();
@@ -89,8 +90,15 @@ export function PostSheet() {
   const squads = useApp(useShallow(s =>
     s.squads.filter(sq => sq.hostId === s.meId || sq.memberIds.includes(s.meId))
   ));
-  const fileRef = useRef<HTMLInputElement>(null);
+  // Current user — drives the avatar + name in the live PreviewCard so the
+  // user sees themselves as the host before they hit Post.
+  const me = useApp(s => s.me());
+  const previewHostName = me.name;
+  const previewHostAvatar = me.avatar;
+  const previewHostColor = me.color;
   const [bannerUploading, setBannerUploading] = useState(false);
+  // Controls the "More options" collapse below the primary fields.
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const onPickBanner = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -165,6 +173,19 @@ export function PostSheet() {
 
   const audienceEmpty = !openInvite && selectedSquadIds.length === 0;
 
+  // Preview start/end — derived the same way `computedTimes` does at submit,
+  // so the live PreviewCard always matches what the user will actually post.
+  // For "now" mode, treat the start as right now in the preview; submitting
+  // re-computes it at the moment of submission.
+  const previewStartsAt = timeMode === 'now'
+    ? Date.now()
+    : computeStartsAt(dayOffset, time);
+  const previewEndsAt = timeMode === 'now'
+    ? previewStartsAt + durationMins * 60_000
+    : (customEnd
+        ? computeStartsAt(customEnd.dayOffset, customEnd.time)
+        : previewStartsAt + durationMins * 60_000);
+
   // Derived submit times — depend on the active mode + state.
   //   'now':       starts = right-now-at-submit; ends = starts + duration.
   //   'scheduled': starts = chosen day+time; ends = either a duration chip
@@ -215,34 +236,69 @@ export function PostSheet() {
   };
   const repeatKey: 'none' | 'daily' | 'weekly' | 'biweekly' = recurrence?.freq ?? 'none';
 
+  // Header label + state for the Post button. Disabled state mirrors the same
+  // checks the submit handler enforces — feedback before action.
+  const submitDisabled = audienceEmpty || !title.trim();
+
   return (
     <BottomSheet open={open} onClose={() => close(false)}>
       <div className="flex flex-col h-full">
-        {/* Hero category preview */}
-        <div className={`mx-4 mt-2 rounded-2xl relative overflow-hidden h-28 bg-gradient-to-br ${cat.gradient}`}>
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
-          <div className="absolute inset-0 flex items-center justify-between px-5">
-            <div>
-              <div className="text-white/90 text-xs font-semibold uppercase tracking-widest">
-                Post a plan
-              </div>
-              <div className="text-white text-2xl font-black leading-tight">
-                {cat.label}
-              </div>
-            </div>
-            <motion.div
-              key={cat.key}
-              initial={{ scale: 0.6, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-              className="text-6xl drop-shadow"
-            >
-              {cat.emoji}
-            </motion.div>
-          </div>
+        {/* Sticky header bar — replaces the old colored hero. X close on the
+            left, page title centered, Post action on the right. Same shape as
+            EditProfile / Settings so the create flow reads as part of the
+            same app, not a separate composer. */}
+        <div className="px-3 pt-1 pb-3 flex items-center justify-between border-b border-white/5">
+          <button
+            onClick={() => close(false)}
+            className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-zinc-300 hover:bg-white/5"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
+          <div className="text-base font-bold text-white truncate px-2">New plan</div>
+          <motion.button
+            whileTap={!submitDisabled ? { scale: 0.94 } : undefined}
+            onClick={submit}
+            disabled={submitDisabled}
+            className={`px-4 py-1.5 rounded-full text-sm font-bold transition
+                        ${submitDisabled
+                          ? 'bg-white/5 text-zinc-500 cursor-not-allowed'
+                          : 'bg-gradient-to-br from-rose-500 to-orange-500 text-white shadow-[0_10px_24px_-10px_rgba(244,63,94,0.6)]'}`}
+          >
+            Post
+          </motion.button>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-4 pb-32">
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-0 pb-12">
+          {/* Live preview card — sticky at the top of the scroll so the user
+              can always see what they're composing as they fill in the form.
+              The wrapper paints an opaque sheet-colored bg behind itself
+              (matching the sheet's surface) so scrolled content slides
+              cleanly under it. -top-px + extra pt + opaque bg close the
+              hairline gap that would otherwise show between the header
+              border and the preview as the user scrolls. */}
+          <div className="sticky -top-px -mx-4 px-4 pt-3 pb-3 z-20 glass-strong border-0 border-b border-white/5">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500 font-bold mb-1.5 px-1">
+              Preview
+            </div>
+            <PreviewCard
+              cat={cat}
+              title={title}
+              hostName={previewHostName}
+              hostAvatar={previewHostAvatar}
+              hostColor={previewHostColor}
+              startsAt={previewStartsAt}
+              endsAt={previewEndsAt}
+              place={place}
+              bannerUrl={bannerUrl}
+              isPrivate={openInvite ? isPrivate : false}
+              recurrence={recurrence}
+              timeMode={timeMode}
+              onPickBanner={onPickBanner}
+              onRemoveBanner={removeBanner}
+              bannerUploading={bannerUploading}
+            />
+          </div>
           {/* Category chips */}
           <Section title="Category">
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
@@ -313,14 +369,43 @@ export function PostSheet() {
             )}
           </Section>
 
-          {/* Title */}
-          <Section title="What are you doing?">
+          {/* Title — REQUIRED. Empty-state styling: rose ring + helper text
+              so the user knows why Post is disabled. The asterisk in the
+              label matches the standard "required" convention without
+              needing a separate "Required" badge. */}
+          <Section
+            title={<>What are you doing? <span className="text-rose-400">*</span></>}
+            trailing={
+              !title.trim() ? (
+                <span className="text-[11px] uppercase tracking-[0.18em] font-bold text-rose-300/90">
+                  Required
+                </span>
+              ) : null
+            }
+          >
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder={`e.g. ${cat.label} sesh`}
+              aria-required="true"
+              aria-invalid={!title.trim()}
+              className={`w-full bg-white/5 border rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
+                          focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30
+                          ${title.trim() ? 'border-white/10' : 'border-rose-400/40'}`}
+            />
+          </Section>
+
+          {/* Notes — small, optional context the host wants to share with
+              the audience. Lives right under Title because it's the same
+              "describing the plan" beat. */}
+          <Section title="Notes (optional)">
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="A little context for the squad..."
+              rows={2}
               className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
-                         focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30"
+                         focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30 resize-none"
             />
           </Section>
 
@@ -561,79 +646,110 @@ export function PostSheet() {
             />
           </Section>
 
-          {/* Description */}
-          <Section title="Notes (optional)">
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="A little context for the squad..."
-              rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
-                         focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30 resize-none"
-            />
-          </Section>
-
-          {/* Banner image (optional) — single image, replaces the gradient hero */}
+          {/* Share with — promoted up from the bottom of the form because
+              audience is the #1 thing that affects who sees the plan. Kept
+              outside the More options collapse for that reason. */}
           <Section
-            title="Banner image (optional)"
-            trailing={bannerUrl ? (
-              <button
-                onClick={removeBanner}
-                className="text-[11px] uppercase tracking-[0.18em] font-bold text-rose-300"
-              >
-                Remove
-              </button>
-            ) : null}
+            title="Share with"
+            trailing={
+              <span className={`text-[11px] font-semibold normal-case tracking-normal
+                                ${audienceEmpty ? 'text-amber-300' : 'text-rose-300/90'}`}>
+                {audienceLabel}
+              </span>
+            }
           >
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              onChange={onPickBanner}
-              className="hidden"
-            />
-            {bannerUrl ? (
-              <motion.button
-                whileTap={{ scale: 0.985 }}
-                onClick={() => fileRef.current?.click()}
-                disabled={bannerUploading}
-                className="relative w-full h-28 rounded-2xl overflow-hidden border border-white/10"
-              >
-                <img src={mediaUrl(bannerUrl)} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-black/30" />
-                <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
-                  <span className="text-[11px] uppercase tracking-widest font-bold text-white bg-black/45 backdrop-blur px-2 py-1 rounded-full inline-flex items-center gap-1.5">
-                    <Camera size={11} /> Banner set
-                  </span>
-                  <span className="text-[11px] text-white/85">Tap to replace</span>
-                </div>
-              </motion.button>
-            ) : (
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => fileRef.current?.click()}
-                disabled={bannerUploading}
-                className="w-full h-28 rounded-2xl border border-dashed border-white/20 bg-white/5 grid place-items-center text-zinc-300 hover:bg-white/10 transition"
-              >
-                <div className="flex flex-col items-center gap-1.5">
-                  {bannerUploading ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      <span className="text-sm font-semibold">Uploading…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Camera size={20} />
-                      <span className="text-sm font-semibold">Add a banner image</span>
-                      <span className="text-[11px] text-zinc-500">
-                        Replaces the category gradient on your event
-                      </span>
-                    </>
-                  )}
-                </div>
-              </motion.button>
+            <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
+              <ShareChip
+                emoji="🌐"
+                label="All friends"
+                active={openInvite}
+                onClick={() => setOpenInvite(v => !v)}
+              />
+              {squads.map(s => {
+                const active = selectedSquadIds.includes(s.id);
+                return (
+                  <ShareChip
+                    key={s.id}
+                    emoji={s.emoji}
+                    label={s.name}
+                    badge={String(1 + s.memberIds.length)}
+                    active={active}
+                    onClick={() => toggleSquad(s.id)}
+                  />
+                );
+              })}
+            </div>
+            <div className="text-[11px] text-zinc-400 mt-2 px-1 leading-snug">
+              {audienceEmpty
+                ? 'Pick at least one audience above.'
+                : openInvite && selectedSquadIds.length === 0
+                  ? 'Open to all friends — they\'ll see it in the feed.'
+                  : openInvite
+                    ? 'Open invite — also surfaces in the tagged squad screens.'
+                    : 'Squad-only — only members of the selected squads can see it.'}
+            </div>
+            {squads.length === 0 && (
+              <div className="text-[11px] text-zinc-500 mt-2 px-1">
+                No squads to tag yet — make one from Profile → Squads.
+              </div>
             )}
           </Section>
+
+          {/* Privacy — only relevant when "All friends" is on (squad-only posts ignore FoF).
+              Kept OUT of More options because audience scope is a privacy-impacting
+              decision the host should consciously confirm, not bury two clicks deep. */}
+          {openInvite && (
+          <Section
+            title="Visibility"
+            trailing={
+              <span className="text-[11px] text-rose-300/90 font-semibold normal-case tracking-normal">
+                {isPrivate ? 'Friends only' : 'Friends + their friends'}
+              </span>
+            }
+          >
+            <div className="grid grid-cols-2 gap-2">
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setIsPrivate(false)}
+                className={`p-3 rounded-2xl border text-left transition
+                            ${!isPrivate
+                              ? 'bg-white text-zinc-900 border-white shadow-[0_10px_30px_-12px_rgba(244,63,94,0.4)]'
+                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Globe2 size={16} />
+                  <span className="text-sm font-bold">Public</span>
+                </div>
+                <div className={`text-[11px] mt-1 ${!isPrivate ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  Friends + their friends if a friend joins.
+                </div>
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setIsPrivate(true)}
+                className={`p-3 rounded-2xl border text-left transition
+                            ${isPrivate
+                              ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_10px_30px_-12px_rgba(244,63,94,0.6)]'
+                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Lock size={16} />
+                  <span className="text-sm font-bold">Private</span>
+                </div>
+                <div className={`text-[11px] mt-1 ${isPrivate ? 'text-white/85' : 'text-zinc-400'}`}>
+                  Only your direct friends. No friend-of-friend unlock.
+                </div>
+              </motion.button>
+            </div>
+          </Section>
+          )}
+
+          {/* More options — the rarely-needed fields. Notes + Visibility are
+              NOT here (they're either above or per request "shouldn't be more
+              options"). Banner image is no longer a separate section — it
+              lives on the preview card itself (tap the camera button on the
+              header band to add or replace). */}
+          <MoreOptions open={moreOpen} onToggle={() => setMoreOpen(o => !o)}>
 
           {/* Max party size — horizontal scroll, 2-10 + Unlimited */}
           <Section
@@ -720,109 +836,7 @@ export function PostSheet() {
                 : `↻ ${recurrenceLabel(recurrence)} starting ${startsAtLabel}.`}
             </div>
           </Section>
-
-          {/* Share with — multi-select. Tick "All friends" for an open invite;
-              tick any squads to also tag those squad screens. Combine for
-              "open invite + tagged" or pick squads only for private squad plan. */}
-          <Section
-            title="Share with"
-            trailing={
-              <span className={`text-[11px] font-semibold normal-case tracking-normal
-                                ${audienceEmpty ? 'text-amber-300' : 'text-rose-300/90'}`}>
-                {audienceLabel}
-              </span>
-            }
-          >
-            <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
-              <ShareChip
-                emoji="🌐"
-                label="All friends"
-                active={openInvite}
-                onClick={() => setOpenInvite(v => !v)}
-              />
-              {squads.map(s => {
-                const active = selectedSquadIds.includes(s.id);
-                return (
-                  <ShareChip
-                    key={s.id}
-                    emoji={s.emoji}
-                    label={s.name}
-                    badge={String(1 + s.memberIds.length)}
-                    active={active}
-                    onClick={() => toggleSquad(s.id)}
-                  />
-                );
-              })}
-            </div>
-            <div className="text-[11px] text-zinc-400 mt-2 px-1 leading-snug">
-              {audienceEmpty
-                ? 'Pick at least one audience above.'
-                : openInvite && selectedSquadIds.length === 0
-                  ? 'Open to all friends — they\'ll see it in the feed.'
-                  : openInvite
-                    ? 'Open invite — also surfaces in the tagged squad screens.'
-                    : 'Squad-only — only members of the selected squads can see it.'}
-            </div>
-            {squads.length === 0 && (
-              <div className="text-[11px] text-zinc-500 mt-2 px-1">
-                No squads to tag yet — make one from Profile → Squads.
-              </div>
-            )}
-          </Section>
-
-          {/* Privacy — only relevant when "All friends" is on (squad-only posts ignore FoF). */}
-          {openInvite && (
-          <Section
-            title="Visibility"
-            trailing={
-              <span className="text-[11px] text-rose-300/90 font-semibold normal-case tracking-normal">
-                {isPrivate ? 'Friends only' : 'Friends + their friends'}
-              </span>
-            }
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setIsPrivate(false)}
-                className={`p-3 rounded-2xl border text-left transition
-                            ${!isPrivate
-                              ? 'bg-white text-zinc-900 border-white shadow-[0_10px_30px_-12px_rgba(244,63,94,0.4)]'
-                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Globe2 size={16} />
-                  <span className="text-sm font-bold">Public</span>
-                </div>
-                <div className={`text-[11px] mt-1 ${!isPrivate ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                  Friends + their friends if a friend joins.
-                </div>
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setIsPrivate(true)}
-                className={`p-3 rounded-2xl border text-left transition
-                            ${isPrivate
-                              ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_10px_30px_-12px_rgba(244,63,94,0.6)]'
-                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Lock size={16} />
-                  <span className="text-sm font-bold">Private</span>
-                </div>
-                <div className={`text-[11px] mt-1 ${isPrivate ? 'text-white/85' : 'text-zinc-400'}`}>
-                  Only your direct friends. No friend-of-friend unlock.
-                </div>
-              </motion.button>
-            </div>
-          </Section>
-          )}
-        </div>
-
-        {/* Sticky submit */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-          <PulseButton onClick={submit} disabled={audienceEmpty}>
-            {audienceEmpty ? 'Pick an audience to post' : 'Post to your squad'}
-          </PulseButton>
+          </MoreOptions>
         </div>
       </div>
     </BottomSheet>
@@ -866,7 +880,7 @@ function ShareChip({
 
 function Section({
   title, trailing, children,
-}: { title: string; trailing?: React.ReactNode; children: React.ReactNode }) {
+}: { title: React.ReactNode; trailing?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="mt-5">
       <div className="flex items-center justify-between mb-2 px-1">
@@ -874,6 +888,212 @@ function Section({
         {trailing}
       </div>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Mini ActivityCard that mirrors the real card the user is composing. Pulls
+ * its visual language from ActivityCard (header band with category gradient,
+ * floating host avatar, body with title + meta) but is decoupled — the real
+ * card takes a full Activity from the store, this one takes the in-progress
+ * form state. Updates on every keystroke / selection.
+ */
+function PreviewCard({
+  cat, title, hostName, hostAvatar, hostColor, startsAt, endsAt, place,
+  bannerUrl, isPrivate, recurrence, timeMode,
+  onPickBanner, onRemoveBanner, bannerUploading,
+}: {
+  cat: { key: string; label: string; emoji: string; gradient: string };
+  title: string;
+  hostName: string;
+  hostAvatar: string;
+  hostColor: string;
+  startsAt: number;
+  endsAt: number;
+  place: string;
+  bannerUrl?: string;
+  isPrivate: boolean;
+  recurrence?: Recurrence;
+  timeMode: 'now' | 'scheduled';
+  /** Fired when the user picks an image from the inline overlay button.
+   *  Receives the change event from the hidden <input type="file">. */
+  onPickBanner: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  /** Clear the existing banner — fires from the X button shown when one is set. */
+  onRemoveBanner: () => void;
+  /** Disable the overlay button + show a spinner during upload. */
+  bannerUploading: boolean;
+}) {
+  const live = timeMode === 'now';
+  const displayedTitle = title.trim() || `${cat.label} sesh`;
+  const recurLabel = recurrenceLabel(recurrence);
+  // Inline file input — triggered by the small camera button on the banner.
+  // Lives inside PreviewCard so the whole upload affordance is self-contained
+  // and never blocks pointer events on the rest of the card.
+  const fileRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="relative overflow-hidden rounded-3xl glass border border-white/10
+                    shadow-[0_18px_40px_-22px_rgba(0,0,0,0.65)]">
+      {/* Hidden file input — triggered by the banner camera button below. */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={onPickBanner}
+        className="hidden"
+      />
+      {/* Header — banner image if provided, otherwise the category gradient */}
+      <div className={`relative h-20 ${bannerUrl ? 'bg-zinc-900' : `bg-gradient-to-br ${cat.gradient}`}`}>
+        {bannerUrl ? (
+          <>
+            <img
+              src={mediaUrl(bannerUrl)}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              draggable={false}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-black/30" />
+          </>
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
+        )}
+        <div className="absolute top-2.5 left-3 flex items-center gap-1.5 flex-wrap">
+          <span className="text-lg drop-shadow">{cat.emoji}</span>
+          <span className="text-white/90 text-[10px] font-bold uppercase tracking-widest">
+            {cat.label}
+          </span>
+          {isPrivate && (
+            <span className="ml-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
+              <Lock size={8} strokeWidth={3} />
+              Private
+            </span>
+          )}
+          {recurLabel && (
+            <span className="ml-1 text-[9px] font-bold uppercase tracking-widest text-white bg-black/35 backdrop-blur px-1.5 py-0.5 rounded-full">
+              {recurLabel}
+            </span>
+          )}
+        </div>
+        {/* Top-right cluster: Live pill (when 'now' mode) and the
+            camera/remove banner controls. When the Live pill is present
+            the camera button slides under it; otherwise it sits at the
+            corner. */}
+        <div className="absolute top-2.5 right-3 flex items-center gap-1.5">
+          {live && (
+            <div className="inline-flex items-center gap-1.5 text-white text-[9px] font-bold uppercase tracking-widest bg-rose-500/85 backdrop-blur px-2 py-0.5 rounded-full">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-white" />
+              Live
+            </div>
+          )}
+          {bannerUrl && (
+            <button
+              type="button"
+              onClick={onRemoveBanner}
+              aria-label="Remove banner image"
+              className="h-7 w-7 grid place-items-center rounded-full bg-black/50 backdrop-blur text-white hover:bg-black/65 transition"
+            >
+              <X size={13} strokeWidth={3} />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={bannerUploading}
+            aria-label={bannerUrl ? 'Replace banner image' : 'Add a banner image'}
+            className="h-7 w-7 grid place-items-center rounded-full bg-black/50 backdrop-blur text-white hover:bg-black/65 transition disabled:opacity-60"
+          >
+            {bannerUploading
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Camera size={13} />}
+          </button>
+        </div>
+        <div className="absolute -bottom-5 left-3">
+          <div
+            className={`h-12 w-12 rounded-full grid place-items-center text-xl ring-4 ring-[#15121b]
+                        bg-gradient-to-br ${hostColor}`}
+          >
+            {hostAvatar}
+          </div>
+        </div>
+      </div>
+      <div className="px-3 pt-7 pb-3">
+        <div className="text-white text-sm font-semibold leading-tight truncate">
+          {displayedTitle}
+        </div>
+        <div className="text-zinc-400 text-[11px] mt-0.5 truncate">
+          <span className="text-zinc-200 font-medium">{hostName}</span>
+          {' · you\'re hosting'}
+        </div>
+        <div className="flex items-center gap-3 mt-2 text-zinc-300 text-[11px]">
+          <span className="inline-flex items-center gap-1 min-w-0">
+            <Clock size={11} className="text-zinc-500 shrink-0" />
+            <span className="truncate">
+              {clockTime(startsAt)}
+              <span className="text-zinc-500 mx-1">→</span>
+              {clockTime(endsAt)}
+            </span>
+            <span className="text-zinc-500 shrink-0">· {relTime(startsAt)}</span>
+          </span>
+        </div>
+        {place.trim() && (
+          <div className="mt-1 inline-flex items-center gap-1 text-zinc-300 text-[11px] min-w-0">
+            <MapPin size={11} className="text-zinc-500 shrink-0" />
+            <span className="truncate">{place.trim()}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Collapsing "More options" container. Keeps the primary fields above the fold
+ * and tucks the rarely-used advanced fields behind a tap so first-time users
+ * aren't faced with a wall of inputs. The header row is the toggle; the body
+ * animates open/closed with framer's auto-height pattern.
+ */
+function MoreOptions({
+  open, onToggle, children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-6">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center justify-between px-4 py-3 rounded-2xl
+                   bg-white/5 border border-white/10 text-zinc-100 text-sm font-semibold
+                   hover:bg-white/10 transition"
+      >
+        <span className="inline-flex items-center gap-2">
+          <Sparkles size={14} className="text-rose-300" />
+          More options
+        </span>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+          className="text-zinc-400"
+        >
+          <ChevronDown size={16} />
+        </motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

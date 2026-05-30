@@ -257,13 +257,11 @@ export function AuthScreen() {
         </div>
 
         {/* Footer */}
-        <div className="text-[11px] text-zinc-500 text-center mt-4 leading-relaxed">
-          {isSignup ? (
-            <>By continuing you agree to WUD's Terms &amp; Privacy Policy.</>
-          ) : (
-            <>Demo: <span className="text-zinc-400">admin@wud.app</span> / <span className="text-zinc-400">admin1234</span></>
-          )}
-        </div>
+        {isSignup && (
+          <div className="text-[11px] text-zinc-500 text-center mt-4 leading-relaxed">
+            By continuing you agree to WUD's Terms &amp; Privacy Policy.
+          </div>
+        )}
 
         <div className="text-center mt-4 text-sm text-zinc-400">
           {isSignup ? (

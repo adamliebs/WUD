@@ -5,19 +5,22 @@ import { handler, optionalString, requireString } from '../lib/http.js';
 import { revokeAllForUser } from '../services/auth.js';
 import { db } from '../db/index.js';
 import {
-  getPublicUser, getSettings, registerDevice, removeDevice, updateSettings, updateUser,
+  getPrivateUser, getPublicUser, getSettings, registerDevice, removeDevice,
+  updateSettings, updateUser,
 } from '../services/users.js';
 import type { AppSettings } from '../types.js';
 
 export const usersRouter = Router();
 
-/** GET /v1/me — current profile + settings. */
+/** GET /v1/me — current profile + settings. Returns the private shape
+ *  (includes phone) since the caller is the row's owner. */
 usersRouter.get('/me', handler((req, res) => {
   const id = uid(req);
-  res.json({ user: getPublicUser(id), settings: getSettings(id) });
+  res.json({ user: getPrivateUser(id), settings: getSettings(id) });
 }));
 
-/** PATCH /v1/me — update profile fields. */
+/** PATCH /v1/me — update profile fields. Phone accepts a string (sets +
+ *  normalizes), null (clears), or absent (leaves unchanged). */
 usersRouter.patch('/me', handler((req, res) => {
   const b = req.body ?? {};
   const user = updateUser(uid(req), {
@@ -26,6 +29,7 @@ usersRouter.patch('/me', handler((req, res) => {
     avatar: optionalString(b, 'avatar'),
     color: optionalString(b, 'color'),
     photoUrl: 'photoUrl' in b ? (b.photoUrl ?? null) : undefined,
+    phone: 'phone' in b ? (b.phone ?? null) : undefined,
   });
   res.json({ user });
 }));

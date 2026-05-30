@@ -38,6 +38,7 @@ export function EditProfileScreen() {
 
   const [name, setName] = useState(me.name);
   const [handle, setHandle] = useState(me.handle);
+  const [phone, setPhone] = useState(me.phone ?? '');
   const [avatar, setAvatar] = useState(me.avatar);
   const [color, setColor] = useState(me.color);
   const [photoUrl, setPhotoUrl] = useState<string | undefined>(me.photoUrl);
@@ -47,6 +48,7 @@ export function EditProfileScreen() {
   const dirty =
     name.trim() !== me.name ||
     handle.trim() !== me.handle ||
+    phone.trim() !== (me.phone ?? '') ||
     avatar !== me.avatar ||
     color !== me.color ||
     photoUrl !== me.photoUrl;
@@ -72,12 +74,20 @@ export function EditProfileScreen() {
 
   const save = () => {
     if (!dirty) return;
+    // Phone semantics: a trimmed empty string clears the phone server-side
+    // (null). A non-empty string is normalized by the server. Leaving phone
+    // out entirely would NOT clear it — that's why we always send the field.
+    const trimmedPhone = phone.trim();
+    const phonePatch = trimmedPhone === (me.phone ?? '')
+      ? undefined                     // unchanged — omit so we don't churn the server
+      : (trimmedPhone === '' ? null : trimmedPhone);
     updateMe({
       name: name.trim() || 'You',
       handle: sanitize(handle) || 'you',
       avatar,
       color,
       photoUrl,
+      ...(phonePatch !== undefined ? { phone: phonePatch } : {}),
     });
     closeOverlay();
   };
@@ -251,6 +261,25 @@ export function EditProfileScreen() {
           </div>
           <div className="text-[11px] text-zinc-500 mt-1.5 px-1">
             Lowercase letters, numbers, and underscores.
+          </div>
+        </Section>
+
+        <Section title="Phone (optional)">
+          <input
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            placeholder="+27 82 123 4567"
+            maxLength={20}
+            className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
+                       focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30"
+          />
+          <div className="text-[11px] text-zinc-500 mt-1.5 px-1 leading-relaxed">
+            Helps friends find you on WUD when they search their contacts.
+            Never shown to anyone — stored as a one-way hash for matching only.
+            Clear the field to remove it.
           </div>
         </Section>
 

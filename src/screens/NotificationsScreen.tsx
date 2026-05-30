@@ -2,9 +2,10 @@ import { motion } from 'framer-motion';
 // motion is still used by NotificationRow's "Pass" button; the row list itself
 // uses plain divs after Android WebView showed subpixel compositing gaps
 // between motion-wrapped children (regression of commit 79af4a7's fix).
-import { Bell, BellRing, Check, Clock, Crown, Megaphone, Sparkles, Trash2, UserPlus } from 'lucide-react';
+import { Bell, BellRing, CalendarPlus, Check, Clock, Crown, Megaphone, MessageSquare, Sparkles, Trash2, UserPlus } from 'lucide-react';
 import { useEffect } from 'react';
 import { Avatar } from '../components/Avatar';
+import { PullToRefresh } from '../components/PullToRefresh';
 import { PulseButton } from '../components/PulseButton';
 import { useApp, relTime } from '../store';
 import type { AppNotification, NotificationType } from '../types';
@@ -19,6 +20,8 @@ const ICONS: Record<NotificationType, React.ReactNode> = {
   float_received: <Sparkles size={14} />,
   float_keen:     <Check size={14} />,
   float_locked:   <Sparkles size={14} />,
+  activity_created: <CalendarPlus size={14} />,
+  chat_message:     <MessageSquare size={14} />,
 };
 
 const TONES: Record<NotificationType, string> = {
@@ -31,12 +34,15 @@ const TONES: Record<NotificationType, string> = {
   float_received: 'from-fuchsia-500 to-rose-600',
   float_keen:     'from-emerald-400 to-teal-600',
   float_locked:   'from-fuchsia-500 to-orange-500',
+  activity_created: 'from-rose-500 to-orange-500',
+  chat_message:     'from-sky-500 to-indigo-600',
 };
 
 export function NotificationsScreen() {
   const notifications = useApp(s => s.notifications);
   const markAllRead = useApp(s => s.markAllNotificationsRead);
   const clearAll = useApp(s => s.clearAllNotifications);
+  const refreshAll = useApp(s => s.refreshAll);
   // MainTabsPager keeps every tab mounted, so the mark-read timer can't fire
   // just because we mounted — it needs to wait until the user is *actually*
   // looking at this tab. Hooks into the store's active-tab signal.
@@ -101,7 +107,10 @@ export function NotificationsScreen() {
         </motion.div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-32">
+      <PullToRefresh
+        onRefresh={refreshAll}
+        className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-32"
+      >
         {notifications.length === 0 ? (
           <div className="text-center mt-16 pb-6">
             <motion.div
@@ -123,7 +132,7 @@ export function NotificationsScreen() {
             ))}
           </div>
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

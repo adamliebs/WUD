@@ -11,32 +11,39 @@ type TabKey = 'feed' | 'floats' | 'notifications' | 'profile';
 const TABS: TabKey[] = ['feed', 'floats', 'notifications', 'profile'];
 
 /**
- * Horizontal pager for the four main tabs. Swipe left/right anywhere on the
- * page (except over a horizontal scroller or form control) to move between
- * tabs; the active page follows the finger and the adjacent page peeks in.
+ * Horizontal pager for the four main tabs, with Instagram-style two-mode
+ * behaviour:
  *
- * Why this is fast:
- *   • All four tabs render once and stay mounted, so swiping never triggers
- *     a remount — scroll positions and component state survive. The initial
- *     cold mount of four lightweight screens is the only one-time cost.
- *   • A motion value drives the transform, so drag updates write straight
- *     to the GPU layer (translate3d) without re-rendering React.
- *   • `dragDirectionLock` defers committing to a horizontal drag until the
- *     gesture is clearly horizontal, so vertical scrolls inside tabs aren't
- *     hijacked.
+ *   • **Tap on TabBar** → instant snap to the new tab, no transition.
+ *     Matches Instagram, X, and most modern social apps — the user has
+ *     already chosen a destination, so an animated slide between far-apart
+ *     tabs is wasted motion (and the prior attempt to add a pop overlay
+ *     surfaced a dark flash through opacity 0).
+ *   • **Swipe** → the pager translates with the finger and spring-snaps to
+ *     the next tab on release.
+ *
+ * A `lastChangeFromDrag` ref tells the idx-watching effect which mode to use:
+ *   - true → smooth spring to the new x target
+ *   - false → instant x.set()
+ *
+ * All four tabs stay mounted across switches so scroll positions / UI state
+ * survive — better than the previous AnimatePresence behaviour which
+ * unmounted on every tab change.
+ *
+ * Performance:
+ *   • Drag writes straight to the GPU layer via motion value (no React
+ *     re-renders per frame).
+ *   • `dragDirectionLock` defers commit until horizontal motion dominates,
+ *     so vertical scrolls inside tabs aren't hijacked.
  *   • Touches that begin inside a horizontal scroller (live strip, day
- *     pills, etc.) skip the drag entirely so those keep working.
- *
- * Tapping a tab in the TabBar still works — it sets `tab` in the store, and
- * we animate the motion value to the new index.
+ *     pills) or a form control bail entirely.
  */
 export function MainTabsPager() {
   const tab = useApp(s => s.tab) as TabKey;
   const setTab = useApp(s => s.setTab);
   const idx = Math.max(0, TABS.indexOf(tab));
 
-  // Measure the viewport so the pager works on any device width. ResizeObserver
-  // is cheap and fires only on real layout changes (rotation, splitview, etc.).
+  // Measure the viewport so the pager works on any device width.
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
@@ -50,22 +57,30 @@ export function MainTabsPager() {
     return () => obs.disconnect();
   }, []);
 
-  // Motion value driving the translate. We animate it on tab change (from
-  // tap-on-tabbar) and let framer's drag write to it directly during gestures.
+  // Motion value driving the translate. Drag writes to it directly; we
+  // either snap or animate it on idx changes (see useEffect below).
   const x = useMotionValue(0);
 
-  // Keep `x` in sync with the active tab whenever the index or width changes.
-  // The user-initiated drag-snap also calls setTab → this effect → animate.
+  // True when the most recent idx change came from a drag-snap rather than a
+  // TabBar tap. Drives the tap-vs-drag distinction in the effect below.
+  const lastChangeFromDrag = useRef(false);
+
   useEffect(() => {
     if (width === 0) return;
     const target = -idx * width;
-    const controls = animate(x, target, {
-      type: 'spring',
-      stiffness: 380,
-      damping: 38,
-      mass: 0.9,
-    });
-    return () => controls.stop();
+    if (lastChangeFromDrag.current) {
+      // Drag-driven: smooth slide to the new tab.
+      const controls = animate(x, target, {
+        type: 'spring',
+        stiffness: 380,
+        damping: 38,
+        mass: 0.9,
+      });
+      lastChangeFromDrag.current = false;
+      return () => controls.stop();
+    }
+    // Tap-driven (or initial mount): instant snap. No transition shown.
+    x.set(target);
   }, [idx, width, x]);
 
   // Manual drag control so we can decide whether to engage based on touch
@@ -74,27 +89,23 @@ export function MainTabsPager() {
   const dragControls = useDragControls();
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Only handle primary pointer (left mouse or first touch).
     if (e.button !== 0) return;
     const root = containerRef.current;
     if (!root) return;
     if (isFormControl(e.target)) return;
     if (isInHorizontalScroller(e.target, root)) return;
-    // Hand off to framer's drag system. It still applies dragDirectionLock,
-    // so a clearly-vertical gesture won't engage horizontal drag.
     dragControls.start(e);
   };
 
   const onDragEnd = (_: PointerEvent | MouseEvent | TouchEvent, info: PanInfo) => {
     const offset = info.offset.x;
     const velocity = info.velocity.x;
-    // Project where the gesture would land if the user "flicked" — combines
-    // displacement with momentum. Threshold = quarter of a screen.
     const projected = offset + 0.25 * velocity;
     let nextIdx = idx;
     if (projected < -width / 4) nextIdx = Math.min(idx + 1, TABS.length - 1);
     else if (projected > width / 4) nextIdx = Math.max(idx - 1, 0);
     if (nextIdx !== idx) {
+      lastChangeFromDrag.current = true;
       setTab(TABS[nextIdx]);
     } else {
       // Snap back to the current tab.

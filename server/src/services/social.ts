@@ -5,7 +5,8 @@ import { publish } from '../realtime/bus.js';
 import type { PublicUser, Squad } from '../types.js';
 import { messagesForSquad } from './chat.js';
 import { createNotification } from './notifications.js';
-import { getUserRow, toPublicUser } from './users.js';
+import { hashPhoneRaw } from '../lib/phone.js';
+import { getSettings, getUserRow, toPublicUser } from './users.js';
 
 /* ===================== BLOCKS (helper) =====================
  * Inlined here (not imported from safety.ts) to avoid a circular import —
@@ -77,6 +78,11 @@ export function sendFriendRequest(requesterId: string, recipientId: string): str
   if (!getUserRow(recipientId)) throw notFound('USER_NOT_FOUND', 'User not found');
   if (areFriends(requesterId, recipientId)) {
     throw conflict('ALREADY_FRIENDS', 'You are already friends');
+  }
+  // Recipient opted out of friend requests — refuse without revealing whether
+  // they exist or not beyond what the previous lookups already disclosed.
+  if (!getSettings(recipientId).allowFriendRequests) {
+    throw forbidden('This user is not accepting friend requests');
   }
   // An existing pending request either way → no duplicate.
   const dup = q.get<{ id: string; requester_id: string }>(
@@ -210,6 +216,80 @@ export function discoverUsers(userId: string, query: string): PublicUser[] {
     .map(toPublicUser)
     .filter(u => u.handle.toLowerCase().includes(needle) || u.name.toLowerCase().includes(needle))
     .slice(0, 20);
+}
+
+/**
+ * Match raw contact emails and/or raw phone numbers against registered users
+ * and return the matching public profiles. Excludes the caller, current
+ * friends, and blocked-either-side pairs.
+ *
+ * Emails: matched against `auth_identities.email` (which we already store as
+ * plaintext for sign-in). Hashing client-side would only protect emails in
+ * flight, and we own the canonical store anyway.
+ *
+ * Phones: client sends raw phone numbers; server normalizes each to E.164,
+ * HMACs with the deployment pepper, and looks them up in `users.phone_hash`.
+ * Raw phone numbers from the user's contacts are never persisted — they
+ * live in memory only for the duration of this call. Stored phone hashes
+ * are HMAC-keyed so a DB leak alone doesn't enable rainbow-table attacks.
+ *
+ * Both lists are capped at 800 entries each — SQLite's IN-clause limit is
+ * ~999, comfortably above any device address book.
+ */
+export function matchContacts(
+  viewerId: string,
+  input: { emails?: string[]; phones?: string[] },
+): PublicUser[] {
+  const matched = new Set<string>();
+  const exclude = new Set<string>([
+    viewerId,
+    ...friendIds(viewerId),
+    ...blockedUserIds(viewerId),
+  ]);
+
+  // -- email lookup ----------------------------------------------------------
+  const emails = input.emails ?? [];
+  if (emails.length > 0) {
+    const normalized = Array.from(new Set(
+      emails.map(e => e.trim().toLowerCase()).filter(e => e.length > 0 && e.length <= 320),
+    )).slice(0, 800);
+    if (normalized.length > 0) {
+      const placeholders = normalized.map(() => '?').join(',');
+      const rows = q.all<{ user_id: string }>(
+        `SELECT DISTINCT user_id FROM auth_identities
+           WHERE email IS NOT NULL AND email IN (${placeholders})`,
+        ...normalized,
+      );
+      for (const r of rows) if (!exclude.has(r.user_id)) matched.add(r.user_id);
+    }
+  }
+
+  // -- phone lookup ----------------------------------------------------------
+  const phones = input.phones ?? [];
+  if (phones.length > 0) {
+    const hashes = Array.from(new Set(
+      phones.map(p => hashPhoneRaw(p)).filter((h): h is string => h !== null),
+    )).slice(0, 800);
+    if (hashes.length > 0) {
+      const placeholders = hashes.map(() => '?').join(',');
+      const rows = q.all<{ id: string }>(
+        `SELECT id FROM users
+           WHERE phone_hash IS NOT NULL AND phone_hash IN (${placeholders})`,
+        ...hashes,
+      );
+      for (const r of rows) if (!exclude.has(r.id)) matched.add(r.id);
+    }
+  }
+
+  return Array.from(matched)
+    .map(id => getUserRow(id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .map(toPublicUser);
+}
+
+/** @deprecated Kept as a thin alias for any old callers — prefer matchContacts. */
+export function matchContactEmails(viewerId: string, emails: string[]): PublicUser[] {
+  return matchContacts(viewerId, { emails });
 }
 
 /* ===================== SQUADS ===================== */
