@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { Avatar } from '../components/Avatar';
-import { PullToRefresh } from '../components/PullToRefresh';
+import { RefreshButton } from '../components/RefreshButton';
 import { PulseButton } from '../components/PulseButton';
 import { useApp, relTime } from '../store';
 import type { AppNotification, NotificationType } from '../types';
@@ -98,28 +98,28 @@ export function NotificationsScreen() {
               <span className="text-grad">Alerts</span>
             </h1>
           </div>
-          {/* Clear all — only visible when there's something to clear.
-              Auto-purge handles 3-day-old notifications on the server side. */}
-          {notifications.length > 0 && (
-            <motion.button
-              whileTap={{ scale: 0.94 }}
-              onClick={onClearAll}
-              aria-label="Clear all notifications"
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
-                         text-[11px] font-bold uppercase tracking-widest
-                         bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 transition"
-            >
-              <Trash2 size={11} />
-              Clear all
-            </motion.button>
-          )}
+          <div className="shrink-0 flex items-center gap-2">
+            <RefreshButton onRefresh={refreshAll} ariaLabel="Refresh notifications" />
+            {/* Clear all — only visible when there's something to clear.
+                Auto-purge handles 3-day-old notifications on the server side. */}
+            {notifications.length > 0 && (
+              <motion.button
+                whileTap={{ scale: 0.94 }}
+                onClick={onClearAll}
+                aria-label="Clear all notifications"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                           text-[11px] font-bold uppercase tracking-widest
+                           bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 transition"
+              >
+                <Trash2 size={11} />
+                Clear all
+              </motion.button>
+            )}
+          </div>
         </motion.div>
       </div>
 
-      <PullToRefresh
-        onRefresh={refreshAll}
-        className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-32"
-      >
+      <div className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-32">
         {notifications.length === 0 ? (
           <div className="text-center mt-16 pb-6">
             <motion.div
@@ -141,7 +141,7 @@ export function NotificationsScreen() {
             ))}
           </div>
         )}
-      </PullToRefresh>
+      </div>
     </div>
   );
 }

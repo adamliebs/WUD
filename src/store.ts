@@ -919,8 +919,13 @@ export const useApp = create<State>((set, get) => {
     // me()/userById() return a STABLE cached fallback when the user isn't
     // loaded — a fresh object each call would make useApp() see a new snapshot
     // every render → infinite re-render loop (this is what crashed sign-out).
-    me: () => get().users.find(u => u.id === get().meId) ?? fallbackUser(get().meId),
-    userById: (id) => get().users.find(u => u.id === id) ?? fallbackUser(id),
+    //
+    // Lookup goes through `userMapFor` below, which keeps a Map keyed by id
+    // that's rebuilt only when the underlying `users` array reference
+    // changes. Turns ~12.5k array scans per feed render (50 cards × ~5
+    // userById calls × 50 friends) into 50 hash lookups + one Map rebuild.
+    me: () => userMapFor(get().users).get(get().meId) ?? fallbackUser(get().meId),
+    userById: (id) => userMapFor(get().users).get(id) ?? fallbackUser(id),
     isFriend: (id) => get().friendIds.includes(id) || id === get().meId,
     // FoF graph isn't streamed to the client; the "via X" hint is cosmetic only.
     isFriendOfFriend: () => false,
@@ -1922,6 +1927,28 @@ export const useApp = create<State>((set, get) => {
 });
 
 /* ============ pure helpers (no store access) ============ */
+
+/**
+ * O(1) user-by-id lookup, keyed off the current `users` array reference.
+ * The Map is rebuilt the first time we see a new `users` reference and
+ * cached for every subsequent call until the array changes again — so a
+ * single feed render that calls userById() dozens of times pays the
+ * rebuild cost once and gets hash lookups for the rest.
+ *
+ * Identity (===) comparison on the array reference is enough because the
+ * store always replaces the whole array on update (immutable update
+ * pattern). We never mutate `users` in place.
+ */
+let userMapCacheUsers: User[] | null = null;
+let userMapCache: Map<string, User> = new Map();
+function userMapFor(users: User[]): Map<string, User> {
+  if (users !== userMapCacheUsers) {
+    userMapCache = new Map();
+    for (const u of users) userMapCache.set(u.id, u);
+    userMapCacheUsers = users;
+  }
+  return userMapCache;
+}
 
 /**
  * Stable fallback User for an id we don't have loaded. Cached per-id so the

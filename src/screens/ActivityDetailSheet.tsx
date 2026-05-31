@@ -1,4 +1,4 @@
-import confetti from 'canvas-confetti';
+import { burst as confetti } from '../lib/confetti';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';

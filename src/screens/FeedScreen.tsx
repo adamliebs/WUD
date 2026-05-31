@@ -5,7 +5,7 @@ import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
 import { FeedFilters } from '../components/FeedFilters';
 import { LiveNowStrip } from '../components/LiveNowStrip';
-import { PullToRefresh } from '../components/PullToRefresh';
+import { RefreshButton } from '../components/RefreshButton';
 import { SmartSuggestions } from '../components/SmartSuggestions';
 
 export function FeedScreen() {
@@ -58,6 +58,7 @@ export function FeedScreen() {
               <Sparkles size={12} className="text-rose-300" />
               {activities.length} plans
             </div>
+            <RefreshButton onRefresh={refreshAll} ariaLabel="Refresh feed" />
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={() => openOverlay('search')}
@@ -92,11 +93,10 @@ export function FeedScreen() {
         )}
       </div>
 
-      {/* Scroll list */}
-      <PullToRefresh
-        onRefresh={refreshAll}
-        className="relative flex-1 overflow-y-auto no-scrollbar pb-32 pt-2"
-      >
+      {/* Scroll list — plain scroll container. Pull-to-refresh was removed
+          because it was too sensitive on iOS; refresh now lives as an
+          explicit button in the header above. */}
+      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
         <LiveNowStrip />
         <SmartSuggestions />
         {/* Anchor target for For You "tap to filter" jumps — when the For You
@@ -113,14 +113,26 @@ export function FeedScreen() {
             show: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
           }}
         >
-          {activities.map(a => (
+          {activities.map((a, i) => (
             <motion.div
               key={a.id}
-              variants={{
-                hidden: { opacity: 0, y: 20 },
-                show:   { opacity: 1, y: 0 },
-              }}
-              transition={{ type: 'spring', stiffness: 220, damping: 22 }}
+              // Cap the stagger after the first 8 cards. The cascade reads
+              // as energy when there are a handful of cards on screen, but
+              // turns into "the feed is loading for 3 seconds" on a busy
+              // feed of 50+. Beyond the cap we just snap-fade in so the
+              // page settles immediately.
+              variants={i < 8
+                ? {
+                    hidden: { opacity: 0, y: 20 },
+                    show:   { opacity: 1, y: 0 },
+                  }
+                : {
+                    hidden: { opacity: 0 },
+                    show:   { opacity: 1, transition: { duration: 0.15 } },
+                  }}
+              transition={i < 8
+                ? { type: 'spring', stiffness: 220, damping: 22 }
+                : undefined}
             >
               <ActivityCard activity={a} />
             </motion.div>
@@ -168,7 +180,7 @@ export function FeedScreen() {
             </div>
           )}
         </motion.div>
-      </PullToRefresh>
+      </div>
     </div>
   );
 }
