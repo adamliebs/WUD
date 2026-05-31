@@ -4,6 +4,7 @@ import { Check, ChevronRight, MapPin, Send, Sparkles, Timer, Trash2 } from 'luci
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar, AvatarStack } from '../components/Avatar';
+import { FriendsRail } from '../components/FriendsRail';
 import { PullToRefresh } from '../components/PullToRefresh';
 import { useApp } from '../store';
 import type { Float, FloatResponseState, FloatTiming } from '../types';
@@ -73,6 +74,12 @@ export function FloatsScreen() {
         onRefresh={refreshAll}
         className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-36"
       >
+        {/* Friends rail — personal-nudge surface. Tap an avatar to Wave or
+            WUD?, long-press to enter multi-select and nudge a group. Sits
+            above the float Composer so the page reads: "people you might
+            want to talk to" → "an idea to throw into the air". */}
+        <FriendsRail />
+
         <Composer />
 
         {active.length > 0 ? (

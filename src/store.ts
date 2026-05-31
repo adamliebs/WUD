@@ -1867,7 +1867,26 @@ export const useApp = create<State>((set, get) => {
           return;
         }
         const { delivered } = await miscApi.ping(text, recipients);
-        toast(`Pinged ${delivered} friend${delivered === 1 ? '' : 's'}: "${text}"`, 'success');
+        // Name-aware confirmation. Resolves recipient names from the user
+        // cache so the toast reads "You pinged Sarah" instead of the old
+        // anonymous "Pinged 1 friend". Falls back to a count phrase once
+        // we get past a handful of recipients so the toast doesn't grow
+        // unbounded ("You pinged Sarah, Mike + 4 more").
+        const after = get();
+        const names = recipients.map(id => after.userById(id).name);
+        const namePhrase =
+          names.length === 1 ? names[0]
+          : names.length === 2 ? `${names[0]} and ${names[1]}`
+          : names.length <= 4 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+          : `${names[0]}, ${names[1]} + ${names.length - 2} more`;
+        toast(`You pinged ${namePhrase} 👋`, 'success');
+        // delivered may differ from recipients.length when some recipients
+        // have pings disabled — surface that quietly so the sender knows
+        // a few of them won't actually see the ping.
+        if (delivered < recipients.length) {
+          const skipped = recipients.length - delivered;
+          toast(`${skipped} ${skipped === 1 ? 'friend has' : 'friends have'} pings off`, 'default');
+        }
       });
     },
 

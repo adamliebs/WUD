@@ -250,12 +250,13 @@ export function PostSheet() {
           </motion.button>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 pb-12">
-          {/* Slim category banner — tints to the chosen category gradient (or
-              the user's uploaded banner photo) so the sheet still gets a hit
-              of color without taking the vertical space the live preview
-              card did. The camera button on the right corner lets the user
-              attach or replace a banner image. */}
+        {/* Slim category banner — lives OUTSIDE the scroll container so it
+            sits as a fixed "roof" of the sheet. With the banner outside the
+            scroll area, a downward swipe on it goes straight to the
+            BottomSheet's drag handler instead of being eaten by the scroll
+            view's iOS overscroll bounce, so the user can drag the banner
+            down to dismiss the whole sheet — the natural gesture. */}
+        <div className="px-4 pt-3 pb-3">
           <BannerStrip
             cat={cat}
             bannerUrl={bannerUrl}
@@ -264,6 +265,9 @@ export function PostSheet() {
             bannerUploading={bannerUploading}
             title="New plan"
           />
+        </div>
+
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-12">
           {/* Category chips */}
           <Section title="Category">
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">

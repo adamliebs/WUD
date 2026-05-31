@@ -139,13 +139,16 @@ export function GoLiveSheet() {
           </motion.button>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 pb-12">
-          {/* Slim "going live" banner — full orange→rose strip with the
-              user's current emoji + status text. Replaces the bigger
-              preview card to free up vertical space, while still tying the
-              sheet visually to the floating + button the user tapped. */}
+        {/* Slim "going live" banner — sits OUTSIDE the scroll container so
+            a downward swipe on it dismisses the whole sheet (matches the
+            PostSheet pattern). Without this, the scroll view's iOS
+            overscroll bounce eats the gesture and the user can't flick
+            the sheet away from its most natural target. */}
+        <div className="px-4 pt-3 pb-3">
           <LiveBanner emoji={emoji} text={text} endTimeLabel={endTimeLabel} />
+        </div>
 
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-12">
           {/* Quick picks — horizontal scroll so the row stays one line and
               the user can see what comes after the visible chips. */}
           <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2 px-1">
