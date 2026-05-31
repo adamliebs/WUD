@@ -4,7 +4,7 @@
  */
 
 export type CategoryKey =
-  | 'surf' | 'gym' | 'run' | 'gaming' | 'food' | 'drinks'
+  | 'surf' | 'gym' | 'padel' | 'run' | 'gaming' | 'food' | 'drinks'
   | 'coffee' | 'study' | 'movie' | 'outdoors' | 'party' | 'other' | 'custom';
 
 export type RsvpState = 'going' | 'maybe' | 'cant';

@@ -271,6 +271,22 @@ export function PostSheet() {
           {/* Category chips */}
           <Section title="Category">
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+              {/* Custom — user-defined emoji + label. Lives FIRST so users
+                  who don't see a fitting preset don't have to scroll the
+                  whole strip to find the escape hatch. */}
+              <motion.button
+                key="custom"
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setCategory('custom')}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
+                            ${isCustom
+                              ? 'bg-gradient-to-br from-fuchsia-500 to-rose-500 text-white border-fuchsia-300 shadow-[0_8px_24px_-10px_rgba(232,121,249,0.6)]'
+                              : 'bg-white/5 text-zinc-200 border-white/10 border-dashed hover:bg-white/10'}`}
+              >
+                <Sparkles size={13} />
+                <span>{isCustom ? (customLabel.trim() || 'Custom') : 'Custom +'}</span>
+              </motion.button>
+
               {CATEGORIES.map(c => {
                 const active = c.key === category;
                 return (
@@ -288,20 +304,6 @@ export function PostSheet() {
                   </motion.button>
                 );
               })}
-
-              {/* Custom — user-defined emoji + label */}
-              <motion.button
-                key="custom"
-                whileTap={{ scale: 0.92 }}
-                onClick={() => setCategory('custom')}
-                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
-                            ${isCustom
-                              ? 'bg-gradient-to-br from-fuchsia-500 to-rose-500 text-white border-fuchsia-300 shadow-[0_8px_24px_-10px_rgba(232,121,249,0.6)]'
-                              : 'bg-white/5 text-zinc-200 border-white/10 border-dashed hover:bg-white/10'}`}
-              >
-                <Sparkles size={13} />
-                <span>{isCustom ? (customLabel.trim() || 'Custom') : 'Custom +'}</span>
-              </motion.button>
             </div>
 
             {/* Inline inputs — only when "Custom" is selected */}

@@ -7,6 +7,7 @@ import type { Activity, Category } from '../types';
 export const CATEGORIES: Category[] = [
   { key: 'surf',     label: 'Surf',     emoji: '🏄',  gradient: 'from-cyan-500/25 via-sky-500/15 to-blue-500/10' },
   { key: 'gym',      label: 'Gym',      emoji: '🏋️', gradient: 'from-rose-500/25 via-pink-500/15 to-rose-500/10' },
+  { key: 'padel',    label: 'Padel',    emoji: '🎾',  gradient: 'from-lime-400/25 via-yellow-500/15 to-amber-500/10' },
   { key: 'run',      label: 'Run',      emoji: '🏃',  gradient: 'from-lime-500/25 via-emerald-500/15 to-teal-500/10' },
   { key: 'gaming',   label: 'Gaming',   emoji: '🎮',  gradient: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10' },
   { key: 'food',     label: 'Food',     emoji: '🍔',  gradient: 'from-amber-500/25 via-orange-500/15 to-rose-500/10' },
