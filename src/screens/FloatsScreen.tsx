@@ -71,7 +71,7 @@ export function FloatsScreen() {
         </motion.div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-36">
+      <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar px-4 pb-36">
         {/* Friends rail — personal-nudge surface. Tap an avatar to Wave or
             WUD?, long-press to enter multi-select and nudge a group. Sits
             above the float Composer so the page reads: "people you might
@@ -118,45 +118,30 @@ export function FloatsScreen() {
 /* ─────────────────────────── Background bokeh ─────────────────────────── */
 
 function BackgroundOrbs() {
-  // willChange: 'filter' promotes each orb onto its own GPU layer with the
-  // blur baked in from the first paint. Without it, browsers paint the
-  // unblurred element briefly before the filter kicks in, which read as a
-  // bright flash when the page mounted — most visible on the bottom amber
-  // orb. Pairing that with an opacity fade-in hides any residual hiccup.
+  // Static orbs — see FeedScreen's FeedBackgroundOrbs comment for the
+  // rationale (looping drift was barely visible, kept the GPU busy).
   return (
     <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div
         className="absolute -top-20 -left-10 h-64 w-64 rounded-full bg-fuchsia-500/15 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, 24, 0], x: [0, 12, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut' },
-          y: { duration: 18, repeat: Infinity, ease: 'easeInOut' },
-          x: { duration: 18, repeat: Infinity, ease: 'easeInOut' },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
       />
       <motion.div
         className="absolute top-1/3 -right-16 h-72 w-72 rounded-full bg-rose-500/12 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -30, 0], x: [0, -16, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
-          y: { duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-          x: { duration: 22, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.05 }}
       />
       <motion.div
         className="absolute bottom-10 left-1/4 h-56 w-56 rounded-full bg-amber-400/10 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -18, 0], x: [0, 10, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
-          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 4 },
-          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 4 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
       />
     </div>
   );

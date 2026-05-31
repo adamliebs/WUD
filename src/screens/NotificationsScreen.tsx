@@ -119,7 +119,7 @@ export function NotificationsScreen() {
         </motion.div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto no-scrollbar px-4 pb-32">
+      <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar px-4 pb-32">
         {notifications.length === 0 ? (
           <div className="text-center mt-16 pb-6">
             <motion.div
@@ -150,40 +150,29 @@ export function NotificationsScreen() {
  *  warm (incoming), distinct from the Floats and Feed palettes. Same blur-flash
  *  guard (willChange + opacity fade-in) as the other tabs. */
 function AlertsBackgroundOrbs() {
+  // Static orbs — see FeedScreen's FeedBackgroundOrbs comment.
   return (
     <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div
         className="absolute -top-24 -right-10 h-72 w-72 rounded-full bg-amber-400/10 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, 24, 0], x: [0, -14, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut' },
-          y: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
-          x: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
       />
       <motion.div
         className="absolute top-1/3 -left-16 h-80 w-80 rounded-full bg-rose-500/12 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -28, 0], x: [0, 18, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
-          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.05 }}
       />
       <motion.div
         className="absolute bottom-16 right-1/4 h-64 w-64 rounded-full bg-sky-500/8 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -18, 0], x: [0, 12, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
-          y: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
-          x: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
       />
     </div>
   );

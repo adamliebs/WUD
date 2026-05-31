@@ -165,6 +165,11 @@ interface State {
     dateOfBirth: number;
     /** Optional E.164 phone number — feeds the friend-discovery flow. */
     phone?: string;
+    /** Optional profile photo picked during onboarding. Uploaded AFTER
+     *  the account is created (the upload endpoint requires auth) and
+     *  applied via a follow-up meApi.update — so a failed upload never
+     *  blocks signup itself. */
+    photoFile?: File;
   }) => void;
   /** Email log in via Firebase, with legacy fallback for pre-migration accounts. */
   logIn: (email: string, password: string) => void;
@@ -844,6 +849,23 @@ export const useApp = create<State>((set, get) => {
     }
   };
 
+  /**
+   * Upload a profile photo picked during onboarding and stick it on the
+   * fresh account. Runs AFTER signUp completes (the upload endpoint
+   * needs auth), so an upload failure leaves the account intact — the
+   * user can re-upload from Edit profile later.
+   */
+  const savePhotoBestEffort = async (file: File): Promise<void> => {
+    try {
+      const { url } = await uploadApi.photo(file);
+      const { user } = await meApi.update({ photoUrl: url });
+      set(s => ({ users: dedupeUsers([...s.users, user]) }));
+    } catch (e) {
+      if (e instanceof ApiError) toast(e.message, 'warn');
+      else console.error('[savePhoto] unexpected error:', e);
+    }
+  };
+
   /** Wrap an async auth-flow with a global `authBusy` flag so the UI can
    *  render a loading overlay and disable buttons while it's in flight.
    *  Always clears the flag in finally — a thrown error doesn't strand
@@ -1307,7 +1329,7 @@ export const useApp = create<State>((set, get) => {
       set({ pendingSignup: { kind: 'email', email, password }, authState: 'onboarding' });
     },
 
-    signUp: ({ name, handle, avatar, color, dateOfBirth, phone }) => {
+    signUp: ({ name, handle, avatar, color, dateOfBirth, phone, photoFile }) => {
       void guard(() => withAuthBusy(async () => {
         const pending = get().pendingSignup;
         // Firebase path — onboarding completes the signin with an ID token
@@ -1321,11 +1343,12 @@ export const useApp = create<State>((set, get) => {
           const provider = pending.provider;
           set({ pendingSignup: null });
           await doBootstrap();
-          // Phone is optional — only persist if the user entered one. Done as
-          // a follow-up PATCH so the auth endpoints don't need to thread the
-          // phone field through (and a network blip on the phone save won't
-          // strand the user without an account).
+          // Phone + photo are optional. Done as follow-up PATCHes so the
+          // auth endpoints don't need to thread these fields through
+          // (and a network blip on either step doesn't strand the user
+          // without an account).
           if (phone && phone.trim()) await savePhoneBestEffort(phone);
+          if (photoFile) await savePhotoBestEffort(photoFile);
           // Apple/Google users are pre-verified; only email-provider signups
           // see the verify-email gate.
           enforceEmailVerificationGate(provider);
@@ -1342,6 +1365,7 @@ export const useApp = create<State>((set, get) => {
         set({ pendingSignup: null });
         await doBootstrap();
         if (phone && phone.trim()) await savePhoneBestEffort(phone);
+        if (photoFile) await savePhotoBestEffort(photoFile);
         // Legacy email register has no Firebase user, so email is unverified
         // by definition. Same gate so the user lands on verify-email.
         if (pending?.kind === 'email') enforceEmailVerificationGate('email');

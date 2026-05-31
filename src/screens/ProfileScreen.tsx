@@ -235,40 +235,30 @@ export function ProfileScreen() {
 /** Background orbs for the Me tab — emerald · violet · sky for a quieter,
  *  more personal feel that doesn't compete with the user's chosen hero color. */
 function MeBackgroundOrbs() {
+  // Static orbs — see FeedScreen's FeedBackgroundOrbs comment for why
+  // the looping drift was dropped across every tab.
   return (
     <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div
         className="absolute top-1/2 -left-16 h-72 w-72 rounded-full bg-emerald-500/8 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, 22, 0], x: [0, 14, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut' },
-          y: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
-          x: { duration: 22, repeat: Infinity, ease: 'easeInOut' },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
       />
       <motion.div
         className="absolute top-1/4 -right-12 h-64 w-64 rounded-full bg-violet-500/10 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -24, 0], x: [0, -14, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
-          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 2 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.05 }}
       />
       <motion.div
         className="absolute bottom-10 left-1/3 h-56 w-56 rounded-full bg-sky-500/8 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -16, 0], x: [0, 10, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
-          y: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
-          x: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
       />
     </div>
   );

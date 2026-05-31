@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, Check, ChevronLeft, Loader2, Sparkles, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Calendar, Camera, Check, ChevronLeft, Loader2, Sparkles, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from '../components/Avatar';
 import { DateWheelPicker } from '../components/DateWheelPicker';
 import { PulseButton } from '../components/PulseButton';
@@ -79,6 +79,31 @@ export function OnboardingScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [avatar, setAvatar] = useState(AVATAR_OPTIONS[0]);
   const [color, setColor] = useState(COLOR_OPTIONS[0].value);
+  // Profile photo (optional). The actual upload happens AFTER signUp
+  // completes — the upload endpoint requires auth. Here we just stash the
+  // File + an object-URL preview so the user sees their photo in the hero
+  // right away. signUp() takes the photoFile and uploads it post-auth.
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const photoFileRef = useRef<HTMLInputElement>(null);
+
+  // Free the preview blob when it's replaced or the screen unmounts —
+  // otherwise the browser holds onto the file's memory.
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+
+  const onPickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';   // allow re-picking the same file later
+    if (!file) return;
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+  const onRemovePhoto = () => {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoFile(null);
+    setPhotoPreview(null);
+  };
 
   const sanitize = (h: string) => h.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
   const effectiveHandle = handle || sanitize(name);
@@ -121,12 +146,19 @@ export function OnboardingScreen() {
     signUp({
       name, handle: effectiveHandle, avatar, color, dateOfBirth,
       phone: trimmedPhone || undefined,
+      photoFile: photoFile ?? undefined,
     });
   };
 
   const previewUser = useMemo(
-    () => ({ id: 'preview', name: name.trim() || 'You', avatar, color }),
-    [name, avatar, color],
+    () => ({
+      id: 'preview',
+      name: name.trim() || 'You',
+      avatar,
+      color,
+      photoUrl: photoPreview ?? undefined,
+    }),
+    [name, avatar, color, photoPreview],
   );
 
   return (
@@ -162,21 +194,58 @@ export function OnboardingScreen() {
         <div className={`relative h-40 bg-gradient-to-br ${color} transition-colors`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <motion.div
-              key={avatar + color}
-              initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
-              animate={{ scale: 1, rotate: 0, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-              className="ring-4 ring-[#07060b] rounded-full"
-            >
-              <Avatar user={previewUser} size={84} />
-            </motion.div>
-            <div className="text-white font-black text-xl mt-2 drop-shadow">
+            <div className="relative">
+              <motion.div
+                key={avatar + color + (photoPreview ?? '')}
+                initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                className="ring-4 ring-[#07060b] rounded-full"
+              >
+                <Avatar user={previewUser} size={84} />
+              </motion.div>
+              {/* Camera badge — tap to pick a photo. Sits at the bottom-
+                  right of the avatar, matching the Edit Profile pattern. */}
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.88 }}
+                onClick={() => photoFileRef.current?.click()}
+                aria-label={photoPreview ? 'Replace profile photo' : 'Add a profile photo'}
+                className="absolute -bottom-1 -right-1 h-9 w-9 rounded-full grid place-items-center
+                           bg-gradient-to-br from-rose-500 to-orange-500 text-white
+                           ring-2 ring-[#07060b] shadow-[0_10px_25px_-10px_rgba(244,63,94,0.7)]"
+              >
+                <Camera size={16} />
+              </motion.button>
+              {/* Tiny remove pill — only shown when a photo is set. */}
+              {photoPreview && (
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.88 }}
+                  onClick={onRemovePhoto}
+                  aria-label="Remove profile photo"
+                  className="absolute -top-1 -right-1 h-7 w-7 rounded-full grid place-items-center
+                             bg-zinc-900/85 text-white ring-2 ring-[#07060b]"
+                >
+                  <Trash2 size={13} />
+                </motion.button>
+              )}
+            </div>
+            <div className="text-white font-black text-xl mt-3 drop-shadow">
               {name.trim() || 'Your name'}
             </div>
             <div className="text-white/85 text-xs">@{effectiveHandle || 'handle'}</div>
           </div>
         </div>
+
+        {/* Hidden file input — triggered by the Camera badge above. */}
+        <input
+          ref={photoFileRef}
+          type="file"
+          accept="image/*"
+          onChange={onPickPhoto}
+          className="hidden"
+        />
 
         <div className="px-4 pt-5">
           <div className="text-center mb-4">

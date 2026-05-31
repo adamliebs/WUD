@@ -95,8 +95,12 @@ export function FeedScreen() {
 
       {/* Scroll list — plain scroll container. Pull-to-refresh was removed
           because it was too sensitive on iOS; refresh now lives as an
-          explicit button in the header above. */}
-      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-32 pt-2">
+          explicit button in the header above. `overscroll-none` kills
+          the iOS rubber-band overscroll bounce at top + bottom — the
+          bounce was the main source of perceived lag during fast scrolls
+          (each bounce settles via a system spring that competes with our
+          own scroll-driven renders). */}
+      <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar pb-32 pt-2">
         <LiveNowStrip />
         <SmartSuggestions />
         {/* Anchor target for For You "tap to filter" jumps — when the For You
@@ -104,38 +108,14 @@ export function FeedScreen() {
             point so the filtered results are immediately visible. */}
         <div id="feed-results-anchor" />
         <FeedFilters />
-        <motion.div
-          className="flex flex-col gap-3 px-4"
-          initial="hidden"
-          animate="show"
-          variants={{
-            hidden: {},
-            show: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
-          }}
-        >
-          {activities.map((a, i) => (
-            <motion.div
-              key={a.id}
-              // Cap the stagger after the first 8 cards. The cascade reads
-              // as energy when there are a handful of cards on screen, but
-              // turns into "the feed is loading for 3 seconds" on a busy
-              // feed of 50+. Beyond the cap we just snap-fade in so the
-              // page settles immediately.
-              variants={i < 8
-                ? {
-                    hidden: { opacity: 0, y: 20 },
-                    show:   { opacity: 1, y: 0 },
-                  }
-                : {
-                    hidden: { opacity: 0 },
-                    show:   { opacity: 1, transition: { duration: 0.15 } },
-                  }}
-              transition={i < 8
-                ? { type: 'spring', stiffness: 220, damping: 22 }
-                : undefined}
-            >
-              <ActivityCard activity={a} />
-            </motion.div>
+        {/* Plain list, no entrance animation. The stagger-in cascade was
+            cute on first load but added perceptible lag every time the
+            user came back to the Feed tab — and the cards themselves
+            don't need it to read as fresh. Each card mounts immediately,
+            no spring math, no compositing per-card. */}
+        <div className="flex flex-col gap-3 px-4">
+          {activities.map(a => (
+            <ActivityCard key={a.id} activity={a} />
           ))}
 
           {activities.length === 0 && (
@@ -179,7 +159,7 @@ export function FeedScreen() {
               )}
             </div>
           )}
-        </motion.div>
+        </div>
       </div>
     </div>
   );
@@ -189,43 +169,33 @@ export function FeedScreen() {
  *  but a different palette (rose · sky · violet) so each tab carries its own
  *  mood without feeling reskinned. */
 function FeedBackgroundOrbs() {
-  // willChange + opacity fade-in: keeps the orbs from flashing as solid
-  // bright dots before the browser applies the blur filter (see FloatsScreen
-  // BackgroundOrbs for the same fix).
+  // Static orbs — the looping drift was barely visible and was the main
+  // source of cross-tab GPU drain (12 orbs across 4 mounted tabs all
+  // running infinite framer-motion loops). Keeping only the opacity
+  // fade-in on mount avoids the "bright unblurred flash" before the
+  // blur filter kicks in; no per-frame work after that.
   return (
     <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div
         className="absolute -top-24 -left-10 h-72 w-72 rounded-full bg-rose-500/12 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, 24, 0], x: [0, 14, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut' },
-          y: { duration: 20, repeat: Infinity, ease: 'easeInOut' },
-          x: { duration: 20, repeat: Infinity, ease: 'easeInOut' },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
       />
       <motion.div
         className="absolute top-1/4 -right-20 h-80 w-80 rounded-full bg-sky-500/10 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -30, 0], x: [0, -18, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.05 },
-          y: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 3 },
-          x: { duration: 26, repeat: Infinity, ease: 'easeInOut', delay: 3 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.05 }}
       />
       <motion.div
         className="absolute bottom-20 left-1/5 h-64 w-64 rounded-full bg-violet-500/12 blur-3xl"
-        style={{ willChange: 'filter, transform' }}
+        style={{ willChange: 'filter' }}
         initial={{ opacity: 0 }}
-        animate={{ opacity: 1, y: [0, -18, 0], x: [0, 12, 0] }}
-        transition={{
-          opacity: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
-          y: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
-          x: { duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 },
-        }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
       />
     </div>
   );
