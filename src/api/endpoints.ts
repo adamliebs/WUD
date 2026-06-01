@@ -150,6 +150,9 @@ export const activityApi = {
     isPrivate?: boolean;
     isOpenInvite?: boolean;
     squadIds?: string[];
+    category?: CategoryKey;
+    customEmoji?: string;
+    customLabel?: string;
   }) => api.patch<ActivityResp>(`/activities/${id}`, b),
 
   rsvp: (id: string, state: RsvpState | 'none') =>
@@ -195,7 +198,7 @@ export const socialApi = {
    *  TLS and never stored — the server normalizes + HMAC-hashes them in
    *  memory and compares to the stored phone_hash. */
   contactMatch: (input: { emails?: string[]; phones?: string[] }) =>
-    api.post<{ users: User[] }>('/friends/contact-match', input),
+    api.post<{ users: (User & { isFriend: boolean })[] }>('/friends/contact-match', input),
   addFriend: (recipientId: string) =>
     api.post<{ requestId: string }>('/friend-requests', { recipientId }),
   removeFriend: (userId: string) => api.del(`/friends/${userId}`),

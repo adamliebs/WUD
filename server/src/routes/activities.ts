@@ -96,6 +96,9 @@ activitiesRouter.patch('/activities/:id', handler((req, res) => {
       : b.reminderMins === 'off' ? 'off'
       : typeof b.reminderMins === 'number' ? b.reminderMins
       : undefined,
+    category: typeof b.category === 'string' ? b.category as CategoryKey : undefined,
+    customEmoji: optionalString(b, 'customEmoji'),
+    customLabel: optionalString(b, 'customLabel'),
   });
   res.json({ activity, ...withUsers([activity]) });
 }));

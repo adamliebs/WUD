@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion';
-import { Calendar, Clock, Globe2, Lock, MapPin, Users, X } from 'lucide-react';
+import { Calendar, Clock, Globe2, Lock, MapPin, Sparkles, Users, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { BottomSheet } from '../components/BottomSheet';
 import { PulseButton } from '../components/PulseButton';
+import { CATEGORIES } from '../data/categories';
 import { buildDayOptions, computeStartsAt, decomposeEpoch, formatStartsAt } from '../data/time';
 import { isLiveActivity, useApp } from '../store';
+import type { CategoryKey } from '../types';
 
 /**
  * Host-only edit sheet for an existing activity. Mirrors the relevant slices
@@ -48,6 +50,9 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
     [activity?.endsAt, activity],
   );
 
+  const [category, setCategory] = useState<CategoryKey>(activity?.category ?? 'other');
+  const [customEmoji, setCustomEmoji] = useState(activity?.customEmoji ?? '');
+  const [customLabel, setCustomLabel] = useState(activity?.customLabel ?? '');
   const [title, setTitle] = useState(activity?.title ?? '');
   const [place, setPlace] = useState(activity?.place ?? '');
   const [description, setDescription] = useState(activity?.description ?? '');
@@ -89,6 +94,9 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
     // no-op write that bumps updated_at for nothing.
     const startChanged = !live && newStartsAt !== activity.startsAt;
     const endChanged = newEndsAt !== activity.endsAt;
+    // Only thread category fields when they actually changed — otherwise the
+    // server clears custom_emoji/custom_label on a no-op category switch.
+    const categoryChanged = category !== activity.category;
     const ok = await updateActivity(activityId, {
       title: title.trim(),
       place: place.trim(),
@@ -99,6 +107,9 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
       isOpenInvite,
       squadIds: selectedSquadIds,
       maxSize: maxSize ?? null,
+      category: categoryChanged ? category : undefined,
+      customEmoji: category === 'custom' ? customEmoji.trim() : undefined,
+      customLabel: category === 'custom' ? customLabel.trim() : undefined,
     });
     setSaving(false);
     if (ok) onClose();
@@ -129,6 +140,71 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-4 pb-36">
+        {/* Category — Custom comes first so users who don't see a fitting
+            preset find the escape hatch without scrolling. Mirrors the
+            PostSheet category strip exactly. */}
+        <Label>Category</Label>
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+          <motion.button
+            key="custom"
+            whileTap={{ scale: 0.92 }}
+            onClick={() => setCategory('custom')}
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
+                        ${category === 'custom'
+                          ? 'bg-gradient-to-br from-fuchsia-500 to-rose-500 text-white border-fuchsia-300 shadow-[0_8px_24px_-10px_rgba(232,121,249,0.6)]'
+                          : 'bg-white/5 text-zinc-200 border-white/10 border-dashed hover:bg-white/10'}`}
+          >
+            <Sparkles size={13} />
+            <span>{category === 'custom' ? (customLabel.trim() || 'Custom') : 'Custom +'}</span>
+          </motion.button>
+          {CATEGORIES.map(c => {
+            const active = c.key === category;
+            return (
+              <motion.button
+                key={c.key}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => setCategory(c.key)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
+                            ${active
+                              ? 'bg-white text-zinc-900 border-white'
+                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+              >
+                <span>{c.emoji}</span>
+                <span>{c.label}</span>
+              </motion.button>
+            );
+          })}
+        </div>
+        {category === 'custom' && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18 }}
+            className="mt-3 flex gap-2"
+          >
+            <input
+              value={customEmoji}
+              onChange={e => {
+                const next = Array.from(e.target.value).slice(0, 4).join('');
+                setCustomEmoji(next);
+              }}
+              placeholder="✨"
+              inputMode="text"
+              className="w-16 text-center text-2xl bg-white/5 border border-white/10 rounded-2xl py-3 text-white
+                         focus:outline-none focus:ring-2 focus:ring-fuchsia-400/60 focus:border-fuchsia-400/30"
+              aria-label="Emoji for your custom category"
+            />
+            <input
+              value={customLabel}
+              onChange={e => setCustomLabel(e.target.value.slice(0, 24))}
+              placeholder="Name your category"
+              className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder:text-zinc-500
+                         focus:outline-none focus:ring-2 focus:ring-fuchsia-400/60 focus:border-fuchsia-400/30"
+              aria-label="Label for your custom category"
+            />
+          </motion.div>
+        )}
+
         {/* Title */}
         <Label>Name</Label>
         <input

@@ -28,8 +28,10 @@ socialRouter.get('/friends/discover', handler((req, res) => {
 /** POST /v1/friends/contact-match
  *  Body: { emails?: string[]; phones?: string[] } — raw contact entries
  *  read from the device. Both fields are optional; provide either or both.
- *  Response: { users: PublicUser[] } — matched WUD users, minus the caller,
- *  current friends, and blocked-either-side pairs. */
+ *  Response: { users: (PublicUser & { isFriend: boolean })[] } — matched
+ *  WUD users, minus the caller and blocked-either-side pairs. Existing
+ *  friends ARE included with isFriend=true so the client can render an
+ *  "already friends" badge instead of an Add button. */
 socialRouter.post('/friends/contact-match', handler((req, res) => {
   const body = req.body ?? {};
   const emails = Array.isArray(body.emails)
@@ -38,7 +40,8 @@ socialRouter.post('/friends/contact-match', handler((req, res) => {
   const phones = Array.isArray(body.phones)
     ? body.phones.filter((x: unknown): x is string => typeof x === 'string')
     : [];
-  res.json({ users: matchContacts(uid(req), { emails, phones }) });
+  const matches = matchContacts(uid(req), { emails, phones });
+  res.json({ users: matches.map(m => ({ ...m.user, isFriend: m.isFriend })) });
 }));
 
 socialRouter.delete('/friends/:userId', handler((req, res) => {

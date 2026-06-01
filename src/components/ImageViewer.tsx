@@ -40,15 +40,48 @@ export function ImageViewer({ src, onClose }: Props) {
   const save = async () => {
     setSaving(true);
     try {
-      // Try the native share sheet first — on iOS this surfaces "Save Image".
+      const { Capacitor } = await import('@capacitor/core');
+
+      if (Capacitor.isNativePlatform()) {
+        // Native iOS / Android: download bytes → write to cache → share the
+        // file URI via @capacitor/share. iOS's native share sheet then
+        // surfaces "Save Image" / "Save to Photos" as a destination —
+        // exactly the UX users expect from Messages / Photos.
+        //
+        // navigator.share({files}) doesn't work inside Capacitor's WKWebView
+        // (canShare returns false for files), which is why earlier builds
+        // silently fell through to the "long-press" toast on iPhone.
+        const res = await fetch(src);
+        if (!res.ok) throw new Error(`fetch ${res.status}`);
+        const blob = await res.blob();
+        const base64 = await blobToBase64(blob);
+        const ext = (blob.type.split('/')[1] || 'jpg').toLowerCase();
+        const fileName = `wud-photo-${Date.now()}.${ext}`;
+
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { uri } = await Filesystem.writeFile({
+          path: fileName,
+          data: base64,
+          directory: Directory.Cache,
+        });
+
+        const { Share } = await import('@capacitor/share');
+        await Share.share({
+          url: uri,
+          dialogTitle: 'Save image',
+        });
+        return;
+      }
+
+      // Web fallback — try the Web Share API for desktop browsers that
+      // support file share, otherwise open in a new tab so the user can
+      // long-press / right-click → Save.
       const canShareFiles =
         typeof navigator !== 'undefined' &&
         typeof navigator.share === 'function' &&
         typeof navigator.canShare === 'function';
-
       if (canShareFiles) {
         const res = await fetch(src);
-        if (!res.ok) throw new Error(`fetch ${res.status}`);
         const blob = await res.blob();
         const ext = blob.type.split('/')[1] ?? 'jpg';
         const file = new File([blob], `wud-photo.${ext}`, { type: blob.type });
@@ -57,20 +90,35 @@ export function ImageViewer({ src, onClose }: Props) {
           return;
         }
       }
-
-      // Web fallback — open in a new tab so the user can long-press / right-click.
       window.open(src, '_blank', 'noopener,noreferrer');
       pushToast('Long-press the image to save it', 'default');
     } catch (e) {
       // Share can throw "AbortError" when the user dismisses the share sheet
       // — that's not a real failure; treat it as a noop.
       const name = (e as { name?: string } | null)?.name;
-      if (name === 'AbortError') return;
+      const msg = (e as { message?: string } | null)?.message ?? '';
+      if (name === 'AbortError' || /cancel/i.test(msg)) return;
+      console.error('[ImageViewer] save failed:', e);
       pushToast('Could not save image', 'warn');
     } finally {
       setSaving(false);
     }
   };
+
+  // Lift the blob into a base64 string the way Capacitor's Filesystem
+  // plugin wants it (raw base64, no `data:` prefix).
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // FileReader returns "data:<mime>;base64,<payload>". Strip the prefix.
+        const i = result.indexOf(',');
+        resolve(i >= 0 ? result.slice(i + 1) : result);
+      };
+      reader.readAsDataURL(blob);
+    });
 
   return (
     <motion.div

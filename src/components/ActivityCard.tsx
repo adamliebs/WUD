@@ -42,15 +42,17 @@ export function ActivityCard({ activity }: Props) {
     'idle';
 
   return (
-    <motion.div
-      layout
-      whileTap={{ scale: 0.985 }}
-      whileHover={{ y: -2 }}
+    // Plain <div> — dropped framer-motion's `layout`, `whileTap`,
+    // and `whileHover` because each card carried per-tap and per-render
+    // spring math even when idle. With 50+ cards in the feed that
+    // adds up to noticeable jank on tab switches. Tap feedback now
+    // comes from the standard active:opacity transition below.
+    <div
       onClick={() => open(activity.id)}
       className={`relative overflow-hidden rounded-3xl glass cursor-pointer
                   border border-white/10
                   shadow-[0_18px_40px_-22px_rgba(0,0,0,0.65)]
-                  transition-shadow hover:shadow-[0_22px_50px_-22px_rgba(0,0,0,0.8)]
+                  transition active:opacity-90
                   ${over ? 'opacity-70' : ''}`}
     >
       {/* Subtle inner glow lifted from the category gradient — gives every
@@ -212,7 +214,7 @@ export function ActivityCard({ activity }: Props) {
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
 

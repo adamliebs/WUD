@@ -5,6 +5,7 @@ import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
 import { FeedFilters } from '../components/FeedFilters';
 import { LiveNowStrip } from '../components/LiveNowStrip';
+import { SquadsRail } from '../components/SquadsRail';
 import { RefreshButton } from '../components/RefreshButton';
 import { SmartSuggestions } from '../components/SmartSuggestions';
 
@@ -70,13 +71,13 @@ export function FeedScreen() {
           </div>
         </motion.div>
 
-        {/* Scope toggle — only shown when there's a friend-of-friend plan available */}
+        {/* Scope toggle — only shown when there's a friend-of-friend plan
+            available. No entrance animation, no spring sliding pill —
+            both fired on every tab swipe back to Feed and read as jank.
+            The active option just paints solid; the inactive one stays
+            transparent. */}
         {hasFoF && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 relative grid grid-cols-2 bg-white/5 border border-white/10 rounded-2xl p-1"
-          >
+          <div className="mt-4 relative grid grid-cols-2 bg-white/5 border border-white/10 rounded-2xl p-1">
             <ScopeButton
               active={feedScope === 'friends'}
               onClick={() => setFeedScope('friends')}
@@ -89,7 +90,7 @@ export function FeedScreen() {
               icon={<UsersRound size={14} />}
               label="+ Friends of friends"
             />
-          </motion.div>
+          </div>
         )}
       </div>
 
@@ -102,6 +103,7 @@ export function FeedScreen() {
           own scroll-driven renders). */}
       <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar pb-32 pt-2">
         <LiveNowStrip />
+        <SquadsRail />
         <SmartSuggestions />
         {/* Anchor target for For You "tap to filter" jumps — when the For You
             rail fills the viewport, tapping a digest scrolls past it to this
@@ -212,16 +214,10 @@ function ScopeButton({
   return (
     <button
       onClick={onClick}
-      className="relative py-2 rounded-xl text-xs font-semibold"
+      className={`relative py-2 rounded-xl text-xs font-semibold transition
+                  ${active ? 'bg-white text-zinc-900' : 'text-zinc-300'}`}
     >
-      {active && (
-        <motion.div
-          layoutId="scopepill"
-          className="absolute inset-0 bg-white rounded-xl"
-          transition={{ type: 'spring', stiffness: 480, damping: 32 }}
-        />
-      )}
-      <span className={`relative inline-flex items-center gap-1.5 ${active ? 'text-zinc-900' : 'text-zinc-300'}`}>
+      <span className="relative inline-flex items-center gap-1.5">
         {icon}
         {label}
       </span>

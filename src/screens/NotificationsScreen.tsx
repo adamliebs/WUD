@@ -1,12 +1,9 @@
-import { motion } from 'framer-motion';
-// motion is still used by NotificationRow's "Pass" button; the row list itself
-// uses plain divs after Android WebView showed subpixel compositing gaps
-// between motion-wrapped children (regression of commit 79af4a7's fix).
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Bell, BellRing, CalendarPlus, CalendarX, Check, Clock, Crown, Megaphone,
-  MessageSquare, Pencil, Sparkles, Trash2, UserPlus, Users,
+  Bell, BellRing, CalendarPlus, CalendarX, Check, ChevronDown, Clock, Crown,
+  Megaphone, MessageSquare, Pencil, Sparkles, Trash2, UserPlus, Users,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Avatar } from '../components/Avatar';
 import { RefreshButton } from '../components/RefreshButton';
 import { PulseButton } from '../components/PulseButton';
@@ -135,11 +132,7 @@ export function NotificationsScreen() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {notifications.map(n => (
-              <NotificationRow key={n.id} n={n} />
-            ))}
-          </div>
+          <GroupedNotifications notifications={notifications} />
         )}
       </div>
     </div>
@@ -174,6 +167,176 @@ function AlertsBackgroundOrbs() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
       />
+    </div>
+  );
+}
+
+/* ─────────────────────────── Grouping ─────────────────────────── */
+
+type Entry =
+  | { kind: 'single'; at: number; notif: AppNotification }
+  | { kind: 'group'; at: number; key: string; type: 'chat' | 'pings'; items: AppNotification[] };
+
+/**
+ * Bundle notifications into chat-per-activity groups and an all-pings
+ * group; everything else (friend events, host transfers, reminders,
+ * floats, plan updates) renders as individual rows. Entries are sorted
+ * by their most-recent timestamp so a fresh ping in an old group
+ * surfaces it back to the top.
+ */
+function groupForUI(notifs: AppNotification[]): Entry[] {
+  const chatBuckets = new Map<string, AppNotification[]>();   // keyed by activityId
+  const pings: AppNotification[] = [];
+  const singles: AppNotification[] = [];
+  for (const n of notifs) {
+    if (n.type === 'chat_message' && n.activityId) {
+      const arr = chatBuckets.get(n.activityId) ?? [];
+      arr.push(n);
+      chatBuckets.set(n.activityId, arr);
+    } else if (n.type === 'ping') {
+      pings.push(n);
+    } else {
+      singles.push(n);
+    }
+  }
+  const entries: Entry[] = [];
+  for (const [activityId, items] of chatBuckets) {
+    // Single chat → render as a regular row (no group chrome).
+    if (items.length === 1) {
+      entries.push({ kind: 'single', notif: items[0], at: items[0].at });
+    } else {
+      const at = Math.max(...items.map(i => i.at));
+      entries.push({ kind: 'group', key: `chat:${activityId}`, type: 'chat', items, at });
+    }
+  }
+  if (pings.length === 1) {
+    entries.push({ kind: 'single', notif: pings[0], at: pings[0].at });
+  } else if (pings.length > 1) {
+    const at = Math.max(...pings.map(i => i.at));
+    entries.push({ kind: 'group', key: 'pings', type: 'pings', items: pings, at });
+  }
+  for (const n of singles) {
+    entries.push({ kind: 'single', notif: n, at: n.at });
+  }
+  entries.sort((a, b) => b.at - a.at);
+  return entries;
+}
+
+function GroupedNotifications({ notifications }: { notifications: AppNotification[] }) {
+  const entries = useMemo(() => groupForUI(notifications), [notifications]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (key: string) =>
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  return (
+    <div className="flex flex-col gap-2">
+      {entries.map(e => e.kind === 'single' ? (
+        <NotificationRow key={e.notif.id} n={e.notif} />
+      ) : (
+        <NotificationGroup
+          key={e.key}
+          group={e}
+          open={expanded.has(e.key)}
+          onToggle={() => toggle(e.key)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Header row for a chat-per-activity / all-pings bundle. Collapsed shows
+ *  count + last-message preview + chevron; expanded reveals the full list
+ *  of NotificationRows inside. */
+function NotificationGroup({
+  group, open, onToggle,
+}: {
+  group: Extract<Entry, { kind: 'group' }>;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const userById = useApp(s => s.userById);
+  const activity = useApp(s =>
+    group.type === 'chat'
+      ? s.activities.find(a => a.id === group.items[0].activityId)
+      : undefined,
+  );
+  const unread = group.items.filter(n => !n.read).length;
+  const newest = group.items[0]; // already sorted desc by store
+  const tone = TONES[newest.type];
+  const icon = group.type === 'chat'
+    ? <MessageSquare size={14} />
+    : <Megaphone size={14} />;
+  const title = group.type === 'chat'
+    ? (activity?.title ?? 'Activity chat')
+    : 'Pings';
+  // Last sender for the preview avatar — for pings it's the most recent
+  // pinger; for chats it's the latest message author.
+  const lastSender = userById(newest.fromId);
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden
+                     ${unread > 0 ? 'bg-white/8 border-white/10' : 'bg-white/[0.03] border-white/5'}`}>
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full text-left p-3 flex items-start gap-3 hover:bg-white/[0.02] transition"
+      >
+        <div className="relative">
+          <Avatar user={lastSender} size={40} />
+          <div className={`absolute -bottom-1 -right-1 h-5 w-5 rounded-full grid place-items-center text-white bg-gradient-to-br ${tone} ring-2 ring-[#0a070f]`}>
+            {icon}
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-zinc-100 font-semibold truncate inline-flex items-center gap-1.5">
+            {title}
+            <span className="text-[11px] font-medium text-zinc-400">
+              · {group.items.length} {group.type === 'chat' ? 'messages' : 'pings'}
+            </span>
+            {unread > 0 && (
+              <span className="text-[10px] uppercase tracking-widest font-bold text-rose-200
+                                bg-rose-500/20 border border-rose-400/30 rounded-full px-1.5 py-0.5">
+                {unread} new
+              </span>
+            )}
+          </div>
+          {/* Collapsed preview — latest message body, truncated. */}
+          {!open && (
+            <div className="text-[12px] text-zinc-400 mt-0.5 truncate">
+              {newest.text}
+            </div>
+          )}
+          <div className="text-[11px] text-zinc-500 mt-0.5">{relTime(newest.at)}</div>
+        </div>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.18 }}
+          className="text-zinc-400 shrink-0 mt-1"
+        >
+          <ChevronDown size={16} />
+        </motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-2 pb-2 flex flex-col gap-2 border-t border-white/5 pt-2">
+              {group.items.map(n => (
+                <NotificationRow key={n.id} n={n} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

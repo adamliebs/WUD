@@ -228,33 +228,33 @@ export function discoverUsers(userId: string, query: string): PublicUser[] {
 }
 
 /**
- * Match raw contact emails and/or raw phone numbers against registered users
- * and return the matching public profiles. Excludes the caller, current
- * friends, and blocked-either-side pairs.
+ * Match raw contact emails and/or raw phone numbers against registered users.
+ * Returns matches PLUS a flag indicating which are already friends — the
+ * client renders existing friends as "Already friends" instead of with an
+ * Add button. Excludes only the caller and blocked-either-side pairs.
  *
- * Emails: matched against `auth_identities.email` (which we already store as
- * plaintext for sign-in). Hashing client-side would only protect emails in
- * flight, and we own the canonical store anyway.
+ * Including friends in the result was an explicit user request: seeing
+ * "Mike is also on WUD" alongside "Sarah · already a friend" makes the
+ * contacts panel feel like a real address-book mirror, not just a
+ * friend-suggestion list.
  *
- * Phones: client sends raw phone numbers; server normalizes each to E.164,
- * HMACs with the deployment pepper, and looks them up in `users.phone_hash`.
- * Raw phone numbers from the user's contacts are never persisted — they
- * live in memory only for the duration of this call. Stored phone hashes
- * are HMAC-keyed so a DB leak alone doesn't enable rainbow-table attacks.
+ * Emails: matched against `auth_identities.email`.
+ * Phones: client sends raw numbers; server normalizes + HMAC-hashes and
+ * looks up `users.phone_hash`. Raw phone numbers from the user's contacts
+ * are never persisted.
  *
- * Both lists are capped at 800 entries each — SQLite's IN-clause limit is
- * ~999, comfortably above any device address book.
+ * Both lists are capped at 800 entries (SQLite IN-clause limit ~999).
  */
 export function matchContacts(
   viewerId: string,
   input: { emails?: string[]; phones?: string[] },
-): PublicUser[] {
+): { user: PublicUser; isFriend: boolean }[] {
   const matched = new Set<string>();
   const exclude = new Set<string>([
     viewerId,
-    ...friendIds(viewerId),
     ...blockedUserIds(viewerId),
   ]);
+  const friendSet = new Set<string>(friendIds(viewerId));
 
   // -- email lookup ----------------------------------------------------------
   const emails = input.emails ?? [];
@@ -291,13 +291,15 @@ export function matchContacts(
   }
 
   return Array.from(matched)
-    .map(id => getUserRow(id))
-    .filter((r): r is NonNullable<typeof r> => !!r)
-    .map(toPublicUser);
+    .map(id => {
+      const row = getUserRow(id);
+      return row ? { user: toPublicUser(row), isFriend: friendSet.has(id) } : null;
+    })
+    .filter((r): r is NonNullable<typeof r> => !!r);
 }
 
 /** @deprecated Kept as a thin alias for any old callers — prefer matchContacts. */
-export function matchContactEmails(viewerId: string, emails: string[]): PublicUser[] {
+export function matchContactEmails(viewerId: string, emails: string[]): { user: PublicUser; isFriend: boolean }[] {
   return matchContacts(viewerId, { emails });
 }
 

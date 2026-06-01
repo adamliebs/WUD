@@ -299,6 +299,10 @@ interface State {
     isPrivate?: boolean;
     isOpenInvite?: boolean;
     squadIds?: string[];
+    /** Category swap. customEmoji + customLabel only used when category === 'custom'. */
+    category?: CategoryKey;
+    customEmoji?: string;
+    customLabel?: string;
   }) => Promise<boolean>;
 
   /* ---- floats — soft proposals before plans ---- */

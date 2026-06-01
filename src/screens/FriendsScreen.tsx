@@ -246,7 +246,7 @@ export function FriendsScreen() {
 function ContactFinderModal({ onClose }: { onClose: () => void }) {
   type Phase = 'idle' | 'working' | 'matched' | 'empty' | 'denied' | 'unavailable';
   const [phase, setPhase] = useState<Phase>('idle');
-  const [matches, setMatches] = useState<User[]>([]);
+  const [matches, setMatches] = useState<(User & { isFriend: boolean })[]>([]);
   const addFriend = useApp(s => s.addFriend);
   const pushToast = useApp(s => s.pushToast);
 
@@ -364,7 +364,12 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-2">
               {matches.map(u => (
-                <ContactMatchRow key={u.id} user={u} onAdd={() => addFriend(u.id)} />
+                <ContactMatchRow
+                  key={u.id}
+                  user={u}
+                  isFriend={u.isFriend}
+                  onAdd={() => addFriend(u.id)}
+                />
               ))}
             </div>
           </>
@@ -392,7 +397,13 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ContactMatchRow({ user, onAdd }: { user: User; onAdd: () => void }) {
+function ContactMatchRow({
+  user, isFriend, onAdd,
+}: {
+  user: User;
+  isFriend: boolean;
+  onAdd: () => void;
+}) {
   const [added, setAdded] = useState(false);
   return (
     <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-white/[0.04] border border-white/10">
@@ -401,17 +412,26 @@ function ContactMatchRow({ user, onAdd }: { user: User; onAdd: () => void }) {
         <div className="text-sm font-semibold text-white truncate">{user.name}</div>
         <div className="text-[11px] text-zinc-400 truncate">@{user.handle}</div>
       </div>
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={() => { if (!added) { onAdd(); setAdded(true); } }}
-        disabled={added}
-        className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition
-                    ${added
-                      ? 'bg-white/5 text-zinc-400 cursor-default'
-                      : 'bg-gradient-to-br from-rose-500 to-orange-500 text-white'}`}
-      >
-        {added ? 'Sent' : 'Add'}
-      </motion.button>
+      {isFriend ? (
+        // Already a friend — show a soft badge instead of an Add button so
+        // the user knows the contact's already on their roster.
+        <span className="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-widest
+                          text-emerald-200 bg-emerald-500/15 border border-emerald-400/30">
+          Friends
+        </span>
+      ) : (
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => { if (!added) { onAdd(); setAdded(true); } }}
+          disabled={added}
+          className={`px-3 py-1.5 rounded-full text-[12px] font-bold transition
+                      ${added
+                        ? 'bg-white/5 text-zinc-400 cursor-default'
+                        : 'bg-gradient-to-br from-rose-500 to-orange-500 text-white'}`}
+        >
+          {added ? 'Sent' : 'Add'}
+        </motion.button>
+      )}
     </div>
   );
 }

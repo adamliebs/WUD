@@ -354,6 +354,14 @@ function FloatCard({ float: f, myId, delay }: { float: Float; myId: string; dela
     () => f.responses.filter(r => r.state === 'keen').map(r => userById(r.userId)),
     [f.responses, userById],
   );
+  const maybeUsers = useMemo(
+    () => f.responses.filter(r => r.state === 'maybe').map(r => userById(r.userId)),
+    [f.responses, userById],
+  );
+  const nahUsers = useMemo(
+    () => f.responses.filter(r => r.state === 'nah').map(r => userById(r.userId)),
+    [f.responses, userById],
+  );
 
   const expiresInMs = f.expiresAt - Date.now();
   const expiresLabel = formatExpiresIn(expiresInMs);
@@ -433,18 +441,37 @@ function FloatCard({ float: f, myId, delay }: { float: Float; myId: string; dela
           )}
         </div>
 
-        {/* Tally bar */}
-        <div className="mt-3 flex items-center gap-2">
-          {keenUsers.length > 0 && (
-            <AvatarStack users={keenUsers} size={20} max={4} />
+        {/* Tally bar — each response state shows its own mini avatar
+            stack so you can see WHO said keen / maybe / nah at a glance,
+            not just the counts. Empty buckets are skipped. */}
+        <div className="mt-3 flex items-center gap-2 flex-wrap text-[11px] font-semibold">
+          {tally.keen > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-emerald-300">
+              <AvatarStack users={keenUsers} size={18} max={3} />
+              {tally.keen} keen
+            </span>
           )}
-          <div className="flex-1 text-[11px] text-white/80 font-semibold flex items-center gap-2">
-            <span className="text-emerald-300">{tally.keen} keen</span>
-            <span className="text-white/30">·</span>
-            <span className="text-amber-200">{tally.maybe} maybe</span>
-            <span className="text-white/30">·</span>
-            <span className="text-white/50">{tally.nah} nah</span>
-          </div>
+          {tally.maybe > 0 && (
+            <>
+              {tally.keen > 0 && <span className="text-white/30">·</span>}
+              <span className="inline-flex items-center gap-1.5 text-amber-200">
+                <AvatarStack users={maybeUsers} size={18} max={3} />
+                {tally.maybe} maybe
+              </span>
+            </>
+          )}
+          {tally.nah > 0 && (
+            <>
+              {(tally.keen > 0 || tally.maybe > 0) && <span className="text-white/30">·</span>}
+              <span className="inline-flex items-center gap-1.5 text-white/55">
+                <AvatarStack users={nahUsers} size={18} max={3} />
+                {tally.nah} nah
+              </span>
+            </>
+          )}
+          {tally.keen + tally.maybe + tally.nah === 0 && (
+            <span className="text-white/60">No responses yet</span>
+          )}
         </div>
 
         {/* Response buttons (recipients) OR Lock-in CTA (sender) */}

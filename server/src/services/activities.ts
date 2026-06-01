@@ -319,6 +319,12 @@ export function updateActivity(actorId: string, activityId: string, patch: {
   squadIds?: string[];
   // 'default' clears the override (use the user's default), 'off' disables it.
   reminderMins?: number | 'default' | 'off';
+  /** Change the plan's category. customEmoji + customLabel only apply when
+   *  the new category is 'custom'; for built-in categories the server clears
+   *  the per-row custom fields so the category's default emoji/label win. */
+  category?: CategoryKey;
+  customEmoji?: string;
+  customLabel?: string;
 }): Activity {
   const row = getActivityRow(activityId);
   if (!row) throw notFound('ACTIVITY_NOT_FOUND', 'Plan not found');
@@ -328,7 +334,8 @@ export function updateActivity(actorId: string, activityId: string, patch: {
     patch.startsAt === undefined && patch.endsAt === undefined &&
     patch.maxSize === undefined && patch.bannerUrl === undefined &&
     patch.isPrivate === undefined && patch.isOpenInvite === undefined &&
-    patch.squadIds === undefined;
+    patch.squadIds === undefined &&
+    patch.category === undefined && patch.customEmoji === undefined && patch.customLabel === undefined;
 
   // Host-only for content edits; participants may tweak only their reminder.
   if (!reminderOnly && row.host_id !== actorId) {
@@ -367,11 +374,27 @@ export function updateActivity(actorId: string, activityId: string, patch: {
   // only fans to the new viewer set.
   const oldViewers = new Set<string>(viewerIdsForRow(row));
 
+  // Resolve the new category + custom fields. When switching INTO 'custom'
+  // the patch should carry customEmoji + customLabel; when switching OUT
+  // we clear the per-row custom fields so the category's defaults win.
+  const nextCategory = patch.category ?? (row.category as CategoryKey);
+  const isCustomNext = nextCategory === 'custom';
+  const nextCustomEmoji =
+    !isCustomNext ? null
+    : (patch.customEmoji?.trim() ?? row.custom_emoji ?? '✨');
+  const nextCustomLabel =
+    !isCustomNext ? null
+    : (patch.customLabel?.trim() ?? row.custom_label ?? 'Custom');
+
   tx(() => {
     q.run(
-      `UPDATE activities SET title = ?, description = ?, place = ?, starts_at = ?, ends_at = ?,
+      `UPDATE activities SET category = ?, custom_emoji = ?, custom_label = ?,
+         title = ?, description = ?, place = ?, starts_at = ?, ends_at = ?,
          max_size = ?, banner_url = ?, is_private = ?, is_open_invite = ?,
          reminder_minutes = ?, updated_at = ? WHERE id = ?`,
+      nextCategory,
+      nextCustomEmoji,
+      nextCustomLabel,
       patch.title?.trim() || row.title,
       patch.description?.trim() ?? row.description,
       patch.place?.trim() ?? row.place,
