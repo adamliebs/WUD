@@ -4,6 +4,11 @@ import { useState } from 'react';
 import { useApp } from '../store';
 import type { Reaction } from '../types';
 
+// All chip enter/exit + tap scale animations were removed — reactions
+// re-render on every realtime tick, and the springy bounce made the feed
+// feel jittery (every chip on every card animated when anything changed).
+// Picker popover keeps its fade so the menu still feels intentional.
+
 const PICKER_EMOJIS = ['👍', '🔥', '❤️', '😂', '🎉', '🙌', '🍻', '🤝', '✨', '💯'];
 
 interface Props {
@@ -46,35 +51,26 @@ export function ReactionBar({ activityId, reactions, size = 'compact', stopPropa
 
   return (
     <div className="relative flex flex-wrap items-center gap-1.5">
-      <AnimatePresence initial={false}>
-        {order.map(emoji => {
-          const { count, mine } = agg[emoji];
-          return (
-            <motion.button
-              key={emoji}
-              layout
-              initial={{ opacity: 0, scale: 0.6 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.6 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 26 }}
-              whileTap={{ scale: 0.88 }}
-              onClick={e => handle(e, () => toggle(activityId, emoji))}
-              className={`inline-flex items-center rounded-full border font-semibold transition ${chipBase}
-                          ${mine
-                            ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
-                            : 'bg-white/5 border-white/10 text-zinc-200 hover:bg-white/10'}`}
-              aria-pressed={mine}
-              aria-label={`${emoji} ${count}${mine ? ', remove your reaction' : ', add your reaction'}`}
-            >
-              <span>{emoji}</span>
-              <span className="tabular-nums">{count}</span>
-            </motion.button>
-          );
-        })}
-      </AnimatePresence>
+      {order.map(emoji => {
+        const { count, mine } = agg[emoji];
+        return (
+          <button
+            key={emoji}
+            onClick={e => handle(e, () => toggle(activityId, emoji))}
+            className={`inline-flex items-center rounded-full border font-semibold transition ${chipBase}
+                        ${mine
+                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                          : 'bg-white/5 border-white/10 text-zinc-200 hover:bg-white/10'}`}
+            aria-pressed={mine}
+            aria-label={`${emoji} ${count}${mine ? ', remove your reaction' : ', add your reaction'}`}
+          >
+            <span>{emoji}</span>
+            <span className="tabular-nums">{count}</span>
+          </button>
+        );
+      })}
 
-      <motion.button
-        whileTap={{ scale: 0.88 }}
+      <button
         onClick={e => handle(e, () => setPickerOpen(v => !v))}
         className={`inline-flex items-center justify-center rounded-full border text-zinc-300
                     bg-white/5 border-white/10 hover:bg-white/10 transition
@@ -82,7 +78,7 @@ export function ReactionBar({ activityId, reactions, size = 'compact', stopPropa
         aria-label="Add a reaction"
       >
         <SmilePlus size={size === 'compact' ? 13 : 16} />
-      </motion.button>
+      </button>
 
       <AnimatePresence>
         {pickerOpen && (
@@ -105,9 +101,8 @@ export function ReactionBar({ activityId, reactions, size = 'compact', stopPropa
               onClick={e => stopPropagation && e.stopPropagation()}
             >
               {PICKER_EMOJIS.map(emoji => (
-                <motion.button
+                <button
                   key={emoji}
-                  whileTap={{ scale: 0.85 }}
                   onClick={e => handle(e, () => {
                     toggle(activityId, emoji);
                     setPickerOpen(false);
@@ -116,7 +111,7 @@ export function ReactionBar({ activityId, reactions, size = 'compact', stopPropa
                               ${agg[emoji]?.mine ? 'bg-rose-500/20 ring-1 ring-rose-400/50' : 'hover:bg-white/10'}`}
                 >
                   {emoji}
-                </motion.button>
+                </button>
               ))}
             </motion.div>
           </>

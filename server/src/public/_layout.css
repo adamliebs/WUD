@@ -1,0 +1,94 @@
+/* Shared styling for the public landing + legal pages. Single self-contained
+   stylesheet so the HTML stays inlinable + cache-friendly behind any CDN. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #07060b;
+  color: #e4e4e7;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { min-height: 100vh; }
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 24px 96px;
+}
+
+a { color: #fda4af; text-decoration: none; }
+a:hover { color: #fb7185; text-decoration: underline; }
+
+.brand {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+  margin-bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand .dot {
+  display: inline-block;
+  height: 8px;
+  width: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f43f5e, #f97316);
+}
+
+h1 {
+  font-size: 40px;
+  font-weight: 900;
+  line-height: 1.08;
+  margin: 0 0 12px;
+  background: linear-gradient(135deg, #fda4af 0%, #fdba74 60%, #fbbf24 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+h2 {
+  font-size: 18px;
+  margin: 36px 0 10px;
+  color: #fafafa;
+}
+
+p, li { color: #d4d4d8; }
+
+.subtitle {
+  color: #a1a1aa;
+  font-size: 16px;
+  margin-bottom: 32px;
+}
+
+ul { padding-left: 22px; }
+li { margin-bottom: 6px; }
+
+.meta {
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 13px;
+  color: #71717a;
+}
+
+.nav-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.tagline {
+  font-size: 22px;
+  color: #d4d4d8;
+  margin: 0 0 28px;
+  max-width: 560px;
+}

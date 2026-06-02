@@ -37,8 +37,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      # Non-blocking: surfaces pre-existing react-hooks findings (DEPLOYMENT.md
-      # phase F) without gating deploys. The build below is the hard gate.
+      # Non-blocking: surfaces pre-existing react-hooks findings without
+      # gating deploys. The build below is the hard gate.
       - name: Lint
         run: npm run lint
         continue-on-error: true

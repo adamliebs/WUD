@@ -232,18 +232,57 @@ function GroupedNotifications({ notifications }: { notifications: AppNotificatio
       else next.add(key);
       return next;
     });
+  // Track the bucket of the last rendered entry so we only emit a heading
+  // when it actually changes. Entries are sorted newest → oldest, so this
+  // produces Today → Yesterday → weekday → date in order.
+  let lastBucket: string | null = null;
   return (
     <div className="flex flex-col gap-2">
-      {entries.map(e => e.kind === 'single' ? (
-        <NotificationRow key={e.notif.id} n={e.notif} />
-      ) : (
-        <NotificationGroup
-          key={e.key}
-          group={e}
-          open={expanded.has(e.key)}
-          onToggle={() => toggle(e.key)}
-        />
-      ))}
+      {entries.map(e => {
+        const bucket = dayBucketLabel(e.at);
+        const showHeading = bucket !== lastBucket;
+        lastBucket = bucket;
+        const headingKey = `heading:${bucket}`;
+        return (
+          <div key={e.kind === 'single' ? e.notif.id : e.key} className="contents">
+            {showHeading && <SectionHeading key={headingKey} label={bucket} />}
+            {e.kind === 'single'
+              ? <NotificationRow n={e.notif} />
+              : <NotificationGroup group={e} open={expanded.has(e.key)} onToggle={() => toggle(e.key)} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Day bucket label for the alerts feed — relative names for the last week,
+ *  short date past that, with the year suffix only when it disambiguates. */
+function dayBucketLabel(ts: number): string {
+  const d = new Date(ts);
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const startOfDay = new Date(d);  startOfDay.setHours(0, 0, 0, 0);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.round((startOfToday.getTime() - startOfDay.getTime()) / dayMs);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays > 1 && diffDays < 7) {
+    return d.toLocaleDateString(undefined, { weekday: 'long' });
+  }
+  if (d.getFullYear() === startOfToday.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Sticky-styled day divider that sits between alert rows. */
+function SectionHeading({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 pt-3 pb-1 px-1 first:pt-0">
+      <div className="text-[10px] uppercase tracking-[0.22em] font-bold text-zinc-400">
+        {label}
+      </div>
+      <div className="flex-1 h-px bg-white/5" />
     </div>
   );
 }

@@ -60,6 +60,15 @@ export interface ChatMessage {
     options: PollOption[];
     closed?: boolean;
   };
+  /** Client-only: marks an optimistic placeholder that's still in flight to
+   *  the server. The render layer draws these slightly faded with a spinner
+   *  so the sender sees their message land immediately instead of waiting
+   *  through network latency. Cleared once the API call completes. */
+  pending?: boolean;
+  /** Client-only: stable id for the optimistic placeholder so the store can
+   *  remove it after the server confirms. Server-issued messages never carry
+   *  this field. */
+  localId?: string;
 }
 
 export interface Reaction {

@@ -44,13 +44,15 @@ export function ImageViewer({ src, onClose }: Props) {
 
       if (Capacitor.isNativePlatform()) {
         // Native iOS / Android: download bytes → write to cache → share the
-        // file URI via @capacitor/share. iOS's native share sheet then
-        // surfaces "Save Image" / "Save to Photos" as a destination —
-        // exactly the UX users expect from Messages / Photos.
+        // file via @capacitor/share. The KEY is passing `files: [uri]`
+        // rather than `url: uri` — Share's `url` field is for sharing a
+        // link (so iOS treats it as text + Safari icon), while `files`
+        // shares the actual file bytes, which is what makes iOS surface
+        // the "Save Image" / "Save to Photos" rows in the share sheet.
         //
-        // navigator.share({files}) doesn't work inside Capacitor's WKWebView
-        // (canShare returns false for files), which is why earlier builds
-        // silently fell through to the "long-press" toast on iPhone.
+        // iOS additionally requires NSPhotoLibraryAddUsageDescription in
+        // Info.plist before it'll let any app write to the Photos library,
+        // even via the system share sheet. Added in this commit.
         const res = await fetch(src);
         if (!res.ok) throw new Error(`fetch ${res.status}`);
         const blob = await res.blob();
@@ -67,7 +69,7 @@ export function ImageViewer({ src, onClose }: Props) {
 
         const { Share } = await import('@capacitor/share');
         await Share.share({
-          url: uri,
+          files: [uri],
           dialogTitle: 'Save image',
         });
         return;

@@ -7,12 +7,48 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Firebase is initialised by the @capacitor-firebase/app plugin's load() —
-        // see node_modules/@capacitor-firebase/app/ios/Plugin/FirebaseAppPlugin.swift.
-        // The plugin reads GoogleService-Info.plist from the app bundle automatically.
-        // (We don't import FirebaseCore here because the App target doesn't have it
-        // as a direct SPM dependency; it's transitively pulled via the plugin only.)
+        // Firebase is initialised by the @capacitor-firebase/app + messaging plugins'
+        // load() / init() — see node_modules/@capacitor-firebase/*/ios/Plugin/*.swift.
+        // The plugins read GoogleService-Info.plist from the app bundle automatically.
         return true
+    }
+
+    // MARK: — Remote push (APNs ↔ FCM)
+    //
+    // Info.plist has FirebaseAppDelegateProxyEnabled = NO, so Firebase does NOT
+    // swizzle the AppDelegate. We are responsible for forwarding the APNs device
+    // token to Firebase via @capacitor-firebase/messaging — without this, FCM
+    // has no APNs handle and pushes to a killed iOS app are silently dropped
+    // while pushes to the foregrounded app may still work via FCM's persistent
+    // socket. That asymmetry is exactly what "inconsistent on iOS, fine on
+    // Android" looks like.
+    //
+    // The Capacitor messaging plugin listens for these NotificationCenter posts
+    // (see FirebaseMessagingPlugin.swift) and calls Messaging.apnsToken = token
+    // on receipt.
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(
+            name: .capacitorDidRegisterForRemoteNotifications,
+            object: deviceToken
+        )
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(
+            name: .capacitorDidFailToRegisterForRemoteNotifications,
+            object: error
+        )
+    }
+
+    func application(_ application: UIApplication,
+                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        NotificationCenter.default.post(
+            name: Notification.Name("didReceiveRemoteNotification"),
+            object: completionHandler,
+            userInfo: userInfo
+        )
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

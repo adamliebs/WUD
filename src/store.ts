@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { categoryFor } from './data/categories';
-import type { Activity, AppNotification, CategoryKey, Float, FloatResponseState, FloatTiming, Recurrence, Squad, User } from './types';
+import type { Activity, AppNotification, CategoryKey, ChatMessage, Float, FloatResponseState, FloatTiming, Recurrence, Squad, User } from './types';
 import { ApiError, tokens } from './api/client';
 import {
   activityApi, authApi, chatApi, floatApi, getBootstrap, meApi, miscApi, safetyApi, socialApi, uploadApi,
@@ -12,6 +12,15 @@ import {
 import { notify, registerPushAfterAuth } from './native';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/** localStorage key remembering that the user has already seen the swipe-
+ *  through tutorial. Per-device — a fresh install replays it, which we
+ *  consider a feature (the device is "new" to that user). Exported so App.tsx
+ *  can read it without duplicating the key string. */
+export const TUTORIAL_SEEN_KEY = 'wud:has-seen-tutorial';
+export function hasSeenTutorial(): boolean {
+  try { return localStorage.getItem(TUTORIAL_SEEN_KEY) === '1'; } catch { return true; }
+}
 
 type Tab = 'feed' | 'floats' | 'notifications' | 'profile';
 type FeedScope = 'friends' | 'fof';
@@ -127,6 +136,18 @@ interface State {
   showPostSheet: boolean;
   feedScope: FeedScope;
   overlay: Overlay;
+  /** When the Squads overlay opens, jump straight to this squad's detail
+   *  page instead of the squads list. Set by the Feed's squads rail so
+   *  tapping a chip lands on that squad, not the index. Cleared by
+   *  SquadsScreen once consumed. */
+  squadFocusId: string | null;
+  /** Optimistic chat placeholders awaiting server confirmation, keyed by
+   *  `<kind>:<id>` (e.g. `activity:abc` or `squad:xyz`) — matches the
+   *  realtime channel naming so callers can share one slice across
+   *  activity and squad chats. Each message carries `pending: true` +
+   *  a `localId` so the render layer can dedupe against the real message
+   *  once it lands and so the cleanup path can target the exact placeholder. */
+  pendingMessages: Record<string, ChatMessage[]>;
   toasts: Toast[];
   settings: AppSettings;
   /** True while an auth or signup flow is in flight (Apple/Google/email
@@ -208,6 +229,17 @@ interface State {
   /** Top 3 events picked for me — friend overlap × time proximity × category affinity. */
   rankedForYouEvents: () => Activity[];
   openOverlay: (o: Overlay) => void;
+  /** Whether the swipeable tutorial overlay is showing. Set to `true` the
+   *  first time the user reaches authState === 'app' on this device, and
+   *  whenever they tap "Replay tutorial" in Settings. */
+  showTutorial: boolean;
+  setShowTutorial: (v: boolean) => void;
+  /** Open the Squads overlay focused on a specific squad's detail page. */
+  openSquad: (squadId: string) => void;
+  /** Consume + clear the focused-squad target (called by SquadsScreen once
+   *  it has navigated to it, so re-opening the overlay later goes to the
+   *  list again). */
+  consumeSquadFocus: () => string | null;
 
   /** Incoming friend requests awaiting my response. */
   friendRequests: { id: string; from: User; at: number }[];
@@ -899,6 +931,54 @@ export const useApp = create<State>((set, get) => {
     }
   };
 
+  /* ---- optimistic chat helpers ----
+   *
+   * Pending placeholders live in their own `pendingMessages` slice keyed by
+   * `<kind>:<id>`. They're rendered alongside the canonical chat list while
+   * the API call is in flight, then removed once the server has confirmed
+   * (or failed) so the realtime-refreshed chat takes over visually.
+   * Render-side dedupe (authorId + content + time window) prevents a
+   * visible duplicate during the brief gap between the realtime push and
+   * our finally-block removal.
+   */
+  function addPending(key: string, msg: ChatMessage): void {
+    set(s => ({
+      pendingMessages: {
+        ...s.pendingMessages,
+        [key]: [...(s.pendingMessages[key] ?? []), msg],
+      },
+    }));
+  }
+  function removePending(key: string, localId: string): void {
+    set(s => {
+      const list = (s.pendingMessages[key] ?? []).filter(m => m.localId !== localId);
+      const next = { ...s.pendingMessages };
+      if (list.length === 0) delete next[key];
+      else next[key] = list;
+      return { pendingMessages: next };
+    });
+  }
+  /** Run a send, surface errors via the same toast-on-ApiError shape as
+   *  `guard`, and always clean up the pending placeholder in `finally`.
+   *  `onCleanup` is for caller-owned resources like blob URLs that need
+   *  to be revoked regardless of success/failure. */
+  async function sendWithCleanup(
+    key: string,
+    localId: string,
+    fn: () => Promise<void>,
+    onCleanup?: () => void,
+  ): Promise<void> {
+    try {
+      await fn();
+    } catch (e) {
+      if (e instanceof ApiError) toast(e.message, 'warn');
+      else { console.error('[send] failed:', e); toast('Message failed to send', 'warn'); }
+    } finally {
+      onCleanup?.();
+      removePending(key, localId);
+    }
+  }
+
   /* ============ initial state + actions ============ */
 
   return {
@@ -927,6 +1007,12 @@ export const useApp = create<State>((set, get) => {
     feedScope: 'fof',
     feedFilters: { timeWindow: 'all', sort: 'soonest' },
     overlay: null,
+    squadFocusId: null,
+    pendingMessages: {},
+    // Tutorial sits off by default; the App-level trigger turns it on the
+    // first time the user lands in `authState === 'app'` and the local
+    // "wud:has-seen-tutorial" flag is missing.
+    showTutorial: false,
     toasts: [],
     authBusy: false,
     settings: {
@@ -1300,11 +1386,36 @@ export const useApp = create<State>((set, get) => {
       return !!f.category || !!f.customLabel || f.timeWindow !== 'all' || f.sort !== 'soonest' || !!f.includeLive;
     },
     openOverlay: (o) => {
-      set({ overlay: o });
+      // Closing the squads overlay also drops any pending focus target so
+      // a stale id can't hijack the next open.
+      const patch: Partial<State> = { overlay: o };
+      if (o !== 'squads') patch.squadFocusId = null;
+      set(patch);
       // Refresh the slice an overlay shows when it opens, so it's never stale.
       if (o === 'history') void refreshHistory();
       else if (o === 'squads') void refreshSquads();
       else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); }
+    },
+    setShowTutorial: (v) => {
+      // Hiding the tutorial is what marks it "seen" — that way both Skip
+      // and Get Started funnel through the same write, and a "Replay
+      // tutorial" tap from Settings clears the flag automatically by
+      // re-opening (then re-closing when the user finishes the replay).
+      if (!v) {
+        try { localStorage.setItem(TUTORIAL_SEEN_KEY, '1'); } catch { /* private mode */ }
+      }
+      set({ showTutorial: v });
+    },
+    openSquad: (squadId) => {
+      // Set the focus *before* mounting the overlay so SquadsScreen sees
+      // it in its initial render and skips the list view entirely.
+      set({ squadFocusId: squadId, overlay: 'squads' });
+      void refreshSquads();
+    },
+    consumeSquadFocus: () => {
+      const id = get().squadFocusId;
+      if (id) set({ squadFocusId: null });
+      return id;
     },
     setShowGoLiveSheet: (b) => set({ showGoLiveSheet: b }),
     setEditActivityId: (id) => set({ editActivityId: id }),
@@ -1443,7 +1554,7 @@ export const useApp = create<State>((set, get) => {
         meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, showPostSheet: false,
-        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null,
+        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, pendingMessages: {},
         feedFilters: { timeWindow: 'all', sort: 'soonest' },
         pendingSignup: null, authState: 'welcome',
       });
@@ -1459,7 +1570,7 @@ export const useApp = create<State>((set, get) => {
           meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
           notifications: [], squads: [],
           tab: 'feed', openActivityId: null, showPostSheet: false,
-          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null,
+          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, pendingMessages: {},
           feedFilters: { timeWindow: 'all', sort: 'soonest' },
           pendingSignup: null, authState: 'welcome',
         });
@@ -1616,18 +1727,48 @@ export const useApp = create<State>((set, get) => {
       });
     },
     sendSquadChat: (squadId, text) => {
-      if (!text.trim()) return;
-      void guard(async () => {
-        await chatApi.squadSend(squadId, text);
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const localId = uid();
+      addPending(`squad:${squadId}`, {
+        id: `pending-${localId}`,
+        authorId: get().meId,
+        at: Date.now(),
+        type: 'text',
+        text: trimmed,
+        pending: true,
+        localId,
+      });
+      void sendWithCleanup(`squad:${squadId}`, localId, async () => {
+        await chatApi.squadSend(squadId, trimmed);
         await refreshSquad(squadId);
       });
     },
     sendSquadChatPhoto: (squadId, file, caption) => {
-      void guard(async () => {
-        const { url } = await uploadApi.photo(file);
-        await chatApi.squadSendPhoto(squadId, url, caption);
-        await refreshSquad(squadId);
+      const localId = uid();
+      // Generate a store-owned blob URL for the optimistic photo bubble.
+      // Revoked alongside the placeholder when the server confirms (or fails).
+      const previewUrl = URL.createObjectURL(file);
+      addPending(`squad:${squadId}`, {
+        id: `pending-${localId}`,
+        authorId: get().meId,
+        at: Date.now(),
+        type: 'photo',
+        photoUrl: previewUrl,
+        text: caption,
+        pending: true,
+        localId,
       });
+      void sendWithCleanup(
+        `squad:${squadId}`,
+        localId,
+        async () => {
+          const { url } = await uploadApi.photo(file);
+          await chatApi.squadSendPhoto(squadId, url, caption);
+          await refreshSquad(squadId);
+        },
+        () => URL.revokeObjectURL(previewUrl),
+      );
     },
 
     /* ---- activities ---- */
@@ -1809,23 +1950,72 @@ export const useApp = create<State>((set, get) => {
     /* ---- chat ---- */
 
     sendChat: (activityId, text) => {
-      if (!text.trim()) return;
-      void guard(async () => {
-        await chatApi.send(activityId, text);
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const localId = uid();
+      addPending(`activity:${activityId}`, {
+        id: `pending-${localId}`,
+        authorId: get().meId,
+        at: Date.now(),
+        type: 'text',
+        text: trimmed,
+        pending: true,
+        localId,
+      });
+      void sendWithCleanup(`activity:${activityId}`, localId, async () => {
+        await chatApi.send(activityId, trimmed);
         await refreshActivity(activityId);
       });
     },
     sendChatPhoto: (activityId, file, caption) => {
-      void guard(async () => {
-        const { url } = await uploadApi.photo(file);
-        await chatApi.sendPhoto(activityId, url, caption);
-        await refreshActivity(activityId);
+      const localId = uid();
+      const previewUrl = URL.createObjectURL(file);
+      addPending(`activity:${activityId}`, {
+        id: `pending-${localId}`,
+        authorId: get().meId,
+        at: Date.now(),
+        type: 'photo',
+        photoUrl: previewUrl,
+        text: caption,
+        pending: true,
+        localId,
       });
+      void sendWithCleanup(
+        `activity:${activityId}`,
+        localId,
+        async () => {
+          const { url } = await uploadApi.photo(file);
+          await chatApi.sendPhoto(activityId, url, caption);
+          await refreshActivity(activityId);
+        },
+        () => URL.revokeObjectURL(previewUrl),
+      );
     },
     sendPoll: (activityId, question, optionTexts) => {
-      void guard(async () => {
+      const localId = uid();
+      // Close the composer right away so the optimistic poll bubble is
+      // visible in the chat instead of competing with the open sheet.
+      set({ pollComposerActivityId: null });
+      addPending(`activity:${activityId}`, {
+        id: `pending-${localId}`,
+        authorId: get().meId,
+        at: Date.now(),
+        type: 'poll',
+        // Fake option ids — they're only used until the server-issued poll
+        // arrives. The render layer treats pending polls as read-only.
+        poll: {
+          question,
+          options: optionTexts.map((text, i) => ({
+            id: `pending-opt-${i}`,
+            text,
+            voterIds: [],
+          })),
+        },
+        pending: true,
+        localId,
+      });
+      void sendWithCleanup(`activity:${activityId}`, localId, async () => {
         await chatApi.sendPoll(activityId, question, optionTexts);
-        set({ pollComposerActivityId: null });
         await refreshActivity(activityId);
       });
     },

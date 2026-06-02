@@ -84,7 +84,7 @@ to populate `ios/` and `android/`.
 - **Universal / App Links** (`https://your-domain.com/plan/<id>`) additionally
   need an Apple `apple-app-site-association` file and an Android
   `assetlinks.json` hosted on your domain, plus the Associated Domains
-  capability — configure these once you have a domain (DEPLOYMENT.md phase D).
+  capability — configure these once you have a domain.
 
 ## Before shipping to the stores
 
@@ -93,7 +93,7 @@ to populate `ios/` and `android/`.
   and Android's `applicationId`.
 - Set the marketing version + build number in Xcode / `android/app/build.gradle`.
 - Configure signing (Apple certificates & provisioning profiles; an Android
-  keystore). See `DEPLOYMENT.md` phase D.
+  keystore).
 - Orientation is locked to portrait on both platforms by design.
 
 ## Mobile readiness checklist

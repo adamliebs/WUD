@@ -8,7 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "start:tsx": "tsx src/index.ts",
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/db/migrations dist/db/",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && cp -R src/db/migrations dist/db/ && cp -R src/public dist/public",
     "typecheck": "tsc --noEmit",
     "migrate": "node dist/db/migrate-cli.js",
     "migrate:dev": "tsx src/db/migrate-cli.ts",

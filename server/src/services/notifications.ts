@@ -68,9 +68,34 @@ export function createNotification(input: {
   publish({ channel: `user:${input.userId}`, type: 'notification.created', data: notification });
   // Fire-and-forget; createNotification stays sync. Errors are swallowed by
   // dispatchPush itself and surface only in logs (push failures should never
-  // break the originating action).
-  dispatchPush(input.userId, input.type, input.body, input.activityId);
+  // break the originating action). Passing fromId lets dispatchPush use the
+  // sender's name in the lockscreen title — e.g. "Adam pinged you" instead
+  // of the generic "Ping".
+  dispatchPush(input.userId, input.type, input.body, input.activityId, input.fromId);
   return notification;
+}
+
+/**
+ * Sender-aware lockscreen title — preferred over the generic bannerTitle
+ * when the notification has an identifiable actor. Returning null tells
+ * the caller to fall back to bannerTitle.
+ *
+ * For most types the body ALREADY embeds the sender's name ("Adam is going
+ * to..."), so we only override the title where the generic banner is the
+ * weakest — pings (body is just "👋") and chat messages (body is just the
+ * preview text). For everything else the generic title + name-in-body
+ * combo reads cleaner than duplicating the name across both fields.
+ */
+function composePushTitle(type: NotificationType, fromName: string | null | undefined): string | null {
+  if (!fromName) return null;
+  switch (type) {
+    case 'ping':            return `${fromName} pinged you`;
+    case 'chat_message':    return fromName;
+    case 'invite':          return `${fromName} wants to be your friend`;
+    case 'friend_accepted': return `${fromName} accepted your request`;
+    case 'host_offer':      return `You're up to host`;
+    default:                return null;
+  }
 }
 
 /**
@@ -112,6 +137,7 @@ function dispatchPush(
   type: NotificationType,
   body: string,
   activityId?: string,
+  fromId?: string,
 ): void {
   const settings = getSettings(userId);
   if (!shouldPushCategory(type, settings)) return;
@@ -120,7 +146,15 @@ function dispatchPush(
   );
   if (devices.length === 0) return;
 
-  const title = bannerTitle(type);
+  // Compose the lockscreen title. When we know the sender, prefer their
+  // name (or a name-anchored phrase like "Adam pinged you") over the
+  // generic per-type banner ("Ping", "New message", etc) — users want to
+  // see WHO the notification is from at a glance, especially on iOS where
+  // multiple banners stack and the type alone tells them nothing.
+  const fromName = fromId
+    ? q.get<{ name: string }>('SELECT name FROM users WHERE id = ?', fromId)?.name
+    : null;
+  const title = composePushTitle(type, fromName) ?? bannerTitle(type);
   // Deep-link the user to the plan when the notification has one attached, so
   // tapping the banner lands them on the activity detail instead of just
   // opening the app.

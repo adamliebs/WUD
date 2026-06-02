@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bell, ChevronLeft, Download, FileText, Heart, LogOut, MessageCircle,
-  Megaphone, ShieldCheck, ShieldOff, Trash2, UserCircle, UserPlus, Zap, Clock,
+  Megaphone, PlayCircle, ShieldCheck, ShieldOff, Trash2, UserCircle, UserPlus, Zap, Clock,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { SwipeBackPage } from '../components/SwipeBackPage';
@@ -121,6 +121,8 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
   const settings = useApp(s => s.settings);
   const updateSettings = useApp(s => s.updateSettings);
   const signOut = useApp(s => s.signOut);
+  const setShowTutorial = useApp(s => s.setShowTutorial);
+  const openOverlay = useApp(s => s.openOverlay);
 
   const set = <K extends keyof AppSettings>(k: K) => (v: AppSettings[K]) =>
     updateSettings({ [k]: v } as Partial<AppSettings>);
@@ -302,6 +304,19 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
 
       {/* About */}
       <Group title="About">
+        <Row
+          icon={<PlayCircle size={16} />}
+          label="Replay tutorial"
+          sub="Swipe through the intro again"
+          chevron
+          onClick={() => {
+            // Close Settings first so the tutorial doesn't render on top
+            // of a still-mounted Settings sheet — the underlying app is
+            // a cleaner backdrop for the replay.
+            openOverlay(null);
+            setShowTutorial(true);
+          }}
+        />
         <Row
           icon={<UserCircle size={16} />}
           label="Version"
