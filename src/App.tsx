@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
-import { useApp } from './store';
+import { hasSeenTutorial, useApp } from './store';
 import { DismissKeyboardOnSwipe } from './components/DismissKeyboardOnSwipe';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoadingOverlay } from './components/LoadingOverlay';
@@ -19,15 +19,30 @@ import { OverlayHost } from './screens/OverlayHost';
 import { PollComposerSheet } from './screens/PollComposerSheet';
 import { ReportSheet } from './screens/ReportSheet';
 import { SplashScreen } from './screens/SplashScreen';
+import { TutorialScreen } from './screens/TutorialScreen';
 import { VerifyEmailScreen } from './screens/VerifyEmailScreen';
 import { WelcomeScreen } from './screens/WelcomeScreen';
 
 function App() {
   const authState = useApp(s => s.authState);
   const init = useApp(s => s.init);
+  const showTutorial = useApp(s => s.showTutorial);
+  const setShowTutorial = useApp(s => s.setShowTutorial);
 
   // On mount, resume a saved session (if a token is in localStorage).
   useEffect(() => { init(); }, [init]);
+
+  // First-run tutorial trigger — fires when the user first reaches the
+  // signed-in app on a device that hasn't seen the tutorial before. Stored
+  // per-device (localStorage) rather than per-user, so a returning user on
+  // a fresh install gets the refresher and the same account on multiple
+  // devices each see it once. The `setShowTutorial(false)` write inside
+  // the tutorial flips the localStorage flag, so this useEffect won't fire
+  // again after Skip / Get started.
+  useEffect(() => {
+    if (authState !== 'app') return;
+    if (!hasSeenTutorial()) setShowTutorial(true);
+  }, [authState, setShowTutorial]);
 
   return (
     <PhoneFrame>
@@ -40,6 +55,13 @@ function App() {
             {authState === 'onboarding'  && <OnboardingScreen  key="onboarding" />}
             {authState === 'verifyEmail' && <VerifyEmailScreen key="verifyEmail" />}
             {authState === 'app'         && <MainApp           key="main" />}
+          </AnimatePresence>
+
+          {/* First-run + replayable tutorial — sits above everything else
+              (including overlays / sheets) so a user replaying it from
+              Settings sees it on top of the Settings screen. */}
+          <AnimatePresence>
+            {showTutorial && authState === 'app' && <TutorialScreen key="tutorial" />}
           </AnimatePresence>
 
           {/* Toaster is global so auth flows can use it too. */}

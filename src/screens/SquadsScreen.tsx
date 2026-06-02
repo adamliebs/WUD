@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, Loader2, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
@@ -620,22 +620,52 @@ function RemoveMemberButton({ onConfirm }: { onConfirm: () => void }) {
 
 /* ─────────────────────────── Chat tab ─────────────────────────── */
 
+/** Stable empty reference — same purpose as EMPTY_PENDING in
+ *  ActivityDetailSheet (avoids the useSyncExternalStore infinite loop
+ *  when the slice is missing). */
+const EMPTY_PENDING: import('../types').ChatMessage[] = [];
+
+/** Concat the confirmed squad chat with optimistic placeholders, deduping
+ *  by author + content + time window (the realtime push lands a beat
+ *  before the send-side cleanup, so a brief overlap is possible). Mirrors
+ *  mergePending() in ActivityDetailSheet.tsx. */
+function mergeSquadPending(
+  chat: import('../types').ChatMessage[],
+  pending: import('../types').ChatMessage[],
+): import('../types').ChatMessage[] {
+  if (pending.length === 0) return chat;
+  const tail = chat.slice(-Math.max(pending.length * 2, 6));
+  const live = pending.filter(p =>
+    !tail.some(c =>
+      c.authorId === p.authorId &&
+      (c.type ?? 'text') === (p.type ?? 'text') &&
+      (c.text ?? '') === (p.text ?? '') &&
+      Math.abs(c.at - p.at) < 30_000,
+    ),
+  );
+  return [...chat, ...live];
+}
+
 function SquadChatPane({ squadId }: { squadId: string }) {
   const sq = useApp(s => s.squads.find(x => x.id === squadId));
   const meId = useApp(s => s.meId);
   const userById = useApp(s => s.userById);
   const sendText = useApp(s => s.sendSquadChat);
   const sendPhoto = useApp(s => s.sendSquadChatPhoto);
+  // Same optimistic placeholder pattern as activity chat — see ChatPane in
+  // ActivityDetailSheet.tsx for the full rationale.
+  const pendingMessages = useApp(s => s.pendingMessages[`squad:${squadId}`] ?? EMPTY_PENDING);
   const [draft, setDraft] = useState('');
   const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = sq?.chat.length ?? 0;
+  const pendingLen = pendingMessages.length;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [chatLen]);
+  }, [chatLen, pendingLen]);
 
   // Revoke the staged photo's preview URL when it's replaced or the pane closes.
   useEffect(() => () => {
@@ -674,25 +704,31 @@ function SquadChatPane({ squadId }: { squadId: string }) {
       className="absolute inset-0 flex flex-col"
     >
       <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-3">
-        {sq.chat.length === 0 ? (
+        {sq.chat.length === 0 && pendingMessages.length === 0 ? (
           <div className="text-center text-zinc-500 text-sm mt-10">
             No messages yet — say hi to the squad 👋
           </div>
         ) : (
           <div className="flex flex-col gap-2 pt-2">
-            {sq.chat.map(m => {
+            {mergeSquadPending(sq.chat, pendingMessages).map(m => {
               const u = userById(m.authorId);
               const mine = m.authorId === meId;
               const isPhoto = m.type === 'photo' && m.photoUrl;
+              const isPending = m.pending === true;
               return (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  animate={{ opacity: isPending ? 0.65 : 1, y: 0, scale: 1 }}
                   transition={{ type: 'spring', stiffness: 380, damping: 26 }}
                   className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'}`}
                 >
                   {!mine && <Avatar user={u} size={26} />}
+                  {isPending && mine && (
+                    <span aria-label="Sending" className="text-zinc-400">
+                      <Loader2 size={12} className="animate-spin" />
+                    </span>
+                  )}
                   {isPhoto ? (
                     <div className={`max-w-[78%] overflow-hidden rounded-2xl
                                     ${mine ? 'rounded-br-sm' : 'rounded-bl-sm'}

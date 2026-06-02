@@ -1,6 +1,6 @@
 import { burst as confetti } from '../lib/confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, BarChart3, Camera, Clock, Crown, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Camera, Clock, Crown, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -680,6 +680,40 @@ async function shareActivity(
   }
 }
 
+/** Stable empty reference for the pendingMessages selector. A fresh `[]`
+ *  literal inside `useApp(...)` makes React's useSyncExternalStore think
+ *  the snapshot changed on every render — getSnapshot warning + infinite
+ *  loop. Returning the same array when the slice is missing avoids both. */
+const EMPTY_PENDING: import('../types').ChatMessage[] = [];
+
+/** Combine the canonical chat list with optimistic placeholders, deduping
+ *  any placeholder whose content the server has already echoed back. The
+ *  brief window where both are present comes from the realtime push (which
+ *  refreshes activity.chat) arriving a few ms before our send-side cleanup;
+ *  matching on author + content + time window hides the duplicate without
+ *  needing the server to know the client's localId. */
+function mergePending(
+  chat: import('../types').ChatMessage[],
+  pending: import('../types').ChatMessage[],
+): import('../types').ChatMessage[] {
+  if (pending.length === 0) return chat;
+  // Only check the tail — confirmed messages from way back can't possibly
+  // match a placeholder that was just sent.
+  const tail = chat.slice(-Math.max(pending.length * 2, 6));
+  const live = pending.filter(p =>
+    !tail.some(c =>
+      c.authorId === p.authorId &&
+      (c.type ?? 'text') === (p.type ?? 'text') &&
+      (c.text ?? '') === (p.text ?? '') &&
+      // Same type → either both text/poll (no photoUrl), or both photo. We
+      // can't compare photo URLs because the server returns a different URL
+      // from the local blob: URL, so trust author + caption + time window.
+      Math.abs(c.at - p.at) < 30_000,
+    ),
+  );
+  return [...chat, ...live];
+}
+
 function looksLikeShareCancel(e: unknown): boolean {
   const msg = (e as { message?: string } | null)?.message?.toLowerCase() ?? '';
   return msg.includes('cancel') || msg.includes('abort');
@@ -804,6 +838,10 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
   const sendChat = useApp(s => s.sendChat);
   const sendChatPhoto = useApp(s => s.sendChatPhoto);
   const openPollComposer = useApp(s => s.setPollComposerActivityId);
+  // Optimistic placeholders queued by sendChat / sendChatPhoto / sendPoll —
+  // rendered alongside the canonical chat list while their API calls are in
+  // flight, then cleared by the store once the server confirms.
+  const pendingMessages = useApp(s => s.pendingMessages[`activity:${activityId}`] ?? EMPTY_PENDING);
   const [draft, setDraft] = useState('');
   const [pendingPhoto, setPendingPhoto] = useState<{ file: File; preview: string } | null>(null);
   // Photo viewer state — null when closed; the resolved media URL when open.
@@ -811,10 +849,11 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
   const scrollRef = useRef<HTMLDivElement>(null);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const chatLen = activity?.chat.length ?? 0;
+  const pendingLen = pendingMessages.length;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [chatLen]);
+  }, [chatLen, pendingLen]);
 
   // Revoke the staged photo's preview URL when it's replaced or the pane closes.
   useEffect(() => () => {
@@ -855,13 +894,13 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
       className="absolute inset-0 flex flex-col"
     >
       <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-3">
-        {activity.chat.length === 0 && (
+        {activity.chat.length === 0 && pendingMessages.length === 0 && (
           <div className="text-center text-zinc-500 text-sm mt-10">
             No messages yet — say hi 👋
           </div>
         )}
         <div className="flex flex-col gap-2 pt-2">
-          {activity.chat.map(m => {
+          {mergePending(activity.chat, pendingMessages).map(m => {
             if (m.authorId === 'system') {
               return (
                 <div key={m.id} className="self-center text-[11px] text-zinc-400 bg-white/5 border border-white/10 px-3 py-1 rounded-full">
@@ -873,15 +912,25 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
             const mine = m.authorId === me.id;
             const isPhoto = m.type === 'photo' && m.photoUrl;
             const isPoll  = m.type === 'poll' && m.poll;
+            const isPending = m.pending === true;
             return (
               <motion.div
                 key={m.id}
                 initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
+                animate={{ opacity: isPending ? 0.65 : 1, y: 0, scale: 1 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 26 }}
                 className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'}`}
               >
                 {!mine && !isPoll && <Avatar user={u} size={26} />}
+                {/* Sending spinner — sits on the OPPOSITE side of the bubble
+                    from the avatar so it's not visually competing with the
+                    sender stamp. For mine messages (right-aligned) it goes
+                    on the left of the bubble. */}
+                {isPending && mine && (
+                  <span aria-label="Sending" className="text-zinc-400">
+                    <Loader2 size={12} className="animate-spin" />
+                  </span>
+                )}
                 {isPoll ? (
                   /* Polls need more room than text bubbles — give them ~94%
                      of the chat width so option labels + vote counters fit cleanly. */
