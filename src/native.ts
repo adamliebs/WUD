@@ -74,20 +74,41 @@ let pushTokenSent: string | null = null;
  */
 async function registerForPush(): Promise<void> {
   if (!isNative) return;
+  const plat = Capacitor.getPlatform();
   try {
+    // Step 1 — system permission. iOS shows the OS dialog the first time.
+    // Logged because "permission denied" is one of the most common reasons
+    // pushes never arrive in TestFlight; the Xcode console makes it obvious.
     const perm = await FirebaseMessaging.requestPermissions();
+    console.log(`[push] permission (${plat}):`, perm.receive);
     if (perm.receive !== 'granted') return;
-    // Picks up the FCM registration token. On iOS this happens after the
-    // OS hands APNs an APNs token, which Firebase swaps for an FCM token.
+
+    // Step 2 — FCM token. On iOS, this resolves AFTER APNs hands the OS an
+    // APNs device token. If Firebase has no APNs auth key uploaded to the
+    // project (Firebase Console → Project Settings → Cloud Messaging),
+    // getToken() may resolve with an empty string — that's the silent
+    // failure mode that makes iOS pushes vanish into the void while
+    // Android keeps working. Logging the token (truncated) confirms
+    // whether we cleared this hurdle.
     const { token } = await FirebaseMessaging.getToken();
-    if (!token || token === pushTokenSent) return;
-    // Only attempt the POST if we look authenticated — store init() resumes
-    // the session before initNative()'s app-state listener fires this.
-    if (useApp.getState().authState !== 'app') return;
-    await meApi.registerDevice(Capacitor.getPlatform() as 'ios' | 'android', token);
+    if (!token) {
+      console.warn(`[push] getToken returned empty on ${plat} — likely missing APNs key in Firebase Console`);
+      return;
+    }
+    console.log(`[push] token (${plat}):`, token.slice(0, 16) + '…');
+    if (token === pushTokenSent) return;
+
+    // Step 3 — register with the WUD backend so it can target this device.
+    // Skipped until the user is signed in (registerDevice requires auth).
+    if (useApp.getState().authState !== 'app') {
+      console.log('[push] deferring registerDevice — not signed in yet');
+      return;
+    }
+    await meApi.registerDevice(plat as 'ios' | 'android', token);
     pushTokenSent = token;
+    console.log(`[push] registered device with backend (${plat})`);
   } catch (err) {
-    console.warn('[push] registration failed', err);
+    console.warn(`[push] registration failed on ${plat}`, err);
   }
 }
 

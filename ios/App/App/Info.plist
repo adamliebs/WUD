@@ -60,6 +60,8 @@
 	<string>WUD checks your contacts to find friends already on WUD. Only matched contacts are shown — nothing else is uploaded or stored.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>WUD connects to a development server on your local network.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>WUD saves photos from plans + chats to your Photos library when you tap Save.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>WUD lets you choose photos from your library for your profile, plans and chats.</string>
 	<key>UIBackgroundModes</key>
