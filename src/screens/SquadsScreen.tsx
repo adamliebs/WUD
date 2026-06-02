@@ -43,7 +43,14 @@ const pageTransition = { type: 'spring' as const, stiffness: 360, damping: 36 };
 export function SquadsScreen() {
   const openOverlay = useApp(s => s.openOverlay);
   const closeOverlay = () => openOverlay(null);
-  const [mode, setMode] = useState<Mode>({ type: 'list' });
+  // If the overlay was opened with a focus target (Feed rail tap), drop
+  // straight to that squad's detail page; otherwise land on the list.
+  // Consumed lazily inside useState's initializer so the focus is cleared
+  // exactly once, before the first render commits.
+  const [mode, setMode] = useState<Mode>(() => {
+    const focusId = useApp.getState().consumeSquadFocus();
+    return focusId ? { type: 'detail', squadId: focusId, tab: 'plans' } : { type: 'list' };
+  });
   const [direction, setDirection] = useState<1 | -1>(1);
 
   // Direction is set at navigation time from the depth delta, so each

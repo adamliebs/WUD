@@ -18,6 +18,7 @@ export function SquadsRail() {
     s.squads.filter(sq => sq.hostId === s.meId || sq.memberIds.includes(s.meId)),
   ));
   const openOverlay = useApp(s => s.openOverlay);
+  const openSquad = useApp(s => s.openSquad);
 
   // Empty state — single nudge card. Discoverable but not pushy.
   if (squads.length === 0) {
@@ -84,7 +85,7 @@ export function SquadsRail() {
             <motion.button
               key={sq.id}
               whileTap={{ scale: 0.95 }}
-              onClick={() => openOverlay('squads')}
+              onClick={() => openSquad(sq.id)}
               className="shrink-0 h-9 inline-flex items-center gap-1.5 px-3 rounded-full
                          bg-white/5 border border-white/10 text-white text-[12px] font-semibold
                          hover:bg-white/10 transition"

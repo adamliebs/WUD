@@ -52,7 +52,7 @@ services:
       - key: JWT_SECRET
         sync: false          # generate with: openssl rand -base64 48
       - key: CORS_ORIGIN
-        sync: false          # see DEPLOYMENT.md for the values to paste
+        sync: false          # comma-separated origins (the web app + native shell)
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false          # paste the entire JSON file contents
       - key: SENTRY_DSN

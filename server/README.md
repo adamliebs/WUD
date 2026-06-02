@@ -1,7 +1,7 @@
 # WUD Backend
 
 The server tier for WUD — REST API, WebSocket realtime gateway, and a background
-scheduler. Implements the backend specified in [`../SRS.md`](../SRS.md).
+scheduler. See [`../README.md`](../README.md) for the product overview.
 
 ## Stack
 
@@ -78,7 +78,9 @@ src/
 ## API
 
 Base path `/v1`. All routes except `/v1/auth/*` and `/v1/health*` require
-`Authorization: Bearer <accessToken>`. See `../SRS.md` §6 for the full surface.
+`Authorization: Bearer <accessToken>`. The handlers are organised by domain
+under `src/routes/` (`activities`, `auth`, `bootstrap`, `chat`, `floats`,
+`misc`, `safety`, `social`, `uploads`, `users`).
 
 - `GET /v1/health` — liveness · `GET /v1/health/ready` — readiness (DB ping)
 - `POST /v1/auth/email/{register,login}` · `/oauth/:provider` · `/token/refresh` · `/logout`
@@ -126,7 +128,7 @@ the host at the `:latest` tag. Pull requests run
 ## Notes on production gaps
 
 These remain deliberate, documented stubs (they need external paid
-credentials — tracked in [`../DEPLOYMENT.md`](../DEPLOYMENT.md) phase C):
+credentials):
 
 - **OAuth provider verification** — `POST /v1/auth/oauth/:provider` accepts an
   already-trusted `subject`. Production must verify the provider's ID token /

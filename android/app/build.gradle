@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+// Release signing creds live in android/keystore.properties (gitignored).
+// Missing file → release signing is skipped (debug builds still work). This
+// lets a fresh clone build + run debug without forcing every contributor to
+// own the upload key.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "app.wud.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +26,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                // Resolve relative storeFile against android/ so the gradle
+                // working dir (android/app) doesn't trip up the path.
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Only wire the signing config when the props file is present;
+            // otherwise gradle errors out before debug builds can even start.
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

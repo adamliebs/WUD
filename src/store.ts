@@ -127,6 +127,11 @@ interface State {
   showPostSheet: boolean;
   feedScope: FeedScope;
   overlay: Overlay;
+  /** When the Squads overlay opens, jump straight to this squad's detail
+   *  page instead of the squads list. Set by the Feed's squads rail so
+   *  tapping a chip lands on that squad, not the index. Cleared by
+   *  SquadsScreen once consumed. */
+  squadFocusId: string | null;
   toasts: Toast[];
   settings: AppSettings;
   /** True while an auth or signup flow is in flight (Apple/Google/email
@@ -208,6 +213,12 @@ interface State {
   /** Top 3 events picked for me — friend overlap × time proximity × category affinity. */
   rankedForYouEvents: () => Activity[];
   openOverlay: (o: Overlay) => void;
+  /** Open the Squads overlay focused on a specific squad's detail page. */
+  openSquad: (squadId: string) => void;
+  /** Consume + clear the focused-squad target (called by SquadsScreen once
+   *  it has navigated to it, so re-opening the overlay later goes to the
+   *  list again). */
+  consumeSquadFocus: () => string | null;
 
   /** Incoming friend requests awaiting my response. */
   friendRequests: { id: string; from: User; at: number }[];
@@ -927,6 +938,7 @@ export const useApp = create<State>((set, get) => {
     feedScope: 'fof',
     feedFilters: { timeWindow: 'all', sort: 'soonest' },
     overlay: null,
+    squadFocusId: null,
     toasts: [],
     authBusy: false,
     settings: {
@@ -1300,11 +1312,26 @@ export const useApp = create<State>((set, get) => {
       return !!f.category || !!f.customLabel || f.timeWindow !== 'all' || f.sort !== 'soonest' || !!f.includeLive;
     },
     openOverlay: (o) => {
-      set({ overlay: o });
+      // Closing the squads overlay also drops any pending focus target so
+      // a stale id can't hijack the next open.
+      const patch: Partial<State> = { overlay: o };
+      if (o !== 'squads') patch.squadFocusId = null;
+      set(patch);
       // Refresh the slice an overlay shows when it opens, so it's never stale.
       if (o === 'history') void refreshHistory();
       else if (o === 'squads') void refreshSquads();
       else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); }
+    },
+    openSquad: (squadId) => {
+      // Set the focus *before* mounting the overlay so SquadsScreen sees
+      // it in its initial render and skips the list view entirely.
+      set({ squadFocusId: squadId, overlay: 'squads' });
+      void refreshSquads();
+    },
+    consumeSquadFocus: () => {
+      const id = get().squadFocusId;
+      if (id) set({ squadFocusId: null });
+      return id;
     },
     setShowGoLiveSheet: (b) => set({ showGoLiveSheet: b }),
     setEditActivityId: (id) => set({ editActivityId: id }),
@@ -1443,7 +1470,7 @@ export const useApp = create<State>((set, get) => {
         meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, showPostSheet: false,
-        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null,
+        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null,
         feedFilters: { timeWindow: 'all', sort: 'soonest' },
         pendingSignup: null, authState: 'welcome',
       });
@@ -1459,7 +1486,7 @@ export const useApp = create<State>((set, get) => {
           meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
           notifications: [], squads: [],
           tab: 'feed', openActivityId: null, showPostSheet: false,
-          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null,
+          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null,
           feedFilters: { timeWindow: 'all', sort: 'soonest' },
           pendingSignup: null, authState: 'welcome',
         });

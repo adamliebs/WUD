@@ -3,6 +3,8 @@ import { sentryEnabled } from './instrument.js';
 
 import { createServer } from 'node:http';
 import { mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import express from 'express';
@@ -94,6 +96,23 @@ app.use(express.json({ limit: config.bodyLimit }));
 app.use(globalLimiter);
 
 /* --- public routes -------------------------------------------------------- */
+
+// Marketing + legal pages served from src/public/ (privacy + terms are
+// required by the Google OAuth consent screen and by Play Console; the
+// landing at / gives Google + reviewers something non-blank to look at when
+// they click the home URL we hand them).
+//
+// Resolved relative to the compiled JS file so it works the same in dev
+// (`tsx src/index.ts`) and prod (`node dist/index.js`) — the build step
+// copies src/public/ to dist/public/ alongside the source tree.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir, { index: 'index.html', extensions: ['html'] }));
+// Clean URLs for the two surfaces that get pasted into external forms — keep
+// these even though express.static's `extensions` covers them, so a
+// `/privacy/` trailing slash also resolves the same way.
+app.get('/privacy', (_req, res) => res.sendFile(path.join(publicDir, 'privacy.html')));
+app.get('/terms', (_req, res) => res.sendFile(path.join(publicDir, 'terms.html')));
 
 app.use('/v1/auth', authRouter);
 
