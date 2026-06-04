@@ -4,7 +4,8 @@ import { db } from '../db/index.js';
 import { forbidden, notFound } from '../lib/errors.js';
 import { handler, optionalString, requireString } from '../lib/http.js';
 import {
-  messagesForActivity, messagesForSquad, sendPhoto, sendPoll, sendText, voteInPoll,
+  messagesForActivity, messagesForSquad, sendPhoto, sendPoll, sendText,
+  toggleMessageReaction, voteInPoll,
 } from '../services/chat.js';
 import { canSeeActivity, getActivityRow, isParticipant } from '../services/activities.js';
 import { isInSquad } from '../services/social.js';
@@ -70,6 +71,28 @@ chatRouter.post('/squads/:id/messages', handler((req, res) => {
 }));
 
 /* ---- poll voting ---- */
+
+/* ---- message reactions ---- */
+
+chatRouter.put('/messages/:messageId/reactions', handler((req, res) => {
+  // Same visibility check as poll voting: reacting on a message in an
+  // activity chat requires you to be a participant (host or joiner); on a
+  // squad message you must be a squad member. Stays in line with chat-write
+  // authorization so a non-participant can't sneak content in via emoji.
+  const parent = db.prepare(
+    'SELECT activity_id, squad_id FROM messages WHERE id = ?',
+  ).get(req.params.messageId) as { activity_id: string | null; squad_id: string | null } | undefined;
+  if (!parent) throw notFound('MESSAGE_NOT_FOUND', 'Message not found');
+
+  const userId = uid(req);
+  if (parent.activity_id) assertCanPostActivity(userId, parent.activity_id);
+  else if (parent.squad_id) assertSquadMember(userId, parent.squad_id);
+
+  const message = toggleMessageReaction(
+    req.params.messageId, userId, requireString(req.body, 'emoji'),
+  );
+  res.json({ message });
+}));
 
 chatRouter.put('/polls/:messageId/vote', handler((req, res) => {
   // Authorization: the voter must be a participant of the poll's parent thread.

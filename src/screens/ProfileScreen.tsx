@@ -24,7 +24,7 @@ export function ProfileScreen() {
   return (
     <div className="h-full flex flex-col relative overflow-hidden">
       <MeBackgroundOrbs />
-      <div className="relative flex-1 overflow-y-auto no-scrollbar pb-32">
+      <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar pb-32">
         {/* Hero gradient — uses the color chosen in Edit profile */}
         <div className={`relative h-44 bg-gradient-to-br ${me.color} transition-colors`}>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.35),transparent_55%)]" />
@@ -111,6 +111,34 @@ export function ProfileScreen() {
           <SquadsRow />
         </div>
 
+        {/* New friend request banner — sits directly below the Edit /
+            Squads block so the user spots a pending request before they
+            even scroll to Upcoming plans. */}
+        {friendRequests.length > 0 && (
+          <motion.button
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => openOverlay('friends')}
+            className="mt-4 mx-4 flex w-[calc(100%-2rem)] items-center gap-3 p-3 rounded-2xl
+                       bg-gradient-to-br from-rose-500/20 to-orange-500/15 border border-rose-400/35 text-left"
+          >
+            <div className="h-9 w-9 rounded-full grid place-items-center shrink-0
+                            bg-gradient-to-br from-rose-500 to-orange-500 text-white">
+              <UserPlus size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-white">
+                {friendRequests.length} new friend request{friendRequests.length === 1 ? '' : 's'}
+              </div>
+              <div className="text-[11px] text-rose-200/80">Tap to review and respond</div>
+            </div>
+            <span className="grid h-6 w-6 place-items-center rounded-full bg-rose-500 text-[11px] font-black text-white shrink-0">
+              {friendRequests.length}
+            </span>
+          </motion.button>
+        )}
+
         {/* Upcoming plans */}
         <Section title="Upcoming plans">
           {myUpcomingPosts.length === 0 && myUpcomingJoins.length === 0 ? (
@@ -162,32 +190,6 @@ export function ProfileScreen() {
             </div>
           )}
         </Section>
-
-        {/* New friend request banner — sits right above the Friends section. */}
-        {friendRequests.length > 0 && (
-          <motion.button
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => openOverlay('friends')}
-            className="mt-6 mx-4 flex w-[calc(100%-2rem)] items-center gap-3 p-3 rounded-2xl
-                       bg-gradient-to-br from-rose-500/20 to-orange-500/15 border border-rose-400/35 text-left"
-          >
-            <div className="h-9 w-9 rounded-full grid place-items-center shrink-0
-                            bg-gradient-to-br from-rose-500 to-orange-500 text-white">
-              <UserPlus size={16} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-white">
-                {friendRequests.length} new friend request{friendRequests.length === 1 ? '' : 's'}
-              </div>
-              <div className="text-[11px] text-rose-200/80">Tap to review and respond</div>
-            </div>
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-rose-500 text-[11px] font-black text-white shrink-0">
-              {friendRequests.length}
-            </span>
-          </motion.button>
-        )}
 
         {/* Friends */}
         <div className="mt-6">

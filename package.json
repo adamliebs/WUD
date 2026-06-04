@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "gen:icons": "node scripts/gen-icons.mjs && capacitor-assets generate",
-    "cap:sync": "node scripts/sync-lan-ip.mjs && npm run build && cap sync && node scripts/fix-spm-conflict.mjs",
+    "cap:sync": "node scripts/sync-lan-ip.mjs && npm run build && cap sync && node scripts/fix-spm-conflict.mjs && node scripts/register-local-plugins.mjs",
     "cap:ios": "npm run cap:sync && cap open ios",
     "cap:android": "npm run cap:sync && cap open android",
     "postinstall": "node scripts/fix-spm-conflict.mjs"

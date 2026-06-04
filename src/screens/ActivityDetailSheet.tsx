@@ -1,6 +1,6 @@
 import { burst as confetti } from '../lib/confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, BarChart3, Camera, Clock, Crown, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarPlus, Camera, Clock, Crown, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, SmilePlus, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -328,6 +328,22 @@ function Inner({ activityId }: { activityId: string }) {
                   <SquadTagRow squadIds={activity.squadIds} isOpenInvite={activity.isOpenInvite} />
                 )}
               </div>
+
+              {/* Add to calendar — exports an .ics that drops the plan into
+                  the user's native calendar app. Visible to anyone viewing
+                  the plan (not just attendees); hidden once the plan is
+                  over since exporting a past event isn't useful. */}
+              {!over && (
+                <button
+                  onClick={() => void addToCalendar(activity, host.name)}
+                  className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
+                             text-sm font-bold text-zinc-100 bg-white/5 border border-white/10
+                             hover:bg-white/10 active:scale-[0.99] transition"
+                >
+                  <CalendarPlus size={16} className="text-rose-300" />
+                  Add to calendar
+                </button>
+              )}
 
               {/* Reminder — show when participating + not over */}
               {(hasJoined || isHost) && !over && (
@@ -680,6 +696,228 @@ async function shareActivity(
   }
 }
 
+/**
+ * Build an RFC-5545 VCALENDAR string for an activity. Returned as a single
+ * UTF-8 string ready to write to disk; CRLF line endings are required by the
+ * spec and respected by every modern calendar app (Apple, Google, Outlook).
+ */
+function activityToIcs(activity: import('../types').Activity, hostName: string): string {
+  const esc = (s: string) =>
+    // ICS text fields require these four characters to be escaped (per
+    // RFC 5545 §3.3.11). Order matters — backslash first, the rest after.
+    s.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+  const ts = (t: number) => {
+    const d = new Date(t);
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+  };
+  const url = `https://app.wud.app/plan/${activity.id}`;
+  const description = [
+    `${hostName}'s plan on WUD`,
+    activity.description ?? '',
+    url,
+  ].filter(Boolean).join('\n\n');
+
+  const lines: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//WUD//WUD App//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${activity.id}@wud.app`,
+    `DTSTAMP:${ts(Date.now())}`,
+    `DTSTART:${ts(activity.startsAt)}`,
+    `DTEND:${ts(activity.endsAt)}`,
+    `SUMMARY:${esc(activity.title)}`,
+    `DESCRIPTION:${esc(description)}`,
+    `URL:${url}`,
+  ];
+  if (activity.place) lines.push(`LOCATION:${esc(activity.place)}`);
+  // Map our recurrence variants to iCalendar RRULE so the user's calendar app
+  // schedules the same cadence — weekly / biweekly / daily.
+  if (activity.recurrence) {
+    const days = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    if (activity.recurrence.freq === 'daily') {
+      lines.push('RRULE:FREQ=DAILY');
+    } else if (activity.recurrence.freq === 'weekly') {
+      lines.push(`RRULE:FREQ=WEEKLY;BYDAY=${days[activity.recurrence.weekday]}`);
+    } else if (activity.recurrence.freq === 'biweekly') {
+      lines.push(`RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=${days[activity.recurrence.weekday]}`);
+    }
+  }
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+/**
+ * Open the user's native calendar at a prefilled new-event sheet for this
+ * plan. On native (iOS/Android) we go through our AddToCalendar plugin
+ * which uses EventKit's editor view on iOS and ACTION_INSERT on Android —
+ * the user sees their calendar app's normal "add event" UI with everything
+ * filled in. On web we fall back to downloading an .ics file the user can
+ * open in their desktop calendar app.
+ */
+async function addToCalendar(activity: import('../types').Activity, hostName: string): Promise<void> {
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (Capacitor.isNativePlatform()) {
+      const { AddToCalendar } = await import('../lib/add-to-calendar');
+      const planUrl = `https://app.wud.app/plan/${activity.id}`;
+      const description = [
+        `${hostName}'s plan on WUD`,
+        activity.description ?? '',
+      ].filter(Boolean).join('\n\n');
+      const result = await AddToCalendar.open({
+        title: activity.title,
+        description,
+        location: activity.place || undefined,
+        startsAt: activity.startsAt,
+        endsAt: activity.endsAt,
+        url: planUrl,
+      });
+      if (result.saved) {
+        useApp.getState().pushToast('Added to your calendar', 'success');
+      }
+      return;
+    }
+  } catch (e) {
+    const msg = (e as { message?: string } | null)?.message ?? '';
+    if (/permission/i.test(msg)) {
+      useApp.getState().pushToast('Allow Calendar access in Settings to add events', 'warn');
+      return;
+    }
+    // Plugin not installed on this build (older client, web preview) — fall
+    // through to the .ics download path.
+  }
+
+  // Web fallback — download the .ics so the user can open it in their
+  // default desktop calendar app. (Native path above is the supported one;
+  // this exists for the browser preview build.)
+  const ics = activityToIcs(activity, hostName);
+  const filename = `wud-${activity.id.slice(0, 8)}.ics`;
+  try {
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Revoke after the click has been consumed by the browser; small delay
+    // avoids the rare race where revoke kills the URL before download fires.
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    useApp.getState().pushToast('Calendar file downloaded', 'success');
+  } catch {
+    useApp.getState().pushToast('Could not add to calendar', 'warn');
+  }
+}
+
+/** Inline reactions row that lives directly below each chat bubble.
+ *  Renders existing reactions as grouped chips with counts and a small
+ *  smile-plus button that opens a quick picker. Tapping an already-mine
+ *  chip removes my reaction; tapping someone else's pile adds me to it.
+ *  Hidden entirely when the user can't react (not in the party).
+ */
+function MessageReactions({
+  activityId, messageId, reactions, meId, canReact, mine,
+}: {
+  activityId: string;
+  messageId: string;
+  reactions: import('../types').Reaction[];
+  meId: string;
+  canReact: boolean;
+  mine: boolean;
+}) {
+  const toggle = useApp(s => s.toggleMessageReaction);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Group reactions by emoji, preserving the first-seen order so a chat
+  // with three "🔥" reactions before two "❤️" reactions reads in that order.
+  const order: string[] = [];
+  const agg: Record<string, { count: number; mine: boolean }> = {};
+  for (const r of reactions) {
+    if (!agg[r.emoji]) { agg[r.emoji] = { count: 0, mine: false }; order.push(r.emoji); }
+    agg[r.emoji].count += 1;
+    if (r.userId === meId) agg[r.emoji].mine = true;
+  }
+
+  if (!canReact && order.length === 0) return null;
+
+  return (
+    <div className={`relative flex items-center gap-1 flex-wrap pt-0.5 ${mine ? 'justify-end' : 'justify-start'}`}>
+      {order.map(emoji => {
+        const { count, mine: isMine } = agg[emoji];
+        return (
+          <button
+            key={emoji}
+            onClick={() => canReact && toggle(activityId, messageId, emoji)}
+            disabled={!canReact}
+            aria-pressed={isMine}
+            className={`inline-flex items-center gap-1 h-6 px-1.5 rounded-full text-[11px] font-semibold border transition
+                        ${isMine
+                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                          : 'bg-white/5 border-white/10 text-zinc-200 hover:bg-white/10'}
+                        disabled:opacity-60 disabled:cursor-default`}
+          >
+            <span className="text-[12px] leading-none">{emoji}</span>
+            <span className="tabular-nums leading-none">{count}</span>
+          </button>
+        );
+      })}
+      {canReact && (
+        <button
+          onClick={() => setPickerOpen(v => !v)}
+          aria-label="Add reaction"
+          className="h-6 w-6 grid place-items-center rounded-full bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 transition"
+        >
+          <SmilePlus size={11} />
+        </button>
+      )}
+
+      {/* Quick picker — six default emojis, no popup chrome since the row
+          itself is intimate. Click-away catcher anchors the dismissal so
+          tapping elsewhere on the bubble closes it. */}
+      <AnimatePresence>
+        {pickerOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-30"
+              onClick={() => setPickerOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.12 }}
+              className={`absolute z-40 glass-strong rounded-2xl p-1.5 shadow-xl flex gap-1
+                          ${mine ? 'right-0' : 'left-0'}`}
+              style={{ bottom: 'calc(100% + 6px)' }}
+            >
+              {QUICK_REACTIONS.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    toggle(activityId, messageId, emoji);
+                    setPickerOpen(false);
+                  }}
+                  className={`h-8 w-8 grid place-items-center rounded-xl text-base transition
+                              ${agg[emoji]?.mine ? 'bg-rose-500/20 ring-1 ring-rose-400/50' : 'hover:bg-white/10'}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '🎉', '🙏'];
+
 /** Stable empty reference for the pendingMessages selector. A fresh `[]`
  *  literal inside `useApp(...)` makes React's useSyncExternalStore think
  *  the snapshot changed on every render — getSnapshot warning + infinite
@@ -893,13 +1131,36 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
       transition={{ duration: 0.18 }}
       className="absolute inset-0 flex flex-col"
     >
-      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-3 relative">
+        {/* Privacy gate — non-members see a blurred preview of the chat
+            with an overlay nudging them to join. Sender / message text
+            isn't readable through the blur (8px is enough to soft-kerning
+            obscure ASCII) and the absolute overlay catches all pointer
+            events so a non-member can't click into a bubble. */}
+        {!canSend && (activity.chat.length > 0 || pendingMessages.length > 0) && (
+          <div className="sticky top-0 z-10 pointer-events-none">
+            <div className="absolute inset-x-0 top-10 grid place-items-center pointer-events-auto">
+              <div className="px-4 py-3 rounded-2xl bg-[#15121b]/85 backdrop-blur-lg
+                              border border-white/10 shadow-2xl shadow-black/60 text-center
+                              max-w-[280px]">
+                <Lock size={16} className="text-rose-300 mx-auto mb-1.5" />
+                <div className="text-sm font-bold text-white">Chat is for the crew</div>
+                <div className="text-[12px] text-zinc-300 mt-0.5 leading-snug">
+                  Join the plan to see messages, photos, and polls.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {activity.chat.length === 0 && pendingMessages.length === 0 && (
           <div className="text-center text-zinc-500 text-sm mt-10">
             No messages yet — say hi 👋
           </div>
         )}
-        <div className="flex flex-col gap-2 pt-2">
+        <div
+          className={`flex flex-col gap-2 pt-2 transition-[filter] duration-200
+                     ${!canSend ? 'blur-sm select-none pointer-events-none' : ''}`}
+        >
           {mergePending(activity.chat, pendingMessages).map(m => {
             if (m.authorId === 'system') {
               return (
@@ -931,54 +1192,75 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
                     <Loader2 size={12} className="animate-spin" />
                   </span>
                 )}
-                {isPoll ? (
-                  /* Polls need more room than text bubbles — give them ~94%
-                     of the chat width so option labels + vote counters fit cleanly. */
-                  <div className="flex flex-col items-stretch gap-1 w-[94%]">
-                    {!mine && (
-                      <div className="text-[10.5px] font-semibold text-zinc-400 pl-1">{u.name}</div>
-                    )}
-                    <PollBubble
-                      activityId={activityId}
-                      message={m}
-                      mine={mine}
-                      canVote={canSend}
-                    />
-                  </div>
-                ) : isPhoto ? (
-                  <div className={`max-w-[78%] overflow-hidden rounded-2xl
-                                  ${mine ? 'rounded-br-sm' : 'rounded-bl-sm'}
-                                  bg-white/8 border border-white/10`}>
-                    {!mine && (
-                      <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
-                    )}
-                    <button
-                      onClick={() => setViewerSrc(mediaUrl(m.photoUrl) ?? null)}
-                      className="block w-full"
-                      aria-label="Open photo"
-                    >
-                      <img
-                        src={mediaUrl(m.photoUrl)}
-                        alt={m.text ?? 'shared photo'}
-                        className="block max-h-64 w-full object-cover"
-                        draggable={false}
+                {/* Bubble + reactions stacked vertically so the reactions
+                    row sits flush below the bubble without breaking the
+                    chat row's avatar-aligned layout. */}
+                <div className={`flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'} max-w-[94%]`}>
+                  {isPoll ? (
+                    /* Polls need more room than text bubbles — fill almost
+                       the whole bubble width so option labels + vote
+                       counters fit cleanly. */
+                    <div className="flex flex-col items-stretch gap-1 w-full">
+                      {!mine && (
+                        <div className="text-[10.5px] font-semibold text-zinc-400 pl-1">{u.name}</div>
+                      )}
+                      <PollBubble
+                        activityId={activityId}
+                        message={m}
+                        mine={mine}
+                        canVote={canSend}
                       />
-                    </button>
-                    {m.text && (
-                      <div className={`px-3 py-2 text-sm ${mine ? 'text-white' : 'text-zinc-100'}`}>
-                        {m.text}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className={`max-w-[78%] px-3.5 py-2 rounded-2xl text-sm
-                                  ${mine
-                                    ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-br-sm shadow-[0_8px_30px_-10px_rgba(244,63,94,0.6)]'
-                                    : 'bg-white/8 text-zinc-100 rounded-bl-sm border border-white/5'}`}>
-                    {!mine && <div className="text-[10.5px] font-semibold text-zinc-400 mb-0.5">{u.name}</div>}
-                    {m.text}
-                  </div>
-                )}
+                    </div>
+                  ) : isPhoto ? (
+                    <div className={`max-w-[330px] overflow-hidden rounded-2xl
+                                    ${mine ? 'rounded-br-sm' : 'rounded-bl-sm'}
+                                    bg-white/8 border border-white/10`}>
+                      {!mine && (
+                        <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
+                      )}
+                      <button
+                        onClick={() => setViewerSrc(mediaUrl(m.photoUrl) ?? null)}
+                        className="block w-full"
+                        aria-label="Open photo"
+                      >
+                        <img
+                          src={mediaUrl(m.photoUrl)}
+                          alt={m.text ?? 'shared photo'}
+                          className="block max-h-64 w-full object-cover"
+                          draggable={false}
+                        />
+                      </button>
+                      {m.text && (
+                        <div className={`px-3 py-2 text-sm ${mine ? 'text-white' : 'text-zinc-100'}`}>
+                          {m.text}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className={`max-w-[330px] px-3.5 py-2 rounded-2xl text-sm
+                                    ${mine
+                                      ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-br-sm shadow-[0_8px_30px_-10px_rgba(244,63,94,0.6)]'
+                                      : 'bg-white/8 text-zinc-100 rounded-bl-sm border border-white/5'}`}>
+                      {!mine && <div className="text-[10.5px] font-semibold text-zinc-400 mb-0.5">{u.name}</div>}
+                      {m.text}
+                    </div>
+                  )}
+
+                  {/* Reactions row sits below the bubble for every
+                      non-pending, non-system message. Hidden on pending so
+                      a user can't try to react to a message that hasn't
+                      hit the server yet. */}
+                  {!isPending && (
+                    <MessageReactions
+                      activityId={activityId}
+                      messageId={m.id}
+                      reactions={m.reactions ?? []}
+                      meId={me.id}
+                      canReact={canSend}
+                      mine={mine}
+                    />
+                  )}
+                </div>
               </motion.div>
             );
           })}

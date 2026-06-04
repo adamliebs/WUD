@@ -7,9 +7,13 @@ interface Props {
   children: ReactNode;
   /** "full" pulls just under the notch; "tall" leaves a bit more peek. */
   size?: 'full' | 'tall';
+  /** When true, the sheet ignores drag — close is via the X / backdrop
+   *  only. Use for sheets where the user is making a commitment (lock-in,
+   *  confirmation) and an accidental pull-to-dismiss reads as a bug. */
+  stiff?: boolean;
 }
 
-export function BottomSheet({ open, onClose, children, size = 'full' }: Props) {
+export function BottomSheet({ open, onClose, children, size = 'full', stiff = false }: Props) {
   const top = size === 'full' ? 48 : 96;
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
@@ -34,14 +38,19 @@ export function BottomSheet({ open, onClose, children, size = 'full' }: Props) {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-            drag="y"
+            // Drag-to-dismiss is suppressed when `stiff` is set. The grab
+            // handle is also hidden in that case so the affordance and the
+            // behaviour stay consistent.
+            drag={stiff ? false : 'y'}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.4 }}
-            onDragEnd={handleDragEnd}
+            onDragEnd={stiff ? undefined : handleDragEnd}
           >
-            <div className="flex justify-center pt-2 pb-1">
-              <div className="h-1.5 w-12 rounded-full bg-white/30" />
-            </div>
+            {!stiff && (
+              <div className="flex justify-center pt-2 pb-1">
+                <div className="h-1.5 w-12 rounded-full bg-white/30" />
+              </div>
+            )}
             <div className="h-full overflow-hidden">{children}</div>
           </motion.div>
         </>

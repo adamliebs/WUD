@@ -60,6 +60,9 @@ export interface ChatMessage {
     options: PollOption[];
     closed?: boolean;
   };
+  /** Per-message emoji reactions — flat array, one entry per
+   *  (user, emoji). The render layer groups them by emoji and counts. */
+  reactions?: Reaction[];
   /** Client-only: marks an optimistic placeholder that's still in flight to
    *  the server. The render layer draws these slightly faded with a spinner
    *  so the sender sees their message land immediately instead of waiting

@@ -20,37 +20,11 @@ export function SquadsRail() {
   const openOverlay = useApp(s => s.openOverlay);
   const openSquad = useApp(s => s.openSquad);
 
-  // Empty state — single nudge card. Discoverable but not pushy.
-  if (squads.length === 0) {
-    return (
-      <div className="px-4 mt-1 mb-3">
-        <motion.button
-          whileTap={{ scale: 0.985 }}
-          onClick={() => openOverlay('squads')}
-          className="w-full inline-flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl text-left
-                     bg-gradient-to-br from-rose-500/12 via-orange-500/8 to-amber-500/8
-                     border border-rose-400/25 hover:border-rose-400/40 transition"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-9 w-9 rounded-full grid place-items-center
-                            bg-gradient-to-br from-rose-500 to-orange-500 text-white shrink-0">
-              <Users size={15} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-white">Make a squad</div>
-              <div className="text-[11px] text-zinc-300 truncate">
-                Group friends so plans land with the right crew.
-              </div>
-            </div>
-          </div>
-          <div className="shrink-0 h-7 w-7 grid place-items-center rounded-full
-                          bg-white text-zinc-900">
-            <Plus size={14} strokeWidth={3} />
-          </div>
-        </motion.button>
-      </div>
-    );
-  }
+  // Empty state used to be a tinted "Make a squad" card with copy and a
+  // gradient — it was discoverable but read as a CTA pushing the user
+  // before they'd even looked at the feed. Now the rail just renders its
+  // normal header + "+ New" chip when empty (no count suffix, since
+  // "Squads · 0" reads as broken). Same affordance, none of the chrome.
 
   return (
     <div className="px-4 mt-1 mb-3">
@@ -58,17 +32,19 @@ export function SquadsRail() {
         <Users size={12} className="text-rose-300" />
         <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold">
           Squads
-          <span className="text-zinc-500 normal-case tracking-normal"> · {squads.length}</span>
+          {squads.length > 0 && (
+            <span className="text-zinc-500 normal-case tracking-normal"> · {squads.length}</span>
+          )}
         </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
         {/* Leading "+" chip — always present so creating another squad
             takes the same tap whether you have 0 or 20. */}
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => openOverlay('squads')}
           aria-label="Create a squad"
-          className="shrink-0 h-9 inline-flex items-center gap-1.5 pl-2.5 pr-3 rounded-full
+          className="shrink-0 h-9 inline-flex items-center gap-1.5 pl-2.5 pr-3 rounded-xl
                      bg-white/5 border border-white/10 border-dashed text-zinc-200 text-[12px] font-semibold
                      hover:bg-white/10 transition"
         >
@@ -86,7 +62,7 @@ export function SquadsRail() {
               key={sq.id}
               whileTap={{ scale: 0.95 }}
               onClick={() => openSquad(sq.id)}
-              className="shrink-0 h-9 inline-flex items-center gap-1.5 px-3 rounded-full
+              className="shrink-0 h-9 inline-flex items-center gap-1.5 px-3 rounded-xl
                          bg-white/5 border border-white/10 text-white text-[12px] font-semibold
                          hover:bg-white/10 transition"
             >

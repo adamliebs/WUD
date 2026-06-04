@@ -22,6 +22,17 @@ interface MessageRow {
 
 /* --- serialization -------------------------------------------------------- */
 
+/** All reactions on a message — flat list of { emoji, userId, at }, latest
+ *  first. The client groups them by emoji at render time. */
+function reactionsFor(messageId: string): ChatMessage['reactions'] {
+  const rows = q.all<{ emoji: string; user_id: string; created_at: number }>(
+    'SELECT emoji, user_id, created_at FROM message_reactions WHERE message_id = ? ORDER BY created_at',
+    messageId,
+  );
+  if (rows.length === 0) return undefined;
+  return rows.map(r => ({ emoji: r.emoji, userId: r.user_id, at: r.created_at }));
+}
+
 function pollFor(messageId: string): ChatMessage['poll'] {
   const poll = q.get<{ question: string; closed: number }>(
     'SELECT question, closed FROM polls WHERE message_id = ?', messageId,
@@ -49,6 +60,7 @@ function toMessage(r: MessageRow): ChatMessage {
     text: r.body ?? undefined,
     photoUrl: r.photo_url ?? undefined,
     poll: r.type === 'poll' ? pollFor(r.id) : undefined,
+    reactions: reactionsFor(r.id),
   };
 }
 
@@ -255,4 +267,92 @@ export function voteInPoll(messageId: string, userId: string, optionId: string):
   const message = toMessage(row);
   publish({ channel, type: 'poll.updated', data: message } as never);
   return message;
+}
+
+/**
+ * Toggle a single (message, user, emoji) reaction — present → delete,
+ * absent → insert. Returns the refreshed full message so the realtime
+ * channel can publish the new reaction set in one round-trip.
+ */
+export function toggleMessageReaction(
+  messageId: string,
+  userId: string,
+  emoji: string,
+): ChatMessage {
+  const msg = q.get<{ activity_id: string | null; squad_id: string | null }>(
+    'SELECT activity_id, squad_id FROM messages WHERE id = ?', messageId,
+  );
+  if (!msg) throw notFound('MESSAGE_NOT_FOUND', 'Message not found');
+
+  const trimmed = emoji.trim();
+  if (!trimmed) throw badRequest('EMPTY_EMOJI', 'Emoji is required', 'emoji');
+  // Hard-cap the length so a runaway client can't dump 4 KB of zalgo into
+  // the table. 16 is plenty for any normal emoji (a flag is 8 bytes UTF-8).
+  if (trimmed.length > 16) {
+    throw badRequest('EMOJI_TOO_LONG', 'Emoji is too long', 'emoji');
+  }
+
+  const existed = q.get<{ user_id: string }>(
+    'SELECT user_id FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
+    messageId, userId, trimmed,
+  );
+  const added = !existed;
+  if (existed) {
+    q.run(
+      'DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
+      messageId, userId, trimmed,
+    );
+  } else {
+    q.run(
+      `INSERT INTO message_reactions (message_id, user_id, emoji, created_at)
+       VALUES (?, ?, ?, ?)`,
+      messageId, userId, trimmed, now(),
+    );
+  }
+
+  const parent: ThreadParent = msg.activity_id
+    ? { activityId: msg.activity_id }
+    : { squadId: msg.squad_id! };
+  const { channel } = parentCols(parent);
+  const row = q.get<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId)!;
+  const message = toMessage(row);
+  publish({ channel, type: 'message.updated', data: message } as never);
+
+  // Notify the message's author when someone else's reaction is ADDED.
+  // Skip on removal (un-react is too noisy to ping for) and skip when the
+  // reactor is the author (reacting to your own message). System messages
+  // (author_id NULL) have no recipient to notify.
+  if (added && row.author_id && row.author_id !== userId) {
+    notifyMessageReaction(parent, row.author_id, userId, trimmed, row);
+  }
+
+  return message;
+}
+
+/** Lockscreen / inbox push for "X reacted 😀 to your message". Reuses the
+ *  chat_message category so it sits in the same push-toggle bucket. */
+function notifyMessageReaction(
+  parent: ThreadParent,
+  recipientId: string,
+  reactorId: string,
+  emoji: string,
+  message: MessageRow,
+): void {
+  const reactor = getUserRow(reactorId);
+  const reactorName = reactor?.name ?? 'Someone';
+  const preview = message.type === 'photo'
+    ? 'your photo'
+    : message.type === 'poll'
+    ? 'your poll'
+    : message.body && message.body.trim()
+    ? `"${previewLine(message.body)}"`
+    : 'your message';
+  const body = `${reactorName} reacted ${emoji} to ${preview}`;
+  createNotification({
+    userId: recipientId,
+    type: 'chat_message',
+    fromId: reactorId,
+    activityId: 'activityId' in parent ? parent.activityId : undefined,
+    body,
+  });
 }

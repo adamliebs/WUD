@@ -54,6 +54,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>WUD opens your calendar to add a plan when you tap "Add to calendar".</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>WUD adds plans to your calendar when you tap "Add to calendar".</string>
 	<key>NSCameraUsageDescription</key>
 	<string>WUD uses the camera so you can add photos to your profile, plans and chats.</string>
 	<key>NSContactsUsageDescription</key>

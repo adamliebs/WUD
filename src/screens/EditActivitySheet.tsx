@@ -4,8 +4,9 @@ import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { BottomSheet } from '../components/BottomSheet';
 import { PulseButton } from '../components/PulseButton';
+import { TimePicker } from '../components/TimePicker';
 import { CATEGORIES } from '../data/categories';
-import { buildDayOptions, computeStartsAt, decomposeEpoch, formatStartsAt } from '../data/time';
+import { buildDayOptions, computeStartsAt, decomposeEpoch } from '../data/time';
 import { isLiveActivity, useApp } from '../store';
 import type { CategoryKey } from '../types';
 
@@ -15,9 +16,9 @@ import type { CategoryKey } from '../types';
  * squads, max size) but with two changes:
  *
  *   1. State is seeded from the activity, so opening it reflects current values.
- *   2. The start-time picker is read-only when the plan is already live —
- *      moving startsAt forward would invalidate "Started Xm ago"; the user
- *      can still extend or shorten via endsAt.
+ *   2. The start time stays editable even after the plan goes live — the
+ *      "forgot to bump it" case is real and locking the field just sent
+ *      hosts to delete + repost. End-after-start is still enforced.
  *
  * Category, recurrence, and banner are deliberately out of scope here. They
  * change the plan's identity more than its details and belong in a future
@@ -89,10 +90,10 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
   const onSave = async () => {
     if (!canSave) return;
     setSaving(true);
-    // Only include startsAt in the patch if (a) we're not live and (b) it
-    // actually moved. Otherwise the server would reject (live lock) or do a
-    // no-op write that bumps updated_at for nothing.
-    const startChanged = !live && newStartsAt !== activity.startsAt;
+    // Only include startsAt if it actually moved — skip the no-op write so
+    // updated_at doesn't bump for nothing. Live status no longer gates the
+    // patch.
+    const startChanged = newStartsAt !== activity.startsAt;
     const endChanged = newEndsAt !== activity.endsAt;
     // Only thread category fields when they actually changed — otherwise the
     // server clears custom_emoji/custom_label on a no-op category switch.
@@ -240,20 +241,19 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
         {/* Start time */}
         <Label>
           <Calendar size={11} className="inline -mt-0.5 mr-1" />
-          Starts {live && <span className="ml-1 text-rose-300 normal-case tracking-normal font-bold">locked while live</span>}
+          Starts {live && <span className="ml-1 text-rose-300 normal-case tracking-normal font-bold">live now</span>}
         </Label>
-        {live ? (
-          <div className="px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-sm text-zinc-300">
-            {formatStartsAt(startDecomp.dayOffset, startDecomp.time)}
+        <DayTimePicker
+          days={days}
+          dayOffset={startDay}
+          time={startTime}
+          onDay={setStartDay}
+          onTime={setStartTime}
+        />
+        {live && (
+          <div className="text-[11px] text-rose-300/90 mt-2 px-1">
+            Moving the start time will reset the live-now timer for everyone.
           </div>
-        ) : (
-          <DayTimePicker
-            days={days}
-            dayOffset={startDay}
-            time={startTime}
-            onDay={setStartDay}
-            onTime={setStartTime}
-          />
         )}
 
         {/* End time */}
@@ -464,13 +464,7 @@ function DayTimePicker({
           );
         })}
       </div>
-      <input
-        type="time"
-        value={time}
-        onChange={e => onTime(e.target.value)}
-        className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm
-                   focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:border-rose-400/30"
-      />
+      <TimePicker value={time} onChange={onTime} />
     </div>
   );
 }

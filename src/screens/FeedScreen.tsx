@@ -1,5 +1,6 @@
-import { motion } from 'framer-motion';
-import { Search, Sparkles, Users, UsersRound } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronDown, Lock, Search, Sparkles, UserPlus, Users, UsersRound } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
@@ -21,6 +22,26 @@ export function FeedScreen() {
   const activities = showLiveInFeed
     ? allActivities
     : allActivities.filter(a => !isLiveActivity(a));
+  const meId = useApp(s => s.meId);
+  // Split full plans out of the main feed. A plan is full once
+  // maxSize is set and the going head-count has hit it. Plans I'm
+  // already in stay in the main feed so I don't lose sight of my own
+  // commitments. The full ones live in a collapsible rail at the
+  // bottom so the user can still see + tap "Joined" on something they
+  // missed, but they no longer compete with discoverable plans up
+  // top.
+  const { openPlans, fullPlans } = useMemo(() => {
+    const open: typeof activities = [];
+    const full: typeof activities = [];
+    for (const a of activities) {
+      const headcount = 1 + a.joinerIds.length;
+      const isFull = a.maxSize != null && headcount >= a.maxSize;
+      const mine = a.hostId === meId || a.joinerIds.includes(meId);
+      if (isFull && !mine) full.push(a);
+      else open.push(a);
+    }
+    return { openPlans: open, fullPlans: full };
+  }, [activities, meId]);
   const feedScope = useApp(s => s.feedScope);
   const setFeedScope = useApp(s => s.setFeedScope);
   const hasFoF = useApp(s => s.hasFoFAvailable());
@@ -55,11 +76,8 @@ export function FeedScreen() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-xs text-zinc-400">
-              <Sparkles size={12} className="text-rose-300" />
-              {activities.length} plans
-            </div>
             <RefreshButton onRefresh={refreshAll} ariaLabel="Refresh feed" />
+            <FriendsQuickButton onClick={() => openOverlay('friends')} />
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={() => openOverlay('search')}
@@ -104,23 +122,28 @@ export function FeedScreen() {
       <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar pb-32 pt-2">
         <LiveNowStrip />
         <SquadsRail />
+        <FeedFilters count={activities.length} />
+        {/* For You sits below the filters now and starts collapsed — the
+            real feed is the headline experience; suggestions are an
+            opt-in nudge. */}
         <SmartSuggestions />
-        {/* Anchor target for For You "tap to filter" jumps — when the For You
-            rail fills the viewport, tapping a digest scrolls past it to this
-            point so the filtered results are immediately visible. */}
+        {/* Anchor target for For You "tap to filter" jumps — sits below
+            SmartSuggestions so an expand-then-tap lands the user at the
+            filtered results, past the suggestion rail. */}
         <div id="feed-results-anchor" />
-        <FeedFilters />
         {/* Plain list, no entrance animation. The stagger-in cascade was
             cute on first load but added perceptible lag every time the
             user came back to the Feed tab — and the cards themselves
             don't need it to read as fresh. Each card mounts immediately,
             no spring math, no compositing per-card. */}
         <div className="flex flex-col gap-3 px-4">
-          {activities.map(a => (
+          {openPlans.map(a => (
             <ActivityCard key={a.id} activity={a} />
           ))}
 
-          {activities.length === 0 && (
+          {fullPlans.length > 0 && <FullPlansSection plans={fullPlans} />}
+
+          {openPlans.length === 0 && fullPlans.length === 0 && (
             <div className="text-center mt-16 pb-6">
               {filtersActive ? (
                 <>
@@ -170,36 +193,110 @@ export function FeedScreen() {
 /** Drifting blurred orbs behind the feed. Same idea as Floats' BackgroundOrbs
  *  but a different palette (rose · sky · violet) so each tab carries its own
  *  mood without feeling reskinned. */
-function FeedBackgroundOrbs() {
-  // Static orbs — the looping drift was barely visible and was the main
-  // source of cross-tab GPU drain (12 orbs across 4 mounted tabs all
-  // running infinite framer-motion loops). Keeping only the opacity
-  // fade-in on mount avoids the "bright unblurred flash" before the
-  // blur filter kicks in; no per-frame work after that.
+/** Collapsible rail of plans that have hit their max party size. Sits at
+ *  the bottom of the feed so full plans don't compete with the ones the
+ *  user can still join, but stay accessible — handy when someone wants
+ *  to see what they missed or check who's going. */
+function FullPlansSection({ plans }: { plans: import('../types').Activity[] }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div aria-hidden className="absolute inset-0 pointer-events-none overflow-hidden">
-      <motion.div
-        className="absolute -top-24 -left-10 h-72 w-72 rounded-full bg-rose-500/12 blur-3xl"
-        style={{ willChange: 'filter' }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.7, ease: 'easeOut' }}
-      />
-      <motion.div
-        className="absolute top-1/4 -right-20 h-80 w-80 rounded-full bg-sky-500/10 blur-3xl"
-        style={{ willChange: 'filter' }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.05 }}
-      />
-      <motion.div
-        className="absolute bottom-20 left-1/5 h-64 w-64 rounded-full bg-violet-500/12 blur-3xl"
-        style={{ willChange: 'filter' }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
-      />
+    <div className="mt-4">
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+        className="w-full inline-flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl
+                   bg-white/5 border border-white/10 hover:bg-white/10 transition"
+      >
+        <span className="inline-flex items-center gap-2 min-w-0">
+          <Lock size={13} className="text-zinc-400 shrink-0" />
+          <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-300 font-bold">
+            Full plans
+          </span>
+          <span className="text-[11px] text-zinc-400 font-semibold normal-case tracking-normal">
+            · {plans.length}
+          </span>
+        </span>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ duration: 0.18 }}
+          className="text-zinc-400"
+        >
+          <ChevronDown size={14} />
+        </motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col gap-3 pt-3">
+              {plans.map(a => (
+                <ActivityCard key={a.id} activity={a} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+/** Quick-tap shortcut to the Friends overlay — same visual weight as
+ *  Search / Refresh so it reads as a peer in the header. Decorates with a
+ *  rose dot badge when there's at least one pending incoming friend request,
+ *  so the user knows there's something to action without opening the
+ *  overlay. */
+function FriendsQuickButton({ onClick }: { onClick: () => void }) {
+  const pendingCount = useApp(s => s.friendRequests.length);
+  return (
+    <motion.button
+      whileTap={{ scale: 0.9 }}
+      onClick={onClick}
+      aria-label={pendingCount > 0 ? `Friends · ${pendingCount} pending request${pendingCount === 1 ? '' : 's'}` : 'Friends'}
+      className="relative h-9 w-9 grid place-items-center rounded-full
+                 bg-white/5 border border-white/10 text-zinc-200
+                 hover:bg-white/10 transition"
+    >
+      <UserPlus size={16} />
+      {pendingCount > 0 && (
+        // Small rose dot with the count — caps at 9+ so it never breaks
+        // the circle frame even on a noisy account.
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1
+                         grid place-items-center rounded-full
+                         text-[10px] font-bold text-white
+                         bg-gradient-to-br from-rose-500 to-orange-500
+                         ring-2 ring-[#0a070f]">
+          {pendingCount > 9 ? '9+' : pendingCount}
+        </span>
+      )}
+    </motion.button>
+  );
+}
+
+function FeedBackgroundOrbs() {
+  // Rendered as radial gradients rather than blur-filtered circles. The
+  // previous blur(64px) pass was re-rasterised every time the pager swiped
+  // this pane into view, producing a brief un-blurred bright flash before
+  // the GPU re-applied the filter — exactly the "gets brighter then dims"
+  // jitter users noticed when flicking back to Feed. A gradient is drawn
+  // directly to the compositor layer, so no per-paint filter pass and no
+  // flash.
+  return (
+    <div
+      aria-hidden
+      className="absolute inset-0 pointer-events-none overflow-hidden"
+      style={{
+        background: [
+          'radial-gradient(280px 280px at 8% -4%, rgba(244, 63, 94, 0.18), transparent 70%)',
+          'radial-gradient(320px 320px at 105% 28%, rgba(56, 189, 248, 0.14), transparent 70%)',
+          'radial-gradient(260px 260px at 22% 78%, rgba(139, 92, 246, 0.18), transparent 70%)',
+        ].join(', '),
+      }}
+    />
   );
 }
 

@@ -50,7 +50,7 @@ export function FloatsScreen() {
           interfere with taps. */}
       <BackgroundOrbs />
 
-      <div className="relative pt-status-lg pb-3 px-5">
+      <div className="relative pt-status-lg pb-3 px-4">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}

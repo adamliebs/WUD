@@ -173,6 +173,7 @@ export function FriendsScreen() {
 
         {/* Incoming friend requests — shown on the Friends tab. */}
         {tab === 'friends' && <FriendRequests />}
+        {tab === 'friends' && <OutgoingRequests />}
 
         {/* List — outer div is keyed by `tab` so swapping tabs cleanly remounts the
             list (no per-row exit/enter cascading from the old tab). Within a tab,
@@ -480,6 +481,49 @@ function FriendRequests() {
                   Decline
                 </motion.button>
               </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+/** Pending requests I've sent — shows who I'm waiting on with a Cancel
+ *  button so I'm not blocked by a no-show recipient. */
+function OutgoingRequests() {
+  const requests = useApp(useShallow(s => s.outgoingRequests));
+  const cancel = useApp(s => s.cancelFriendRequest);
+  if (requests.length === 0) return null;
+
+  return (
+    <div className="mt-4">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2 px-1">
+        Sent · {requests.length}
+      </div>
+      <div className="flex flex-col gap-2">
+        <AnimatePresence initial={false}>
+          {requests.map(r => (
+            <motion.div
+              key={r.id}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="flex items-center gap-3 p-2.5 rounded-2xl bg-white/5 border border-white/10"
+            >
+              <Avatar user={r.to} size={42} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white truncate">{r.to.name}</div>
+                <div className="text-[11px] text-zinc-400 truncate">@{r.to.handle} · waiting for reply</div>
+              </div>
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                onClick={() => cancel(r.id)}
+                className="px-3 py-1.5 rounded-full text-xs font-bold text-zinc-300 bg-white/5 border border-white/10 hover:bg-white/10"
+              >
+                Cancel
+              </motion.button>
             </motion.div>
           ))}
         </AnimatePresence>

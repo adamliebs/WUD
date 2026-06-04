@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { MapPin, Radio, UserCheck, UserX, X } from 'lucide-react';
+import { Globe2, Lock, MapPin, Radio, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { BottomSheet } from '../components/BottomSheet';
@@ -56,6 +56,9 @@ export function GoLiveSheet() {
   const [text, setText] = useState('');
   const [place, setPlace] = useState('');
   const [openToJoin, setOpenToJoin] = useState(true);
+  // Visibility — mirrors PostSheet / EditActivitySheet. Previously hardcoded
+  // to public, which silently broadcast every Go Live to friends-of-friends.
+  const [isPrivate, setIsPrivate] = useState(false);
   const [durationMins, setDurationMins] = useState(120);
   const [selectedSquadIds, setSelectedSquadIds] = useState<string[]>([]);
 
@@ -63,7 +66,7 @@ export function GoLiveSheet() {
   useEffect(() => {
     if (open) {
       setEmoji('✨'); setText(''); setPlace('');
-      setOpenToJoin(true); setDurationMins(120);
+      setOpenToJoin(true); setIsPrivate(false); setDurationMins(120);
       setSelectedSquadIds([]);
     }
   }, [open]);
@@ -97,7 +100,9 @@ export function GoLiveSheet() {
       description: '',
       startsAt,
       endsAt,
-      isPrivate: false,
+      // isPrivate is only meaningful for All-friends posts (squad-only is
+      // private by construction).
+      isPrivate: openToJoin ? isPrivate : false,
       isOpenInvite: openToJoin,
       squadIds: selectedSquadIds,
     });
@@ -238,26 +243,28 @@ export function GoLiveSheet() {
             })}
           </div>
 
-          {/* Audience — same model as PostSheet (All friends switch + squad
-              chips). Two-card switcher kept here because Go Live is a "fire
-              and forget" surface — wrong audience is high-stakes (you'd
-              broadcast to the wrong group) so it deserves prominence. */}
+          {/* Audience — same shape as PostSheet / EditActivitySheet so the
+              two creation flows feel like the same form. Two-card switcher
+              (All friends / Squads only) followed by either the squad
+              picker or the visibility section. Wrong audience here is
+              high-stakes (Go Live = "I'm doing this NOW"), so it deserves
+              prominence. */}
           <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2 px-1">
             Who can see + join?
           </div>
-          <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="grid grid-cols-2 gap-2">
             <motion.button
               whileTap={{ scale: 0.96 }}
+              // Picking All friends keeps any tagged squads — they ride
+              // along as an additional tag (the activity appears in those
+              // squad screens too). Matches PostSheet / EditActivitySheet.
               onClick={() => setOpenToJoin(true)}
               className={`p-3 rounded-2xl border text-left transition
                           ${openToJoin
-                            ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-emerald-400 shadow-[0_10px_30px_-12px_rgba(16,185,129,0.55)]'
+                            ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-emerald-400'
                             : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
             >
-              <div className="flex items-center gap-2">
-                <UserCheck size={16} />
-                <span className="text-sm font-bold">All friends</span>
-              </div>
+              <div className="text-sm font-bold">All friends</div>
               <div className={`text-[11px] mt-1 ${openToJoin ? 'text-white/85' : 'text-zinc-400'}`}>
                 Anyone you're friends with can join.
               </div>
@@ -270,23 +277,63 @@ export function GoLiveSheet() {
                             ? 'bg-white text-zinc-900 border-white'
                             : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
             >
-              <div className="flex items-center gap-2">
-                <UserX size={16} />
-                <span className="text-sm font-bold">Squads only</span>
-              </div>
+              <div className="text-sm font-bold">Squads only</div>
               <div className={`text-[11px] mt-1 ${!openToJoin ? 'text-zinc-600' : 'text-zinc-400'}`}>
                 Pick specific squads below.
               </div>
             </motion.button>
           </div>
 
-          {/* Squad chips — optional. Picking some narrows the audience when
-              "Squads only" is selected, or piggybacks on "All friends" so
-              the activity shows in those squads' Plans tabs too. */}
+          {/* Visibility — only when All friends. Previously hardcoded to
+              public so every Go Live silently surfaced to friends-of-
+              friends; now an explicit pick like the other two creation
+              flows. */}
+          {openToJoin && (
+            <div className="mt-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold mb-2 px-1">
+                {isPrivate
+                  ? <><Lock size={11} className="inline -mt-0.5 mr-1" />Visibility</>
+                  : <><Globe2 size={11} className="inline -mt-0.5 mr-1" />Visibility</>}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setIsPrivate(false)}
+                  className={`p-3 rounded-2xl border text-left transition
+                              ${!isPrivate
+                                ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white border-sky-400'
+                                : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                >
+                  <div className="text-sm font-bold">Public</div>
+                  <div className={`text-[11px] mt-1 ${!isPrivate ? 'text-white/85' : 'text-zinc-400'}`}>
+                    Friends-of-friends can see it once a friend joins.
+                  </div>
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setIsPrivate(true)}
+                  className={`p-3 rounded-2xl border text-left transition
+                              ${isPrivate
+                                ? 'bg-white text-zinc-900 border-white'
+                                : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                >
+                  <div className="text-sm font-bold">Private</div>
+                  <div className={`text-[11px] mt-1 ${isPrivate ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                    Only direct friends can see it.
+                  </div>
+                </motion.button>
+              </div>
+            </div>
+          )}
+
+          {/* Squad pills — always shown when the user has squads. With
+              All friends they're an optional tag; with Squads only they
+              gate who can see the live. Matches PostSheet /
+              EditActivitySheet. */}
           {squads.length > 0 && (
-            <div className="mt-1">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-1.5 px-1">
-                Squads (optional)
+            <div className="mt-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2 px-1">
+                {openToJoin ? 'Squads (optional)' : 'Pick squads'}
               </div>
               <div className="flex flex-wrap gap-2">
                 {squads.map(sq => {
@@ -309,9 +356,13 @@ export function GoLiveSheet() {
               </div>
             </div>
           )}
-
+          {!openToJoin && squads.length === 0 && (
+            <div className="text-[11px] text-zinc-500 mt-3 px-1">
+              No squads to tag yet — make one from Profile → Squads.
+            </div>
+          )}
           {audienceEmpty && (
-            <div className="text-[11px] text-rose-300 mt-3 px-1">
+            <div className="text-[11px] text-amber-300 mt-3 px-1">
               Pick at least one squad — or switch back to All friends.
             </div>
           )}
