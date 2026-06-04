@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { isLiveActivity, useApp } from '../store';
 import type { Activity } from '../types';
 import { categoryFor } from '../data/categories';
-import { Avatar } from './Avatar';
+import { Avatar, AvatarStack } from './Avatar';
 
 /**
  * Horizontal strip at the top of the Feed showing what's happening RIGHT NOW.
@@ -61,12 +61,11 @@ export function LiveNowStrip() {
 
       {liveActivities.length > 0 ? (
         <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
-          {liveActivities.map((a, i) => (
+          {liveActivities.map(a => (
             <LiveActivityCard
               key={a.id}
               activity={a}
               onTap={() => openActivity(a.id)}
-              tint={CARD_TINTS[i % CARD_TINTS.length]}
             />
           ))}
         </div>
@@ -94,77 +93,58 @@ function liveTimingLabel(a: Activity): string {
   return `${fmt(sinceStart)} ago · ${fmt(untilEnd)} left`;
 }
 
-/** Per-card tint palette — picked by index so adjacent cards never share
- *  a color. Five entries keeps the cycle long enough that even a busy
- *  feed doesn't repeat for ages. The Live pulse + label tint with the
- *  same hue so each card reads as cohesive. */
-interface CardTint {
-  bg: string;       // tailwind gradient classes for the card surface
-  border: string;   // matching border color
-  dot: string;      // pulsing live-dot fill
-  label: string;    // "Live" text color
-}
-
-const CARD_TINTS: CardTint[] = [
-  { bg: 'from-rose-500/15 to-orange-500/10',  border: 'border-rose-400/30',    dot: 'bg-rose-400',    label: 'text-rose-200' },
-  { bg: 'from-sky-500/15 to-blue-500/10',     border: 'border-sky-400/30',     dot: 'bg-sky-400',     label: 'text-sky-200' },
-  { bg: 'from-emerald-500/15 to-teal-500/10', border: 'border-emerald-400/30', dot: 'bg-emerald-400', label: 'text-emerald-200' },
-  { bg: 'from-fuchsia-500/15 to-purple-500/10', border: 'border-fuchsia-400/30', dot: 'bg-fuchsia-400', label: 'text-fuchsia-200' },
-  { bg: 'from-amber-500/15 to-orange-500/10', border: 'border-amber-400/30',   dot: 'bg-amber-300',   label: 'text-amber-200' },
-];
-
 function LiveActivityCard({
-  activity, onTap, tint,
+  activity, onTap,
 }: {
   activity: Activity;
   onTap: () => void;
-  tint: CardTint;
 }) {
   const userById = useApp(s => s.userById);
   const host = userById(activity.hostId);
   const cat = categoryFor(activity);
-  // Host + going RSVPs minus host (host never appears in joinerIds).
-  const partySize = 1 + activity.joinerIds.length;
-  const extra = partySize - 1; // "+N more" beyond the host
+  // Resolve joiner avatars so we can render a small stack. AvatarStack
+  // caps the visible faces at `max` and renders a "+N" tile for the
+  // overflow, which is exactly the requested behavior (first 2 faces,
+  // then a +N chip).
+  const joiners = activity.joinerIds.map(id => userById(id));
 
+  // Cards used to be a 168px-wide rainbow strip: each one painted a
+  // colored gradient (rose / sky / fuchsia / etc.) PLUS a second category
+  // gradient overlay. Stacked side by side they read as a neon
+  // advertisement bar above the actual plans. Now: a compact neutral
+  // card with a soft rose halo + a rose-tinted border so the strip still
+  // reads as "alive RIGHT NOW" without painting the whole card. The
+  // halo is a static box-shadow (no animation) — the actual movement
+  // comes from the small live-dot pulse on the label.
   return (
     <motion.button
       whileTap={{ scale: 0.97 }}
       onClick={onTap}
-      className={`shrink-0 w-[168px] rounded-2xl p-2.5 text-left relative overflow-hidden
-                  bg-gradient-to-br ${tint.bg} ${tint.border} border hover:brightness-110 transition`}
+      className="shrink-0 w-[150px] rounded-2xl p-2.5 text-left relative
+                 bg-white/[0.05] border border-rose-400/35
+                 shadow-[0_0_22px_-6px_rgba(244,63,94,0.45),inset_0_0_0_1px_rgba(255,255,255,0.03)]
+                 hover:bg-white/[0.08] transition"
     >
-      {/* faint category tint behind content — still respects the activity's
-          category color so two same-tint cards in the cycle still feel
-          distinct when their categories differ. */}
-      <div className={`absolute -inset-1 opacity-30 bg-gradient-to-br ${cat.gradient}`} />
-      <div className="relative">
-        <div className="flex items-center gap-2">
-          <Avatar user={host} size={28} />
-          <div className="min-w-0 flex-1">
-            <div className={`text-[9px] uppercase tracking-widest font-bold flex items-center gap-1 ${tint.label}`}>
-              <span className={`relative inline-block h-1 w-1 rounded-full live-dot ${tint.dot}`} />
-              Live
-            </div>
-            <div className="text-[13px] font-bold text-white truncate leading-tight">
-              {host.name}
-            </div>
+      {/* Title is the primary line — the section header already says
+          "LIVE NOW", so repeating "Live" on every card was redundant
+          chrome. Host's avatar + name moved down to a single secondary
+          row alongside the timing. */}
+      <div className="text-[13px] font-bold text-white line-clamp-2 leading-tight">
+        <span className="mr-1">{cat.emoji}</span>
+        {activity.title}
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5 min-w-0">
+        <Avatar user={host} size={18} />
+        <span className="text-[11px] text-zinc-300 truncate font-medium">{host.name}</span>
+        {joiners.length > 0 && (
+          <div className="ml-auto shrink-0">
+            <AvatarStack users={joiners} size={18} max={2} />
           </div>
-        </div>
-
-        <div className="mt-1.5 text-[12px] text-zinc-100 line-clamp-2 leading-snug">
-          <span className="mr-1">{cat.emoji}</span>
-          {activity.title}
-        </div>
-
-        <div className="mt-1.5 flex items-center justify-between text-[10px] text-zinc-300">
-          <span className="truncate">{liveTimingLabel(activity)}</span>
-          {extra > 0 && (
-            <span className="ml-1.5 shrink-0 bg-white/10 text-white px-1.5 py-0.5 rounded-full font-bold">
-              +{extra}
-            </span>
-          )}
-        </div>
+        )}
+      </div>
+      <div className="mt-1 text-[10px] text-zinc-500 truncate">
+        {liveTimingLabel(activity)}
       </div>
     </motion.button>
   );

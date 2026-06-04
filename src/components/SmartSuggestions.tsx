@@ -97,32 +97,33 @@ export function SmartSuggestions() {
 
   return (
     <div className="px-4 mt-1 mb-3">
-      {/* Teaser row — always rendered. Tap toggles the expanded list. */}
-      <motion.button
-        whileTap={{ scale: 0.985 }}
+      {/* Quiet section header — used to be a full-bleed fuchsia→orange
+          gradient pill with a colored border and Wand2 icon, which read
+          as a giant CTA before the user had even seen their plans. Now
+          a plain section label like "Squads" / "Plans" with a small
+          sparkle. Same tap-to-expand behaviour, none of the chrome. */}
+      <button
         onClick={() => setExpanded(v => !v)}
         aria-expanded={expanded}
-        className="w-full inline-flex items-center justify-between gap-2 px-3 py-2 rounded-xl
-                   bg-gradient-to-r from-fuchsia-500/10 via-rose-500/10 to-orange-500/10
-                   border border-fuchsia-400/20 hover:border-fuchsia-400/35 transition"
+        className="w-full inline-flex items-center justify-between gap-2 py-1"
       >
-        <span className="inline-flex items-center gap-2 min-w-0">
-          <Wand2 size={13} className="text-fuchsia-300 shrink-0" />
-          <span className="text-[11px] uppercase tracking-[0.18em] text-fuchsia-100 font-bold">
+        <span className="inline-flex items-center gap-1.5 min-w-0 px-1">
+          <Wand2 size={11} className="text-zinc-500 shrink-0" />
+          <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold">
             For you
           </span>
-          <span className="text-[11px] text-fuchsia-200/80 font-semibold normal-case tracking-normal">
+          <span className="text-[11px] text-zinc-500 font-semibold normal-case tracking-normal">
             · {picks.length} pick{picks.length === 1 ? '' : 's'}
           </span>
         </span>
         <motion.span
           animate={{ rotate: expanded ? 180 : 0 }}
           transition={{ duration: 0.18 }}
-          className="text-fuchsia-200/80"
+          className="text-zinc-500 pr-1"
         >
           <ChevronDown size={14} />
         </motion.span>
-      </motion.button>
+      </button>
 
       <AnimatePresence initial={false}>
         {expanded && (

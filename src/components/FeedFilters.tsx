@@ -178,7 +178,7 @@ export function FeedFilters({ count }: Props) {
             title={showLiveInFeed ? 'Hide live plans' : 'Show live plans'}
             className={`shrink-0 h-8 inline-flex items-center gap-1 pl-2 pr-2 rounded-xl border transition
                         ${showLiveInFeed
-                          ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-300 shadow-[0_8px_22px_-8px_rgba(244,63,94,0.7)]'
+                          ? 'bg-rose-500/15 text-rose-100 border-rose-400/40'
                           : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
           >
             {showLiveInFeed ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -253,24 +253,13 @@ function IconDropdown<V extends string>({
         title={ariaLabel}
         className={`relative h-8 inline-flex items-center gap-1 pl-2 pr-1.5 rounded-xl border transition
                     ${active
-                      ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-300 shadow-[0_8px_22px_-8px_rgba(244,63,94,0.7)]'
+                      ? 'bg-rose-500/15 text-rose-100 border-rose-400/40'
                       : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
       >
-        {/* Glowing pulse ring — only on active chips, draws the eye to the
-            non-default filter when the user scrolls past the bar. */}
-        {active && (
-          <motion.span
-            aria-hidden
-            className="absolute inset-0 rounded-xl pointer-events-none"
-            initial={{ boxShadow: '0 0 0 0 rgba(251, 113, 133, 0.55)' }}
-            animate={{ boxShadow: [
-              '0 0 0 0 rgba(251, 113, 133, 0.55)',
-              '0 0 0 6px rgba(251, 113, 133, 0)',
-              '0 0 0 0 rgba(251, 113, 133, 0)',
-            ] }}
-            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
-          />
-        )}
+        {/* Pulse ring used to live here on active chips — it was double
+            duty with the rose→orange gradient and read as "demanding tap"
+            even when the user had just set the filter. Now the solid
+            tint alone says "selected" and the row stays quiet. */}
         {icon}
         <ChevronDown
           size={11}
@@ -278,7 +267,7 @@ function IconDropdown<V extends string>({
           // the dropdown's open animation; the default Tailwind transition
           // (~150ms) was lagging behind.
           style={{ transition: 'transform 110ms ease-out' }}
-          className={`${open ? 'rotate-180' : ''} ${active ? 'text-white/85' : 'text-zinc-400'}`}
+          className={`${open ? 'rotate-180' : ''} ${active ? 'text-rose-200' : 'text-zinc-400'}`}
         />
       </motion.button>
 
