@@ -133,6 +133,8 @@ export function PostSheet() {
     ? 'Starting now'
     : formatStartsAt(dayOffset, time);
 
+  const consumePostSheetInit = useApp(s => s.consumePostSheetInit);
+
   // Reset on open (not on submit) so the user's last selection stays visible
   // through the sheet's close animation instead of flashing back to defaults
   // before sliding away. Mirrors the GoLiveSheet pattern.
@@ -147,9 +149,14 @@ export function PostSheet() {
     setIsPrivate(false);
     setBannerUrl(undefined);
     setRecurrence(undefined);
-    setOpenInvite(true);
-    setSelectedSquadIds([]);
-  }, [open]);
+    // Pull any caller-supplied audience config (e.g. the + button on a
+    // squad's Plans tab pre-selects that squad with Squads-only mode).
+    // Falls through to the standard "All friends, no squads" default
+    // when no init was set.
+    const init = consumePostSheetInit();
+    setOpenInvite(init?.openInvite ?? true);
+    setSelectedSquadIds(init?.squadIds ?? []);
+  }, [open, consumePostSheetInit]);
 
   const toggleSquad = (id: string) =>
     setSelectedSquadIds(prev =>

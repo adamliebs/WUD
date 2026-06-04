@@ -43,15 +43,10 @@ export function ImageViewer({ src, onClose }: Props) {
       const { Capacitor } = await import('@capacitor/core');
 
       if (Capacitor.isNativePlatform()) {
-        // Three Capacitor primitives chained — all existing plugins:
-        //   1. downloadFile  → fetch bytes natively (URLSession on iOS,
-        //                       OkHttp on Android). Bypasses the WebView
-        //                       CORS check that was rejecting fetch().
-        //   2. readFile      → read those bytes back as base64.
-        //   3. SavePhoto.save → our native plugin calls
-        //                       PHPhotoLibrary.shared().performChanges with
-        //                       PHAssetChangeRequest.creationRequestForAsset(from:),
-        //                       which is the canonical Apple pattern.
+        // Common prelude on both platforms — download the image bytes
+        // natively (no WebView CORS) into the app's cache directory.
+        // Reused by both branches below.
+        const platform = Capacitor.getPlatform();
         const fileName = `wud-photo-${Date.now()}.jpg`;
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
         await Filesystem.downloadFile({
@@ -59,31 +54,47 @@ export function ImageViewer({ src, onClose }: Props) {
           path: fileName,
           directory: Directory.Cache,
         });
-        // Pass the same `path` + `directory` pair both writes and reads
-        // accept. The earlier attempt threaded downloadFile's returned full
-        // URI back through with `directory: Cache`, so readFile tried to
-        // resolve it under Cache/Cache/... and missed.
-        const { data } = await Filesystem.readFile({
+
+        if (platform === 'ios') {
+          // iOS: read base64 + hand to SavePhoto plugin which calls
+          // PHPhotoLibrary.creationRequestForAsset. One tap, direct write.
+          const { data } = await Filesystem.readFile({
+            path: fileName,
+            directory: Directory.Cache,
+          });
+          const base64 = typeof data === 'string'
+            ? data
+            : await new Promise<string>((resolve, reject) => {
+                const r = new FileReader();
+                r.onerror = () => reject(r.error);
+                r.onload = () => {
+                  const s = String(r.result);
+                  const i = s.indexOf(',');
+                  resolve(i >= 0 ? s.slice(i + 1) : s);
+                };
+                r.readAsDataURL(data);
+              });
+          const { SavePhoto } = await import('../lib/save-photo');
+          await SavePhoto.save({ base64, mime: 'image/jpeg' });
+          pushToast('Saved to your photos', 'success');
+          return;
+        }
+
+        // Android: skip our SavePhoto plugin and hand the downloaded
+        // file straight to the system share sheet. Every Android device
+        // surfaces "Save to Photos" / "Photos" / "Files" from there,
+        // which is one extra tap but is what users already expect on
+        // Android and avoids the MediaStore permission dance our plugin
+        // does internally.
+        const { uri } = await Filesystem.getUri({
           path: fileName,
           directory: Directory.Cache,
         });
-        const base64 = typeof data === 'string'
-          ? data
-          // readFile may return a Blob on web; convert it the standard
-          // FileReader way. On native this branch never runs.
-          : await new Promise<string>((resolve, reject) => {
-              const r = new FileReader();
-              r.onerror = () => reject(r.error);
-              r.onload = () => {
-                const s = String(r.result);
-                const i = s.indexOf(',');
-                resolve(i >= 0 ? s.slice(i + 1) : s);
-              };
-              r.readAsDataURL(data);
-            });
-        const { SavePhoto } = await import('../lib/save-photo');
-        await SavePhoto.save({ base64, mime: 'image/jpeg' });
-        pushToast('Saved to your photos', 'success');
+        const { Share } = await import('@capacitor/share');
+        await Share.share({
+          files: [uri],
+          dialogTitle: 'Save image',
+        });
         return;
       }
 
