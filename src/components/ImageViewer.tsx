@@ -43,35 +43,47 @@ export function ImageViewer({ src, onClose }: Props) {
       const { Capacitor } = await import('@capacitor/core');
 
       if (Capacitor.isNativePlatform()) {
-        // Native iOS / Android: download bytes → write to cache → share the
-        // file via @capacitor/share. The KEY is passing `files: [uri]`
-        // rather than `url: uri` — Share's `url` field is for sharing a
-        // link (so iOS treats it as text + Safari icon), while `files`
-        // shares the actual file bytes, which is what makes iOS surface
-        // the "Save Image" / "Save to Photos" rows in the share sheet.
-        //
-        // iOS additionally requires NSPhotoLibraryAddUsageDescription in
-        // Info.plist before it'll let any app write to the Photos library,
-        // even via the system share sheet. Added in this commit.
-        const res = await fetch(src);
-        if (!res.ok) throw new Error(`fetch ${res.status}`);
-        const blob = await res.blob();
-        const base64 = await blobToBase64(blob);
-        const ext = (blob.type.split('/')[1] || 'jpg').toLowerCase();
-        const fileName = `wud-photo-${Date.now()}.${ext}`;
-
+        // Three Capacitor primitives chained — all existing plugins:
+        //   1. downloadFile  → fetch bytes natively (URLSession on iOS,
+        //                       OkHttp on Android). Bypasses the WebView
+        //                       CORS check that was rejecting fetch().
+        //   2. readFile      → read those bytes back as base64.
+        //   3. SavePhoto.save → our native plugin calls
+        //                       PHPhotoLibrary.shared().performChanges with
+        //                       PHAssetChangeRequest.creationRequestForAsset(from:),
+        //                       which is the canonical Apple pattern.
+        const fileName = `wud-photo-${Date.now()}.jpg`;
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
-        const { uri } = await Filesystem.writeFile({
+        await Filesystem.downloadFile({
+          url: src,
           path: fileName,
-          data: base64,
           directory: Directory.Cache,
         });
-
-        const { Share } = await import('@capacitor/share');
-        await Share.share({
-          files: [uri],
-          dialogTitle: 'Save image',
+        // Pass the same `path` + `directory` pair both writes and reads
+        // accept. The earlier attempt threaded downloadFile's returned full
+        // URI back through with `directory: Cache`, so readFile tried to
+        // resolve it under Cache/Cache/... and missed.
+        const { data } = await Filesystem.readFile({
+          path: fileName,
+          directory: Directory.Cache,
         });
+        const base64 = typeof data === 'string'
+          ? data
+          // readFile may return a Blob on web; convert it the standard
+          // FileReader way. On native this branch never runs.
+          : await new Promise<string>((resolve, reject) => {
+              const r = new FileReader();
+              r.onerror = () => reject(r.error);
+              r.onload = () => {
+                const s = String(r.result);
+                const i = s.indexOf(',');
+                resolve(i >= 0 ? s.slice(i + 1) : s);
+              };
+              r.readAsDataURL(data);
+            });
+        const { SavePhoto } = await import('../lib/save-photo');
+        await SavePhoto.save({ base64, mime: 'image/jpeg' });
+        pushToast('Saved to your photos', 'success');
         return;
       }
 
@@ -95,32 +107,16 @@ export function ImageViewer({ src, onClose }: Props) {
       window.open(src, '_blank', 'noopener,noreferrer');
       pushToast('Long-press the image to save it', 'default');
     } catch (e) {
-      // Share can throw "AbortError" when the user dismisses the share sheet
-      // — that's not a real failure; treat it as a noop.
       const name = (e as { name?: string } | null)?.name;
       const msg = (e as { message?: string } | null)?.message ?? '';
+      // Share-sheet cancel isn't a real error — the user just dismissed.
       if (name === 'AbortError' || /cancel/i.test(msg)) return;
       console.error('[ImageViewer] save failed:', e);
-      pushToast('Could not save image', 'warn');
+      pushToast(msg ? `Save failed: ${msg.slice(0, 60)}` : 'Could not save image', 'warn');
     } finally {
       setSaving(false);
     }
   };
-
-  // Lift the blob into a base64 string the way Capacitor's Filesystem
-  // plugin wants it (raw base64, no `data:` prefix).
-  const blobToBase64 = (blob: Blob): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(reader.error);
-      reader.onload = () => {
-        const result = reader.result as string;
-        // FileReader returns "data:<mime>;base64,<payload>". Strip the prefix.
-        const i = result.indexOf(',');
-        resolve(i >= 0 ? result.slice(i + 1) : result);
-      };
-      reader.readAsDataURL(blob);
-    });
 
   return (
     <motion.div

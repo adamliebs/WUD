@@ -145,9 +145,9 @@ function runRecurrence(): void {
 let timer: ReturnType<typeof setInterval> | null = null;
 
 /** Notifications older than this drop off automatically — they're rarely
- *  actionable past a few days and clutter the inbox. The user can still wipe
+ *  actionable past a week and clutter the inbox. The user can still wipe
  *  the full list manually via the "Clear all" button. */
-const NOTIFICATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const NOTIFICATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function startScheduler(): void {
   const tick = () => {

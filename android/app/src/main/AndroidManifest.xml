@@ -41,4 +41,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- SavePhoto: writes to Pictures/WUD via MediaStore. API 29+ doesn't need
+         WRITE_EXTERNAL_STORAGE (scoped storage covers the public media
+         collection); older Androids do, so we keep the permission but cap it
+         at API 28 so newer devices don't get prompted unnecessarily. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 </manifest>

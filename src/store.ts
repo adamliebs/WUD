@@ -22,6 +22,26 @@ export function hasSeenTutorial(): boolean {
   try { return localStorage.getItem(TUTORIAL_SEEN_KEY) === '1'; } catch { return true; }
 }
 
+/** Per-tab last-viewed timestamps, persisted to localStorage so the unseen
+ *  badges survive an app restart. Updated when the user opens the matching
+ *  tab; selectors count items created after this timestamp. */
+const TAB_SEEN_PREFIX = 'wud:tab-seen:';
+function readTabSeen(tab: 'feed' | 'floats'): number {
+  try {
+    const raw = localStorage.getItem(TAB_SEEN_PREFIX + tab);
+    if (raw) return Number(raw) || 0;
+    // First time we look at this device — seed with now so a fresh install
+    // doesn't badge every existing plan that lands during the cold-boot
+    // bootstrap. The user will see badges for content arriving AFTER this.
+    const seed = Date.now();
+    localStorage.setItem(TAB_SEEN_PREFIX + tab, String(seed));
+    return seed;
+  } catch { return Date.now(); }
+}
+function writeTabSeen(tab: 'feed' | 'floats', ts: number): void {
+  try { localStorage.setItem(TAB_SEEN_PREFIX + tab, String(ts)); } catch { /* private mode */ }
+}
+
 type Tab = 'feed' | 'floats' | 'notifications' | 'profile';
 type FeedScope = 'friends' | 'fof';
 /** Top-level app screen — splash → welcome → auth → onboarding → main app. */
@@ -166,6 +186,17 @@ interface State {
   visibleActivities: () => Activity[];
   hasFoFAvailable: () => boolean;
   unreadCount: () => number;
+  /** Number of activities in the visible feed created since the user last
+   *  opened the Feed tab. My own posts don't count — I just made them. */
+  unseenFeedCount: () => number;
+  /** Number of floats received from someone else since the user last
+   *  opened the Floats tab. My own outgoing floats don't count. */
+  unseenFloatsCount: () => number;
+  /** Per-tab last-viewed timestamps, hydrated from localStorage so the
+   *  unseen-badge state survives a restart. The store mutates these on
+   *  setTab when switching INTO the matching tab. */
+  lastSeenFeedAt: number;
+  lastSeenFloatsAt: number;
 
   // auth flow
   authState: AuthState;
@@ -243,10 +274,16 @@ interface State {
 
   /** Incoming friend requests awaiting my response. */
   friendRequests: { id: string; from: User; at: number }[];
+  /** Pending friend requests I've sent and am waiting on. Mirrors
+   *  `friendRequests` so the Friends overlay can surface both sides. */
+  outgoingRequests: { id: string; to: User; at: number }[];
   addFriend: (userId: string) => void;
   removeFriend: (userId: string) => void;
   acceptFriendRequest: (requestId: string) => void;
   declineFriendRequest: (requestId: string) => void;
+  /** Cancel a request I previously sent. Server-side this is the same
+   *  endpoint as decline; the difference is who's acting on it. */
+  cancelFriendRequest: (requestId: string) => void;
   /** Patch the current user's profile. Pass `null` for a nullable field
    *  (`phone`, `photoUrl`) to explicitly clear it; omit the key to leave
    *  it unchanged. */
@@ -380,6 +417,11 @@ interface State {
   sendChatPhoto: (activityId: string, file: File, caption?: string) => void;
   sendPoll: (activityId: string, question: string, optionTexts: string[]) => void;
   voteInPoll: (activityId: string, messageId: string, optionId: string) => void;
+  /** Add or remove an emoji reaction on a single chat message. Toggles
+   *  the (me, emoji) pair on/off optimistically; server reconciles. */
+  toggleMessageReaction: (activityId: string, messageId: string, emoji: string) => void;
+  /** Same as toggleMessageReaction but targets a squad chat thread. */
+  toggleSquadMessageReaction: (squadId: string, messageId: string, emoji: string) => void;
   toggleReaction: (activityId: string, emoji: string) => void;
 
   pollComposerActivityId: string | null;
@@ -549,6 +591,11 @@ export const useApp = create<State>((set, get) => {
     set({ friendIds: friends.map(u => u.id) });
   };
 
+  const refreshOutgoingRequests = async () => {
+    const { requests } = await socialApi.outgoingRequests();
+    mergeUsers(requests.map(r => r.to));
+    set({ outgoingRequests: requests });
+  };
   const refreshFriendRequests = async () => {
     const { requests } = await socialApi.friendRequests();
     mergeUsers(requests.map(r => r.from));
@@ -679,7 +726,11 @@ export const useApp = create<State>((set, get) => {
     }
     set({
       meId: b.user.id,
-      users: dedupeUsers([b.user, ...b.users]),
+      // b.user is the privileged /me shape (includes `phone`); b.users is
+      // from hydrateUsers and excludes private fields. Put b.user LAST so
+      // dedupeUsers' "later wins" rule keeps the version with phone — the
+      // earlier order silently dropped phone on every bootstrap.
+      users: dedupeUsers([...b.users, b.user]),
       friendIds: b.friendIds,
       activities: dedupeById(b.activities),
       floats: dedupeById(b.floats ?? []),
@@ -693,6 +744,7 @@ export const useApp = create<State>((set, get) => {
     syncSubscriptions();
     startBackgroundRefresh();
     void refreshFriendRequests();   // load any pending incoming requests
+    void refreshOutgoingRequests(); // and any pending sent requests
     void get().refreshBlocks();     // load my block list (T&S — Apple 1.2)
     // The user is now authenticated — push the device's FCM token to the
     // backend so we can target them with remote pushes. No-op on web.
@@ -985,7 +1037,7 @@ export const useApp = create<State>((set, get) => {
     meId: '',
     users: [],
     friendIds: [],
-    friendRequests: [],
+    friendRequests: [], outgoingRequests: [],
     blockedIds: [],
     blockedUsers: [],
     reportSheet: null,
@@ -1013,6 +1065,11 @@ export const useApp = create<State>((set, get) => {
     // first time the user lands in `authState === 'app'` and the local
     // "wud:has-seen-tutorial" flag is missing.
     showTutorial: false,
+    // Hydrate last-seen timestamps from localStorage so the badges survive
+    // an app restart. First-ever launch reads 0 → unseen counters return 0
+    // (no badges) until the user opens the tab once and we set a baseline.
+    lastSeenFeedAt: readTabSeen('feed'),
+    lastSeenFloatsAt: readTabSeen('floats'),
     toasts: [],
     authBusy: false,
     settings: {
@@ -1106,6 +1163,28 @@ export const useApp = create<State>((set, get) => {
       return s.activities.some(a => a.endsAt >= Date.now() && s.isFoFActivity(a));
     },
     unreadCount: () => get().notifications.filter(n => !n.read).length,
+    unseenFeedCount: () => {
+      const s = get();
+      const since = s.lastSeenFeedAt;
+      if (!since) return 0;
+      // visibleActivities() already filters by friend graph + blocks + own
+      // visibility, so we only need to compare timestamps and drop my own.
+      let n = 0;
+      for (const a of s.visibleActivities()) {
+        if (a.createdAt > since && a.hostId !== s.meId) n++;
+      }
+      return n;
+    },
+    unseenFloatsCount: () => {
+      const s = get();
+      const since = s.lastSeenFloatsAt;
+      if (!since) return 0;
+      let n = 0;
+      for (const f of s.floats) {
+        if (f.createdAt > since && f.senderId !== s.meId) n++;
+      }
+      return n;
+    },
 
     availableCategories: () => {
       // Powers the Category dropdown — only offer keys that have at least one
@@ -1369,7 +1448,24 @@ export const useApp = create<State>((set, get) => {
 
     setAuthState: (s) => set({ authState: s }),
     setAuthIntent: (i) => set({ authIntent: i }),
-    setTab: (t) => set({ tab: t }),
+    setTab: (t) => {
+      // Mark the tab as "seen" right when the user lands on it. Other tabs
+      // continue to badge based on their last-seen timestamp until the
+      // user opens THEM.
+      if (t === 'feed') {
+        const ts = Date.now();
+        writeTabSeen('feed', ts);
+        set({ tab: t, lastSeenFeedAt: ts });
+        return;
+      }
+      if (t === 'floats') {
+        const ts = Date.now();
+        writeTabSeen('floats', ts);
+        set({ tab: t, lastSeenFloatsAt: ts });
+        return;
+      }
+      set({ tab: t });
+    },
     setShowPostSheet: (b) => set({ showPostSheet: b }),
     setFeedScope: (s) => set({ feedScope: s }),
     setFeedFilter: (patch) => set(state => {
@@ -1394,7 +1490,7 @@ export const useApp = create<State>((set, get) => {
       // Refresh the slice an overlay shows when it opens, so it's never stale.
       if (o === 'history') void refreshHistory();
       else if (o === 'squads') void refreshSquads();
-      else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); }
+      else if (o === 'friends') { void refreshFriends(); void refreshFriendRequests(); void refreshOutgoingRequests(); }
     },
     setShowTutorial: (v) => {
       // Hiding the tutorial is what marks it "seen" — that way both Skip
@@ -1551,7 +1647,7 @@ export const useApp = create<State>((set, get) => {
       stopBackgroundRefresh();
       tokens.clear();
       set({
-        meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
+        meId: '', users: [], friendIds: [], friendRequests: [], outgoingRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
         notifications: [], squads: [],
         tab: 'feed', openActivityId: null, showPostSheet: false,
         showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, pendingMessages: {},
@@ -1567,7 +1663,7 @@ export const useApp = create<State>((set, get) => {
         disconnectRealtime();
         tokens.clear();
         set({
-          meId: '', users: [], friendIds: [], friendRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
+          meId: '', users: [], friendIds: [], friendRequests: [], outgoingRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
           notifications: [], squads: [],
           tab: 'feed', openActivityId: null, showPostSheet: false,
           showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, pendingMessages: {},
@@ -1583,7 +1679,16 @@ export const useApp = create<State>((set, get) => {
     addFriend: (userId) => {
       void guard(async () => {
         await socialApi.addFriend(userId);
-        await refreshFriends();
+        // Refresh both — addFriend can either send a fresh request OR
+        // accept a pending incoming request from the same user (server's
+        // "duplicate handshake" auto-merge). Refresh outgoing too so the
+        // sent-requests list updates in the Friends overlay without a
+        // round-trip back to the user.
+        await Promise.all([
+          refreshFriends(),
+          refreshFriendRequests(),
+          refreshOutgoingRequests(),
+        ]);
         toast(`Friend request sent to ${get().userById(userId).name}`, 'success');
       });
     },
@@ -1661,6 +1766,18 @@ export const useApp = create<State>((set, get) => {
         await socialApi.declineRequest(requestId);
         await refreshFriendRequests();
         await refreshNotifications();   // the 'invite' alert is now resolved
+      });
+    },
+    cancelFriendRequest: (requestId) => {
+      // Optimistically drop the row so the Sent list updates instantly —
+      // the server call is idempotent (no-op if the row already moved out
+      // of 'pending'), so a race with another tab is harmless.
+      const target = get().outgoingRequests.find(r => r.id === requestId);
+      set(s => ({ outgoingRequests: s.outgoingRequests.filter(r => r.id !== requestId) }));
+      void guard(async () => {
+        await socialApi.cancelRequest(requestId);
+        await refreshOutgoingRequests();
+        if (target) toast(`Cancelled request to ${target.to.name}`, 'warn');
       });
     },
 
@@ -2023,6 +2140,51 @@ export const useApp = create<State>((set, get) => {
       void guard(async () => {
         await chatApi.vote(messageId, optionId);
         await refreshActivity(activityId);
+      });
+    },
+    toggleMessageReaction: (activityId, messageId, emoji) => {
+      // Optimistic flip — search the existing reactions for my own entry on
+      // this emoji; insert if missing, remove if present. The server's
+      // realtime broadcast will reconcile any race the moment it lands.
+      const meId = get().meId;
+      const flip = (existing: { emoji: string; userId: string; at: number }[] | undefined) => {
+        const arr = existing ?? [];
+        const mine = arr.find(r => r.userId === meId && r.emoji === emoji);
+        const next = mine
+          ? arr.filter(r => !(r.userId === meId && r.emoji === emoji))
+          : [...arr, { emoji, userId: meId, at: Date.now() }];
+        return next.length ? next : undefined;
+      };
+      set(s => ({
+        activities: s.activities.map(a => a.id !== activityId ? a : {
+          ...a,
+          chat: a.chat.map(m => m.id !== messageId ? m : { ...m, reactions: flip(m.reactions) }),
+        }),
+      }));
+      void guard(async () => {
+        await chatApi.reactToMessage(messageId, emoji);
+        await refreshActivity(activityId);
+      });
+    },
+    toggleSquadMessageReaction: (squadId, messageId, emoji) => {
+      const meId = get().meId;
+      const flip = (existing: { emoji: string; userId: string; at: number }[] | undefined) => {
+        const arr = existing ?? [];
+        const mine = arr.find(r => r.userId === meId && r.emoji === emoji);
+        const next = mine
+          ? arr.filter(r => !(r.userId === meId && r.emoji === emoji))
+          : [...arr, { emoji, userId: meId, at: Date.now() }];
+        return next.length ? next : undefined;
+      };
+      set(s => ({
+        squads: s.squads.map(sq => sq.id !== squadId ? sq : {
+          ...sq,
+          chat: sq.chat.map(m => m.id !== messageId ? m : { ...m, reactions: flip(m.reactions) }),
+        }),
+      }));
+      void guard(async () => {
+        await chatApi.reactToMessage(messageId, emoji);
+        await refreshSquad(squadId);
       });
     },
 

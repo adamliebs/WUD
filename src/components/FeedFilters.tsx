@@ -18,7 +18,14 @@ import type { CategoryKey } from '../types';
  * Dropdowns close on outside-click and Escape. The popovers are absolutely
  * positioned (z-50) so they overlay the feed list below.
  */
-export function FeedFilters() {
+interface Props {
+  /** Number of plans currently rendered in the feed — surfaced as a small
+   *  count chip alongside the "Plans" section heading so the user can see
+   *  the total without scrolling up to a separate header. */
+  count: number;
+}
+
+export function FeedFilters({ count }: Props) {
   const filters = useApp(s => s.feedFilters);
   const set = useApp(s => s.setFeedFilter);
   const clear = useApp(s => s.clearFeedFilters);
@@ -60,11 +67,16 @@ export function FeedFilters() {
   return (
     <div className="px-4 mt-1 mb-2">
       {/* Section header — matches the "For you" / "Suggestions" / "Trending"
-          rails above so the bar reads as its own thing. */}
+          rails above so the bar reads as its own thing. Renamed from
+          "Filter" to "Plans" since this is the primary heading for the
+          feed list now that the count moved here from the top header. */}
       <div className="flex items-center gap-1.5 mb-2 px-1">
         <Filter size={12} className="text-sky-300" />
         <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold">
-          Filter
+          Plans
+        </span>
+        <span className="text-[11px] tabular-nums text-zinc-500 font-semibold">
+          · {count}
         </span>
       </div>
 
@@ -81,15 +93,19 @@ export function FeedFilters() {
           {active && (
             <motion.button
               key="clear"
-              initial={{ opacity: 0, scale: 0.85, width: 0 }}
-              animate={{ opacity: 1, scale: 1, width: 'auto' }}
-              exit={{ opacity: 0, scale: 0.85, width: 0 }}
-              transition={{ duration: 0.16 }}
+              // Drop the width animation — animating to "auto" forced a
+              // measure-every-frame layout pass which read as jumpy on
+              // iOS. Opacity + scale alone is smooth, and the flex row
+              // reflows naturally when the chip appears.
+              initial={{ opacity: 0, scale: 0.92 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.92 }}
+              transition={{ duration: 0.12, ease: 'easeOut' }}
               onClick={clear}
               aria-label="Clear all filters"
-              className="shrink-0 h-8 inline-flex items-center gap-1 px-2.5 rounded-full text-[12px] font-semibold
+              className="shrink-0 h-8 inline-flex items-center gap-1 px-2.5 rounded-xl text-[12px] font-semibold
                          text-rose-200 bg-rose-500/10 border border-rose-400/40 hover:bg-rose-500/20 transition
-                         overflow-hidden whitespace-nowrap"
+                         whitespace-nowrap"
             >
               <X size={13} strokeWidth={2.5} />
               Clear
@@ -160,7 +176,7 @@ export function FeedFilters() {
             aria-pressed={showLiveInFeed}
             aria-label={showLiveInFeed ? 'Hide live plans from feed' : 'Show live plans in feed'}
             title={showLiveInFeed ? 'Hide live plans' : 'Show live plans'}
-            className={`shrink-0 h-8 inline-flex items-center gap-1 pl-2 pr-2 rounded-full border transition
+            className={`shrink-0 h-8 inline-flex items-center gap-1 pl-2 pr-2 rounded-xl border transition
                         ${showLiveInFeed
                           ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-300 shadow-[0_8px_22px_-8px_rgba(244,63,94,0.7)]'
                           : 'bg-white/5 text-zinc-300 border-white/10 hover:bg-white/10'}`}
@@ -235,7 +251,7 @@ function IconDropdown<V extends string>({
         aria-expanded={open}
         aria-label={ariaLabel}
         title={ariaLabel}
-        className={`relative h-8 inline-flex items-center gap-1 pl-2 pr-1.5 rounded-full border transition
+        className={`relative h-8 inline-flex items-center gap-1 pl-2 pr-1.5 rounded-xl border transition
                     ${active
                       ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-300 shadow-[0_8px_22px_-8px_rgba(244,63,94,0.7)]'
                       : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
@@ -245,7 +261,7 @@ function IconDropdown<V extends string>({
         {active && (
           <motion.span
             aria-hidden
-            className="absolute inset-0 rounded-full pointer-events-none"
+            className="absolute inset-0 rounded-xl pointer-events-none"
             initial={{ boxShadow: '0 0 0 0 rgba(251, 113, 133, 0.55)' }}
             animate={{ boxShadow: [
               '0 0 0 0 rgba(251, 113, 133, 0.55)',
@@ -258,7 +274,11 @@ function IconDropdown<V extends string>({
         {icon}
         <ChevronDown
           size={11}
-          className={`transition-transform ${open ? 'rotate-180' : ''} ${active ? 'text-white/85' : 'text-zinc-400'}`}
+          // Explicit short duration so the chevron flip stays in sync with
+          // the dropdown's open animation; the default Tailwind transition
+          // (~150ms) was lagging behind.
+          style={{ transition: 'transform 110ms ease-out' }}
+          className={`${open ? 'rotate-180' : ''} ${active ? 'text-white/85' : 'text-zinc-400'}`}
         />
       </motion.button>
 
@@ -266,10 +286,14 @@ function IconDropdown<V extends string>({
         {open && (
           <motion.div
             role="listbox"
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.14 }}
+            // Simpler entry — opacity + tiny scale only. Removing the
+            // simultaneous Y translate avoids the compositor stutter that
+            // showed up when y, scale and opacity were all interpolating.
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.11, ease: 'easeOut' }}
+            style={{ transformOrigin: 'top left' }}
             // max-h keeps long lists (categories) compact and scrollable.
             className="absolute z-50 mt-1.5 left-0 min-w-[170px] max-h-72 overflow-y-auto no-scrollbar
                        rounded-2xl bg-[#15121b] border border-white/10 shadow-2xl shadow-black/60 p-1"

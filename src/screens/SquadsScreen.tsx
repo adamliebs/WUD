@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, Loader2, LogOut, MessageCircle, Pencil, Plus, Send, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, Loader2, LogOut, MessageCircle, Pencil, Plus, Send, SmilePlus, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
@@ -620,6 +620,95 @@ function RemoveMemberButton({ onConfirm }: { onConfirm: () => void }) {
 
 /* ─────────────────────────── Chat tab ─────────────────────────── */
 
+/** Per-message emoji reactions for squad chat — mirrors MessageReactions
+ *  in ActivityDetailSheet. Same six quick emojis. Authorization is
+ *  implicit (you're already in the squad if you're seeing this pane). */
+function SquadMessageReactions({
+  squadId, messageId, reactions, meId, mine,
+}: {
+  squadId: string;
+  messageId: string;
+  reactions: import('../types').Reaction[];
+  meId: string;
+  mine: boolean;
+}) {
+  const toggle = useApp(s => s.toggleSquadMessageReaction);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const order: string[] = [];
+  const agg: Record<string, { count: number; mine: boolean }> = {};
+  for (const r of reactions) {
+    if (!agg[r.emoji]) { agg[r.emoji] = { count: 0, mine: false }; order.push(r.emoji); }
+    agg[r.emoji].count += 1;
+    if (r.userId === meId) agg[r.emoji].mine = true;
+  }
+
+  return (
+    <div className={`relative flex items-center gap-1 flex-wrap pt-0.5 ${mine ? 'justify-end' : 'justify-start'}`}>
+      {order.map(emoji => {
+        const { count, mine: isMine } = agg[emoji];
+        return (
+          <button
+            key={emoji}
+            onClick={() => toggle(squadId, messageId, emoji)}
+            aria-pressed={isMine}
+            className={`inline-flex items-center gap-1 h-6 px-1.5 rounded-full text-[11px] font-semibold border transition
+                        ${isMine
+                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                          : 'bg-white/5 border-white/10 text-zinc-200 hover:bg-white/10'}`}
+          >
+            <span className="text-[12px] leading-none">{emoji}</span>
+            <span className="tabular-nums leading-none">{count}</span>
+          </button>
+        );
+      })}
+      <button
+        onClick={() => setPickerOpen(v => !v)}
+        aria-label="Add reaction"
+        className="h-6 w-6 grid place-items-center rounded-full bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 transition"
+      >
+        <SmilePlus size={11} />
+      </button>
+
+      <AnimatePresence>
+        {pickerOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-30"
+              onClick={() => setPickerOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.96 }}
+              transition={{ duration: 0.12 }}
+              className={`absolute z-40 glass-strong rounded-2xl p-1.5 shadow-xl flex gap-1
+                          ${mine ? 'right-0' : 'left-0'}`}
+              style={{ bottom: 'calc(100% + 6px)' }}
+            >
+              {SQUAD_QUICK_REACTIONS.map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    toggle(squadId, messageId, emoji);
+                    setPickerOpen(false);
+                  }}
+                  className={`h-8 w-8 grid place-items-center rounded-xl text-base transition
+                              ${agg[emoji]?.mine ? 'bg-rose-500/20 ring-1 ring-rose-400/50' : 'hover:bg-white/10'}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const SQUAD_QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '🎉', '🙏'];
+
 /** Stable empty reference — same purpose as EMPTY_PENDING in
  *  ActivityDetailSheet (avoids the useSyncExternalStore infinite loop
  *  when the slice is missing). */
@@ -729,40 +818,51 @@ function SquadChatPane({ squadId }: { squadId: string }) {
                       <Loader2 size={12} className="animate-spin" />
                     </span>
                   )}
-                  {isPhoto ? (
-                    <div className={`max-w-[78%] overflow-hidden rounded-2xl
-                                    ${mine ? 'rounded-br-sm' : 'rounded-bl-sm'}
-                                    bg-white/8 border border-white/10`}>
-                      {!mine && (
-                        <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
-                      )}
-                      <button
-                        onClick={() => setViewerSrc(mediaUrl(m.photoUrl) ?? null)}
-                        className="block w-full"
-                        aria-label="Open photo"
-                      >
-                        <img
-                          src={mediaUrl(m.photoUrl)}
-                          alt={m.text ?? 'shared photo'}
-                          className="block max-h-64 w-full object-cover"
-                          draggable={false}
-                        />
-                      </button>
-                      {m.text && (
-                        <div className={`px-3 py-2 text-sm ${mine ? 'text-white' : 'text-zinc-100'}`}>
-                          {m.text}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className={`max-w-[78%] px-3.5 py-2 rounded-2xl text-sm
-                                    ${mine
-                                      ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-br-sm shadow-[0_8px_30px_-10px_rgba(244,63,94,0.6)]'
-                                      : 'bg-white/8 text-zinc-100 rounded-bl-sm border border-white/5'}`}>
-                      {!mine && <div className="text-[10.5px] font-semibold text-zinc-400 mb-0.5">{u.name}</div>}
-                      {m.text}
-                    </div>
-                  )}
+                  <div className={`flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'} max-w-[94%]`}>
+                    {isPhoto ? (
+                      <div className={`max-w-[330px] overflow-hidden rounded-2xl
+                                      ${mine ? 'rounded-br-sm' : 'rounded-bl-sm'}
+                                      bg-white/8 border border-white/10`}>
+                        {!mine && (
+                          <div className="px-3 pt-2 text-[10.5px] font-semibold text-zinc-400">{u.name}</div>
+                        )}
+                        <button
+                          onClick={() => setViewerSrc(mediaUrl(m.photoUrl) ?? null)}
+                          className="block w-full"
+                          aria-label="Open photo"
+                        >
+                          <img
+                            src={mediaUrl(m.photoUrl)}
+                            alt={m.text ?? 'shared photo'}
+                            className="block max-h-64 w-full object-cover"
+                            draggable={false}
+                          />
+                        </button>
+                        {m.text && (
+                          <div className={`px-3 py-2 text-sm ${mine ? 'text-white' : 'text-zinc-100'}`}>
+                            {m.text}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className={`max-w-[330px] px-3.5 py-2 rounded-2xl text-sm
+                                      ${mine
+                                        ? 'bg-gradient-to-br from-rose-500 to-pink-500 text-white rounded-br-sm shadow-[0_8px_30px_-10px_rgba(244,63,94,0.6)]'
+                                        : 'bg-white/8 text-zinc-100 rounded-bl-sm border border-white/5'}`}>
+                        {!mine && <div className="text-[10.5px] font-semibold text-zinc-400 mb-0.5">{u.name}</div>}
+                        {m.text}
+                      </div>
+                    )}
+                    {!isPending && (
+                      <SquadMessageReactions
+                        squadId={squadId}
+                        messageId={m.id}
+                        reactions={m.reactions ?? []}
+                        meId={meId}
+                        mine={mine}
+                      />
+                    )}
+                  </div>
                 </motion.div>
               );
             })}

@@ -1,12 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Calendar, Camera, ChevronDown, Clock, Globe2, Loader2, Lock,
+  Calendar, Camera, ChevronDown, Globe2, Loader2, Lock,
   Radio, Sparkles, X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { CATEGORIES, CUSTOM_GRADIENT } from '../data/categories';
 import { BottomSheet } from '../components/BottomSheet';
+import { TimePicker } from '../components/TimePicker';
 import { uploadApi } from '../api/endpoints';
 import { mediaUrl } from '../api/client';
 import { useApp, recurrenceLabel } from '../store';
@@ -487,19 +488,12 @@ export function PostSheet() {
                   })}
                 </div>
 
-                {/* Start time pill */}
-                <label className="mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10
-                                  focus-within:ring-2 focus-within:ring-rose-400/60 focus-within:border-rose-400/30 cursor-pointer">
-                  <Clock size={16} className="text-zinc-400" />
-                  <span className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Time</span>
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={e => setTime(e.target.value)}
-                    className="ml-auto bg-transparent text-white font-semibold text-base focus:outline-none
-                               [color-scheme:dark]"
-                  />
-                </label>
+                {/* Start time — tap the pill to open a scroll-wheel
+                    picker; collapses back when you tap outside. Replaces
+                    the inconsistent native `<input type="time">` sheet. */}
+                <div className="mt-2">
+                  <TimePicker value={time} onChange={setTime} />
+                </div>
               </>
             )}
 
@@ -600,27 +594,26 @@ export function PostSheet() {
                     );
                   })}
                 </div>
-                <label className="mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 border border-white/10
-                                  focus-within:ring-2 focus-within:ring-rose-400/60 focus-within:border-rose-400/30 cursor-pointer">
-                  <Clock size={16} className="text-zinc-400" />
-                  <span className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">End time</span>
-                  <input
-                    type="time"
+                <div className="mt-2">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold mb-1.5 px-1">
+                    End time
+                  </div>
+                  <TimePicker
                     value={customEnd.time}
-                    onChange={e => setCustomEnd({ ...customEnd, time: e.target.value })}
-                    className="ml-auto bg-transparent text-white font-semibold text-base focus:outline-none
-                               [color-scheme:dark]"
+                    onChange={t => setCustomEnd({ ...customEnd, time: t })}
                   />
-                </label>
+                </div>
               </motion.div>
             )}
           </Section>
 
-          {/* Share with — promoted up from the bottom of the form because
-              audience is the #1 thing that affects who sees the plan. Kept
-              outside the More options collapse for that reason. */}
+          {/* Who can see + join? — mirrors the EditActivitySheet layout
+              so the two flows feel like the same form. Two big-button
+              grid: "All friends" vs "Squads only". Squads only flips the
+              chip row on for picking which crews; All friends reveals the
+              Visibility section below. */}
           <Section
-            title="Share with"
+            title="Who can see + join?"
             trailing={
               <span className={`text-[11px] font-semibold normal-case tracking-normal
                                 ${audienceEmpty ? 'text-amber-300' : 'text-rose-300/90'}`}>
@@ -628,91 +621,124 @@ export function PostSheet() {
               </span>
             }
           >
-            <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 pb-1">
-              <ShareChip
-                emoji="🌐"
-                label="All friends"
-                active={openInvite}
-                onClick={() => setOpenInvite(v => !v)}
-              />
-              {squads.map(s => {
-                const active = selectedSquadIds.includes(s.id);
-                return (
-                  <ShareChip
-                    key={s.id}
-                    emoji={s.emoji}
-                    label={s.name}
-                    badge={String(1 + s.memberIds.length)}
-                    active={active}
-                    onClick={() => toggleSquad(s.id)}
-                  />
-                );
-              })}
+            <div className="grid grid-cols-2 gap-2">
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                // Picking All friends doesn't clear tagged squads —
+                // squads can still ride along as an additional tag so the
+                // plan also shows in those squad screens (matches the
+                // EditActivitySheet behaviour).
+                onClick={() => setOpenInvite(true)}
+                className={`p-3 rounded-2xl border text-left transition
+                            ${openInvite
+                              ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-emerald-400'
+                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+              >
+                <div className="text-sm font-bold">All friends</div>
+                <div className={`text-[11px] mt-1 ${openInvite ? 'text-white/85' : 'text-zinc-400'}`}>
+                  Anyone you're friends with can join.
+                </div>
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setOpenInvite(false)}
+                className={`p-3 rounded-2xl border text-left transition
+                            ${!openInvite
+                              ? 'bg-white text-zinc-900 border-white'
+                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+              >
+                <div className="text-sm font-bold">Squads only</div>
+                <div className={`text-[11px] mt-1 ${!openInvite ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  Pick specific squads below.
+                </div>
+              </motion.button>
             </div>
-            <div className="text-[11px] text-zinc-400 mt-2 px-1 leading-snug">
-              {audienceEmpty
-                ? 'Pick at least one audience above.'
-                : openInvite && selectedSquadIds.length === 0
-                  ? 'Open to all friends — they\'ll see it in the feed.'
-                  : openInvite
-                    ? 'Open invite — also surfaces in the tagged squad screens.'
-                    : 'Squad-only — only members of the selected squads can see it.'}
-            </div>
-            {squads.length === 0 && (
+
+            {/* Visibility — only relevant when "All friends" is on
+                (squad-only posts skip the friend-of-friend layer by
+                construction). Inline within the same section so a host
+                glances at one block of "who sees this" controls. */}
+            {openInvite && (
+              <div className="mt-3">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold mb-2 px-1">
+                  {isPrivate
+                    ? <><Lock size={11} className="inline -mt-0.5 mr-1" />Visibility</>
+                    : <><Globe2 size={11} className="inline -mt-0.5 mr-1" />Visibility</>}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setIsPrivate(false)}
+                    className={`p-3 rounded-2xl border text-left transition
+                                ${!isPrivate
+                                  ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white border-sky-400'
+                                  : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                  >
+                    <div className="text-sm font-bold">Public</div>
+                    <div className={`text-[11px] mt-1 ${!isPrivate ? 'text-white/85' : 'text-zinc-400'}`}>
+                      Friends-of-friends can see it once a friend joins.
+                    </div>
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setIsPrivate(true)}
+                    className={`p-3 rounded-2xl border text-left transition
+                                ${isPrivate
+                                  ? 'bg-white text-zinc-900 border-white'
+                                  : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                  >
+                    <div className="text-sm font-bold">Private</div>
+                    <div className={`text-[11px] mt-1 ${isPrivate ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                      Only direct friends can see it.
+                    </div>
+                  </motion.button>
+                </div>
+              </div>
+            )}
+
+            {/* Squad pills — always shown when the user has squads,
+                regardless of audience choice. Same as EditActivitySheet:
+                with All friends they're an optional tag (plan ALSO shows
+                in the squad screens); with Squads only they're the gate
+                that decides who sees the plan. */}
+            {squads.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-semibold mb-2 px-1">
+                  {openInvite ? 'Squads (optional)' : 'Pick squads'}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {squads.map(sq => {
+                    const picked = selectedSquadIds.includes(sq.id);
+                    return (
+                      <motion.button
+                        key={sq.id}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => toggleSquad(sq.id)}
+                        className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border transition
+                                    ${picked
+                                      ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400'
+                                      : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
+                      >
+                        <span className="mr-1">{sq.emoji}</span>
+                        {sq.name}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!openInvite && squads.length === 0 && (
               <div className="text-[11px] text-zinc-500 mt-2 px-1">
                 No squads to tag yet — make one from Profile → Squads.
               </div>
             )}
+            {audienceEmpty && (
+              <div className="text-[11px] text-amber-300 mt-3 px-1">
+                Pick at least one squad — or switch back to All friends.
+              </div>
+            )}
           </Section>
-
-          {/* Privacy — only relevant when "All friends" is on (squad-only posts ignore FoF).
-              Kept OUT of More options because audience scope is a privacy-impacting
-              decision the host should consciously confirm, not bury two clicks deep. */}
-          {openInvite && (
-          <Section
-            title="Visibility"
-            trailing={
-              <span className="text-[11px] text-rose-300/90 font-semibold normal-case tracking-normal">
-                {isPrivate ? 'Friends only' : 'Friends + their friends'}
-              </span>
-            }
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setIsPrivate(false)}
-                className={`p-3 rounded-2xl border text-left transition
-                            ${!isPrivate
-                              ? 'bg-white text-zinc-900 border-white shadow-[0_10px_30px_-12px_rgba(244,63,94,0.4)]'
-                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Globe2 size={16} />
-                  <span className="text-sm font-bold">Public</span>
-                </div>
-                <div className={`text-[11px] mt-1 ${!isPrivate ? 'text-zinc-600' : 'text-zinc-400'}`}>
-                  Friends + their friends if a friend joins.
-                </div>
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setIsPrivate(true)}
-                className={`p-3 rounded-2xl border text-left transition
-                            ${isPrivate
-                              ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_10px_30px_-12px_rgba(244,63,94,0.6)]'
-                              : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <Lock size={16} />
-                  <span className="text-sm font-bold">Private</span>
-                </div>
-                <div className={`text-[11px] mt-1 ${isPrivate ? 'text-white/85' : 'text-zinc-400'}`}>
-                  Only your direct friends. No friend-of-friend unlock.
-                </div>
-              </motion.button>
-            </div>
-          </Section>
-          )}
 
           {/* More options — the rarely-needed fields. Notes + Visibility are
               NOT here (they're either above or per request "shouldn't be more
@@ -810,41 +836,6 @@ export function PostSheet() {
         </div>
       </div>
     </BottomSheet>
-  );
-}
-
-function ShareChip({
-  emoji, label, badge, active, onClick,
-}: {
-  emoji: string;
-  label: string;
-  badge?: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.92 }}
-      onClick={onClick}
-      aria-pressed={active}
-      className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
-                  ${active
-                    ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border-rose-400 shadow-[0_8px_24px_-10px_rgba(244,63,94,0.6)]'
-                    : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
-    >
-      <span>{emoji}</span>
-      <span>{label}</span>
-      {badge && (
-        <span className={`text-[10px] tabular-nums ml-0.5 ${active ? 'text-white/80' : 'text-zinc-400'}`}>
-          {badge}
-        </span>
-      )}
-      {active && (
-        <svg viewBox="0 0 12 12" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="2,7 5,10 10,3" />
-        </svg>
-      )}
-    </motion.button>
   );
 }
 

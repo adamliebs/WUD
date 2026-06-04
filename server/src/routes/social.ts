@@ -4,7 +4,7 @@ import { handler, optionalString, requireString } from '../lib/http.js';
 import {
   acceptFriendRequest, addSquadMember, createSquad, declineFriendRequest, deleteSquad,
   discoverUsers, getSquad, incomingRequests, leaveSquad, listFriends, listSquadsForUser,
-  matchContacts, removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
+  matchContacts, outgoingRequests, removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
 } from '../services/social.js';
 import { blockUser, listBlockedByMe, unblockUser } from '../services/safety.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
@@ -67,6 +67,11 @@ socialRouter.delete('/me/blocks/:userId', handler((req, res) => {
 
 socialRouter.get('/friend-requests', handler((req, res) => {
   res.json({ requests: incomingRequests(uid(req)) });
+}));
+
+/** Requests this user has sent and is still waiting on. */
+socialRouter.get('/friend-requests/outgoing', handler((req, res) => {
+  res.json({ requests: outgoingRequests(uid(req)) });
 }));
 
 socialRouter.post('/friend-requests', handler((req, res) => {

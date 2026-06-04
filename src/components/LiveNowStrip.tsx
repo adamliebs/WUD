@@ -49,7 +49,7 @@ export function LiveNowStrip() {
           whileTap={{ scale: 0.94 }}
           onClick={() => setShowGoLive(true)}
           className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold
-                     px-2.5 py-1 rounded-full
+                     px-2.5 py-1 rounded-lg
                      bg-gradient-to-br from-rose-500 to-orange-500 text-white
                      shadow-[0_6px_18px_-8px_rgba(244,63,94,0.55)]"
           aria-label="Go live"
@@ -60,7 +60,7 @@ export function LiveNowStrip() {
       </div>
 
       {liveActivities.length > 0 ? (
-        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
           {liveActivities.map((a, i) => (
             <LiveActivityCard
               key={a.id}

@@ -3,6 +3,7 @@ import { Calendar, Globe2, Lock, MapPin, Radio, Sparkles, Users, X } from 'lucid
 import { useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { AvatarStack } from '../components/Avatar';
+import { TimePicker } from '../components/TimePicker';
 import { BottomSheet } from '../components/BottomSheet';
 import { PulseButton } from '../components/PulseButton';
 import { buildDayOptions, computeStartsAt, nextQuarterTime } from '../data/time';
@@ -22,7 +23,7 @@ export function LockFloatSheet() {
   const lockingId = useApp(s => s.lockingFloatId);
   const setLockingId = useApp(s => s.setLockingFloatId);
   return (
-    <BottomSheet open={!!lockingId} onClose={() => setLockingId(null)} size="tall">
+    <BottomSheet open={!!lockingId} onClose={() => setLockingId(null)} size="tall" stiff>
       {lockingId ? <Inner key={lockingId} floatId={lockingId} onClose={() => setLockingId(null)} /> : null}
     </BottomSheet>
   );
@@ -146,7 +147,7 @@ function Inner({ floatId, onClose }: { floatId: string; onClose: () => void }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-4 pb-36">
+      <div className="flex-1 overflow-y-auto overscroll-none no-scrollbar px-4 pt-4 pb-36">
         {/* Keen crowd preview */}
         {keenUsers.length > 0 && (
           <div className="mb-4 rounded-2xl bg-emerald-500/10 border border-emerald-400/30 p-3 flex items-center gap-3">
@@ -241,13 +242,7 @@ function Inner({ floatId, onClose }: { floatId: string; onClose: () => void }) {
                   );
                 })}
               </div>
-              <input
-                type="time"
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm
-                           focus:outline-none focus:ring-2 focus:ring-fuchsia-400/60"
-              />
+              <TimePicker value={time} onChange={setTime} />
             </motion.div>
           ) : (
             <motion.div

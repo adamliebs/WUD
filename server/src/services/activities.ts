@@ -345,15 +345,12 @@ export function updateActivity(actorId: string, activityId: string, patch: {
     throw conflict('ACTIVITY_OVER', 'This plan has already ended');
   }
 
-  // Plans currently in their window may extend or shorten via endsAt, but the
-  // start time is fixed once the plan is live — moving it would either rewrite
-  // history or pretend the plan never started yet.
+  // Used to lock startsAt once a plan went live, but the host-forgot-to-update
+  // case is real: someone marks a plan for 6pm, ends up actually starting at
+  // 7pm, then the in-app countdown is wrong for everyone joining the chat.
+  // Trusting the host to set the truth wins over the philosophical "you can't
+  // rewrite history" stance. End-after-start is still enforced below.
   const ts = now();
-  const isLive = row.starts_at <= ts && ts <= row.ends_at;
-  if (isLive && patch.startsAt !== undefined && patch.startsAt !== row.starts_at) {
-    throw conflict('ACTIVITY_LIVE_START_LOCKED',
-      'Start time is locked once a plan is live. You can still adjust the end time.');
-  }
 
   // Validate that any new time window stays end-after-start. Use the patched
   // value if present, else the existing row's value.

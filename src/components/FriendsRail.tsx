@@ -215,10 +215,15 @@ export function FriendsRail() {
               {selected.size > 0 && (
                 <motion.button
                   key="clear"
-                  initial={{ opacity: 0, scale: 0.85 }}
+                  // Swapped from a spring to a short ease-out — the spring
+                  // bounce was reading as jumpy next to the static "All"
+                  // pill (the two never matched timing). Matches the
+                  // FeedFilters Clear chip so all toggle-clear animations
+                  // feel like one family.
+                  initial={{ opacity: 0, scale: 0.92 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.85 }}
-                  transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+                  exit={{ opacity: 0, scale: 0.92 }}
+                  transition={{ duration: 0.12, ease: 'easeOut' }}
                   onClick={clearSelection}
                   className="h-7 px-2.5 inline-flex items-center gap-1 rounded-full text-[11px] font-semibold
                              text-zinc-300 bg-white/5 border border-white/10 hover:bg-white/10 transition"
@@ -242,8 +247,11 @@ export function FriendsRail() {
           </div>
         </div>
 
-        {/* The rail itself — horizontal scroll. Tap toggles selection. */}
-        <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-2 px-3 py-1">
+        {/* The rail itself — horizontal scroll. Tap toggles selection.
+            `-mx-5 px-3` pushes the scroll container past the grandparent's
+            px-4 + our px-1 so the avatars run all the way to the actual
+            phone edge instead of getting cut off short. */}
+        <div className="flex gap-3 overflow-x-auto no-scrollbar -mx-5 px-3 py-1">
           {sorted.map((u, i) => (
             <FriendTile
               key={u.id}

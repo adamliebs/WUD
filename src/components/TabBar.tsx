@@ -15,6 +15,8 @@ export function TabBar() {
   const tab = useApp(s => s.tab);
   const setTab = useApp(s => s.setTab);
   const unread = useApp(s => s.unreadCount());
+  const unseenFeed = useApp(s => s.unseenFeedCount());
+  const unseenFloats = useApp(s => s.unseenFloatsCount());
   const setShowPostSheet = useApp(s => s.setShowPostSheet);
 
   // Position the "+" button between Ping and Notifications visually,
@@ -65,6 +67,14 @@ export function TabBar() {
               tab={t}
               active={tab === t.key}
               onClick={() => setTab(t.key)}
+              // Hide the badge on the tab you're currently looking at —
+              // anything new while you sit on it is by definition "seen".
+              badge={
+                t.key === tab ? 0
+                : t.key === 'feed' ? unseenFeed
+                : t.key === 'floats' ? unseenFloats
+                : 0
+              }
             />
           ))}
 

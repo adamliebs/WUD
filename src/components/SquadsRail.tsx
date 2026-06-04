@@ -61,14 +61,14 @@ export function SquadsRail() {
           <span className="text-zinc-500 normal-case tracking-normal"> · {squads.length}</span>
         </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-2 px-2 pb-1">
+      <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
         {/* Leading "+" chip — always present so creating another squad
             takes the same tap whether you have 0 or 20. */}
         <motion.button
           whileTap={{ scale: 0.95 }}
           onClick={() => openOverlay('squads')}
           aria-label="Create a squad"
-          className="shrink-0 h-9 inline-flex items-center gap-1.5 pl-2.5 pr-3 rounded-full
+          className="shrink-0 h-9 inline-flex items-center gap-1.5 pl-2.5 pr-3 rounded-xl
                      bg-white/5 border border-white/10 border-dashed text-zinc-200 text-[12px] font-semibold
                      hover:bg-white/10 transition"
         >
@@ -86,7 +86,7 @@ export function SquadsRail() {
               key={sq.id}
               whileTap={{ scale: 0.95 }}
               onClick={() => openSquad(sq.id)}
-              className="shrink-0 h-9 inline-flex items-center gap-1.5 px-3 rounded-full
+              className="shrink-0 h-9 inline-flex items-center gap-1.5 px-3 rounded-xl
                          bg-white/5 border border-white/10 text-white text-[12px] font-semibold
                          hover:bg-white/10 transition"
             >

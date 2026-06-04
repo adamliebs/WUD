@@ -24,12 +24,14 @@ export type RealtimeEvent =
   // the granular create/respond/lock/remove distinction lives in `data.reason`.
   | { channel: `user:${string}`;     type: 'float.changed';        data: unknown }
   | { channel: `activity:${string}`; type: 'message.created';      data: unknown }
+  | { channel: `activity:${string}`; type: 'message.updated';      data: unknown }
   | { channel: `activity:${string}`; type: 'poll.updated';         data: unknown }
   | { channel: `activity:${string}`; type: 'rsvp.changed';         data: unknown }
   | { channel: `activity:${string}`; type: 'reaction.changed';     data: unknown }
   | { channel: `activity:${string}`; type: 'activity.updated';     data: unknown }
   | { channel: `activity:${string}`; type: 'host.transferred';     data: unknown }
   | { channel: `squad:${string}`;    type: 'message.created';      data: unknown }
+  | { channel: `squad:${string}`;    type: 'message.updated';      data: unknown }
   | { channel: `presence:friends`;   type: 'presence.changed';     data: unknown };
 
 const emitter = new EventEmitter();

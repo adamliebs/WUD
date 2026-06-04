@@ -70,7 +70,11 @@ export function SmartSuggestions() {
   const setFilter = useApp(s => s.setFeedFilter);
   const openActivity = useApp(s => s.openActivity);
 
-  const [expanded, setExpanded] = useState(true);
+  // Collapsed on first paint so the rail doesn't push the actual feed below
+  // the fold. The user expands via the teaser pill, and the open/closed
+  // state lives in-component (no persistence) so each new visit to the
+  // Feed tab opens with the same minimal footprint.
+  const [expanded, setExpanded] = useState(false);
 
   // Each digest carries a `tap` describing what should happen — either apply
   // a filter (and scroll the user to the filtered results) or open one

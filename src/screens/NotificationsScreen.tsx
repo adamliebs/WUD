@@ -98,7 +98,7 @@ export function NotificationsScreen() {
           <div className="shrink-0 flex items-center gap-2">
             <RefreshButton onRefresh={refreshAll} ariaLabel="Refresh notifications" />
             {/* Clear all — only visible when there's something to clear.
-                Auto-purge handles 3-day-old notifications on the server side. */}
+                Auto-purge handles 7-day-old notifications on the server side. */}
             {notifications.length > 0 && (
               <motion.button
                 whileTap={{ scale: 0.94 }}

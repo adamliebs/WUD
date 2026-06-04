@@ -47,6 +47,9 @@ export interface ChatMessage {
   text?: string;
   photoUrl?: string;
   poll?: { question: string; options: PollOption[]; closed?: boolean };
+  /** Per-message emoji reactions. Flat array, one entry per (user, emoji)
+   *  pair. The client groups them by emoji at render time. */
+  reactions?: Reaction[];
 }
 
 export type Recurrence =

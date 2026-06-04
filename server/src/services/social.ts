@@ -168,6 +168,20 @@ export function incomingRequests(userId: string) {
   ).map(r => ({ id: r.id, from: toPublicUser(getUserRow(r.requester_id)!), at: r.created_at }));
 }
 
+/**
+ * Pending requests this user has SENT and not yet had answered. Used by the
+ * Friends overlay so the sender can see who they're waiting on and cancel
+ * if they change their mind. Cancellation reuses declineFriendRequest()
+ * which already supports either-party-acts semantics — when the acting
+ * user is the requester, the request's status flips to 'cancelled'.
+ */
+export function outgoingRequests(userId: string) {
+  return q.all<{ id: string; recipient_id: string; created_at: number }>(
+    `SELECT id, recipient_id, created_at FROM friend_requests
+      WHERE requester_id = ? AND status = 'pending' ORDER BY created_at DESC`, userId,
+  ).map(r => ({ id: r.id, to: toPublicUser(getUserRow(r.recipient_id)!), at: r.created_at }));
+}
+
 /** Users with a pending friend request to/from this user (either direction). */
 function pendingRequestPeers(userId: string): Set<string> {
   const rows = q.all<{ requester_id: string; recipient_id: string }>(

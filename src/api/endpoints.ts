@@ -178,6 +178,8 @@ export const chatApi = {
     api.post<{ message: ChatMessage }>(`/activities/${activityId}/polls`, { question, options }),
   vote: (messageId: string, optionId: string) =>
     api.put<{ message: ChatMessage }>(`/polls/${messageId}/vote`, { optionId }),
+  reactToMessage: (messageId: string, emoji: string) =>
+    api.put<{ message: ChatMessage }>(`/messages/${messageId}/reactions`, { emoji }),
 
   squadSend: (squadId: string, text: string) =>
     api.post<{ message: ChatMessage }>(`/squads/${squadId}/messages`, { text }),
@@ -188,6 +190,7 @@ export const chatApi = {
 /* ---- social ---- */
 
 export interface IncomingRequest { id: string; from: User; at: number }
+export interface OutgoingRequest { id: string; to: User; at: number }
 
 export const socialApi = {
   friends: () => api.get<{ friends: User[] }>('/friends'),
@@ -203,8 +206,13 @@ export const socialApi = {
     api.post<{ requestId: string }>('/friend-requests', { recipientId }),
   removeFriend: (userId: string) => api.del(`/friends/${userId}`),
   friendRequests: () => api.get<{ requests: IncomingRequest[] }>('/friend-requests'),
+  outgoingRequests: () => api.get<{ requests: OutgoingRequest[] }>('/friend-requests/outgoing'),
   acceptRequest: (id: string) => api.post(`/friend-requests/${id}/accept`),
   declineRequest: (id: string) => api.post(`/friend-requests/${id}/decline`),
+  // Cancellation is server-side equivalent to "decline by the requester" —
+  // the existing /decline endpoint inspects acting-user vs requester_id and
+  // flips status to 'cancelled' instead of 'declined' when they match.
+  cancelRequest: (id: string) => api.post(`/friend-requests/${id}/decline`),
 
   squads: () => api.get<{ squads: Squad[]; users: User[] }>('/squads'),
   squad: (id: string) => api.get<{ squad: Squad; users: User[] }>(`/squads/${id}`),

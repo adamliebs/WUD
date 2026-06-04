@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import FirebaseCore
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,9 +8,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Firebase is initialised by the @capacitor-firebase/app + messaging plugins'
-        // load() / init() — see node_modules/@capacitor-firebase/*/ios/Plugin/*.swift.
-        // The plugins read GoogleService-Info.plist from the app bundle automatically.
+        // Configure Firebase explicitly up front. The @capacitor-firebase/app
+        // plugin's load() ALSO calls this idempotently, but the plugin's load
+        // doesn't fire until after the bridge instantiates it — and by that
+        // point internal Firebase frameworks may already have logged the
+        // "[FirebaseCore][I-COR000003] default app not yet configured"
+        // warning when they touch FirebaseApp during their own +load.
+        // Calling configure() here is the documented canonical pattern.
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
+        // Local plugin SavePhoto is registered by MainViewController.capacitorDidLoad.
         return true
     }
 
