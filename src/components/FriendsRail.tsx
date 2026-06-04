@@ -210,40 +210,40 @@ export function FriendsRail() {
               {selectionLabel}
             </div>
           </div>
+          {/* Both buttons always rendered. Clear's visibility is a CSS
+              opacity + width toggle so the All button doesn't get yanked
+              sideways by a layout reflow every time Clear mounts/unmounts.
+              All button uses a solid rose tint (no gradient) when active —
+              gradients can't tween, so the previous version snapped the
+              background while smoothly transitioning the text + border,
+              which read as glitchy. Single transition-colors property
+              keeps the toggle clean. */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <AnimatePresence initial={false}>
-              {selected.size > 0 && (
-                <motion.button
-                  key="clear"
-                  // Swapped from a spring to a short ease-out — the spring
-                  // bounce was reading as jumpy next to the static "All"
-                  // pill (the two never matched timing). Matches the
-                  // FeedFilters Clear chip so all toggle-clear animations
-                  // feel like one family.
-                  initial={{ opacity: 0, scale: 0.92 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.92 }}
-                  transition={{ duration: 0.12, ease: 'easeOut' }}
-                  onClick={clearSelection}
-                  className="h-7 px-2.5 inline-flex items-center gap-1 rounded-full text-[11px] font-semibold
-                             text-zinc-300 bg-white/5 border border-white/10 hover:bg-white/10 transition"
-                >
-                  <X size={11} />
-                  Clear
-                </motion.button>
-              )}
-            </AnimatePresence>
-            <motion.button
-              whileTap={{ scale: 0.94 }}
+            <button
+              onClick={clearSelection}
+              tabIndex={selected.size > 0 ? 0 : -1}
+              aria-hidden={selected.size === 0}
+              className={`h-7 inline-flex items-center gap-1 rounded-full text-[11px] font-semibold
+                          text-zinc-300 bg-white/5 border border-white/10 hover:bg-white/10
+                          transition-all duration-150 ease-out overflow-hidden whitespace-nowrap
+                          ${selected.size > 0
+                            ? 'opacity-100 max-w-[80px] px-2.5'
+                            : 'opacity-0 max-w-0 px-0 border-transparent pointer-events-none'}`}
+            >
+              <X size={11} />
+              Clear
+            </button>
+            <button
               onClick={() => selected.size === friends.length ? clearSelection() : selectAll()}
-              className={`h-7 px-2.5 inline-flex items-center gap-1 rounded-full text-[11px] font-bold transition
+              className={`h-7 px-2.5 inline-flex items-center gap-1 rounded-full text-[11px] font-bold
+                          border transition-colors duration-150 ease-out
                           ${selected.size === friends.length
-                            ? 'bg-gradient-to-br from-rose-500 to-orange-500 text-white border border-rose-300 shadow-[0_6px_18px_-8px_rgba(244,63,94,0.6)]'
-                            : 'bg-white/5 text-zinc-200 border border-white/10 hover:bg-white/10'}`}
+                            ? 'bg-rose-500/20 text-rose-100 border-rose-400/50'
+                            : 'bg-white/5 text-zinc-200 border-white/10 hover:bg-white/10'}`}
             >
               <Users size={11} />
               All
-            </motion.button>
+            </button>
           </div>
         </div>
 

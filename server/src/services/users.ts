@@ -141,7 +141,13 @@ export function createUser(input: {
     ts,
     ts,
   );
-  q.run('INSERT INTO user_settings (user_id) VALUES (?)', id);
+  // Default reminder lead time is 30 min — the column DEFAULT is NULL
+  // (= off) so we have to specify it explicitly here for new users.
+  // Existing rows are backfilled by migration 0012.
+  q.run(
+    'INSERT INTO user_settings (user_id, default_reminder_minutes) VALUES (?, ?)',
+    id, 30,
+  );
   return getPublicUser(id);
 }
 

@@ -102,7 +102,10 @@ function run(): void {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         u.id, u.name, u.handle, u.emoji, u.color, u.photoUrl, ts, ts,
       );
-      q.run('INSERT INTO user_settings (user_id) VALUES (?)', u.id);
+      q.run(
+        'INSERT INTO user_settings (user_id, default_reminder_minutes) VALUES (?, ?)',
+        u.id, 30,
+      );
       const email = u.id === 'u_me' ? 'admin@wud.app' : `${u.handle}@wud.app`;
       const hash = u.id === 'u_me' ? hashPassword('admin1234') : demoHash;
       q.run(

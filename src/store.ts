@@ -154,6 +154,11 @@ interface State {
   tab: Tab;
   openActivityId: string | null;
   showPostSheet: boolean;
+  /** Optional initial audience config consumed by PostSheet on its next
+   *  open. Set by `openPostSheetForSquad` (the + button inside a squad's
+   *  Plans tab) so the sheet starts in "Squads only" mode with just that
+   *  squad selected. PostSheet clears it once read. */
+  postSheetInit: { squadIds: string[]; openInvite: boolean } | null;
   feedScope: FeedScope;
   overlay: Overlay;
   /** When the Squads overlay opens, jump straight to this squad's detail
@@ -248,6 +253,14 @@ interface State {
   setTab: (t: Tab) => void;
   openActivity: (id: string | null) => void;
   setShowPostSheet: (b: boolean) => void;
+  /** Open the PostSheet pre-configured to post a plan to ONE specific
+   *  squad (Squads only, that squad selected, no other friends). The
+   *  user can still flip to All friends or add other squads. Triggered
+   *  by the + button on a squad's Plans tab. */
+  openPostSheetForSquad: (squadId: string) => void;
+  /** Consume + clear the postSheetInit target. Called by PostSheet's
+   *  open-reset effect so the same init isn't reapplied on a later open. */
+  consumePostSheetInit: () => State['postSheetInit'];
   setFeedScope: (s: FeedScope) => void;
   feedFilters: FeedFilters;
   setFeedFilter: (patch: Partial<FeedFilters>) => void;
@@ -1052,6 +1065,7 @@ export const useApp = create<State>((set, get) => {
     tab: 'feed',
     openActivityId: null,
     showPostSheet: false,
+    postSheetInit: null,
     showGoLiveSheet: false,
     editActivityId: null,
     lockingFloatId: null,
@@ -1466,7 +1480,20 @@ export const useApp = create<State>((set, get) => {
       }
       set({ tab: t });
     },
-    setShowPostSheet: (b) => set({ showPostSheet: b }),
+    setShowPostSheet: (b) => set(b
+      ? { showPostSheet: true }
+      // Clear the init on close so a plain "+" tap on the next open
+      // doesn't accidentally inherit a stale squad-scoped config.
+      : { showPostSheet: false, postSheetInit: null }),
+    openPostSheetForSquad: (squadId) => set({
+      postSheetInit: { squadIds: [squadId], openInvite: false },
+      showPostSheet: true,
+    }),
+    consumePostSheetInit: () => {
+      const init = get().postSheetInit;
+      if (init) set({ postSheetInit: null });
+      return init;
+    },
     setFeedScope: (s) => set({ feedScope: s }),
     setFeedFilter: (patch) => set(state => {
       const next = { ...state.feedFilters, ...patch };

@@ -325,6 +325,7 @@ function PlansPane({ squadId, mode }: { squadId: string; mode: 'upcoming' | 'pas
       : all.filter(a => a.startsAt <  cutoff).sort((a, b) => b.startsAt - a.startsAt);
   }));
   const openActivity = useApp(s => s.openActivity);
+  const openPostSheetForSquad = useApp(s => s.openPostSheetForSquad);
 
   return (
     <motion.div
@@ -345,6 +346,18 @@ function PlansPane({ squadId, mode }: { squadId: string; mode: 'upcoming' | 'pas
               ? 'Post a plan and tag this squad to see it here.'
               : 'Once squad plans wrap, they\'ll land here.'}
           </div>
+          {mode === 'upcoming' && (
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => openPostSheetForSquad(squadId)}
+              className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold
+                         text-white bg-gradient-to-br from-rose-500 to-orange-500
+                         shadow-[0_10px_24px_-10px_rgba(244,63,94,0.6)]"
+            >
+              <Plus size={14} strokeWidth={3} />
+              New plan
+            </motion.button>
+          )}
         </div>
       ) : mode === 'upcoming' ? (
         <div className="flex flex-col gap-3 pt-1">
@@ -354,6 +367,31 @@ function PlansPane({ squadId, mode }: { squadId: string; mode: 'upcoming' | 'pas
         <div className="flex flex-col gap-2 pt-1">
           {items.map(a => <PastRow key={a.id} activity={a} onOpen={() => openActivity(a.id)} />)}
         </div>
+      )}
+
+      {/* Floating + button — squad-scoped post. Opens PostSheet with this
+          squad pre-selected and audience locked to "Squads only" so the
+          plan goes to just this crew. Host can still flip to All friends
+          or tag other squads inside the sheet. Rendered only on the
+          upcoming tab — posting a plan into "past" doesn't make sense.
+          Inset from the right edge + pushed up above the bottom tab
+          bar's safe area. */}
+      {mode === 'upcoming' && items.length > 0 && (
+        <motion.button
+          whileTap={{ scale: 0.94 }}
+          onClick={() => openPostSheetForSquad(squadId)}
+          aria-label="Post a plan to this squad"
+          // Pushed flush into the bottom-right corner — only clears the
+          // home indicator via safe-area-inset-bottom and the screen
+          // edge by 12px. The squad overlay sits above the tab bar so
+          // there's no need to lift the button above one.
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)', right: 12 }}
+          className="fixed z-30 h-14 w-14 rounded-full grid place-items-center
+                     text-white bg-gradient-to-br from-orange-500 to-rose-500
+                     shadow-[0_18px_40px_-10px_rgba(251,146,60,0.7)] ring-1 ring-white/15"
+        >
+          <Plus size={24} strokeWidth={3} />
+        </motion.button>
       )}
     </motion.div>
   );

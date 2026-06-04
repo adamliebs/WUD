@@ -86,32 +86,26 @@ export function FeedFilters({ count }: Props) {
           (e.g. a custom category name). Each chip carries an aria-label
           since the visual is icon-only. */}
       <div className="flex items-center gap-2">
-        {/* Clear — X + "Clear" label. Compact pill on the left. Animates
-            in/out so the row doesn't jump when the user toggles their
-            first filter. */}
-        <AnimatePresence initial={false}>
-          {active && (
-            <motion.button
-              key="clear"
-              // Drop the width animation — animating to "auto" forced a
-              // measure-every-frame layout pass which read as jumpy on
-              // iOS. Opacity + scale alone is smooth, and the flex row
-              // reflows naturally when the chip appears.
-              initial={{ opacity: 0, scale: 0.92 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.92 }}
-              transition={{ duration: 0.12, ease: 'easeOut' }}
-              onClick={clear}
-              aria-label="Clear all filters"
-              className="shrink-0 h-8 inline-flex items-center gap-1 px-2.5 rounded-xl text-[12px] font-semibold
-                         text-rose-200 bg-rose-500/10 border border-rose-400/40 hover:bg-rose-500/20 transition
-                         whitespace-nowrap"
-            >
-              <X size={13} strokeWidth={2.5} />
-              Clear
-            </motion.button>
-          )}
-        </AnimatePresence>
+        {/* Clear button is always rendered — visibility is a CSS
+            opacity + max-width toggle so the chip row doesn't reflow
+            when the user toggles their first filter. Mount/unmount via
+            AnimatePresence was making the dropdown chips next to it
+            jump sideways every time the row width changed. */}
+        <button
+          onClick={clear}
+          aria-label="Clear all filters"
+          tabIndex={active ? 0 : -1}
+          aria-hidden={!active}
+          className={`shrink-0 h-8 inline-flex items-center gap-1 rounded-xl text-[12px] font-semibold
+                      text-rose-200 bg-rose-500/10 border border-rose-400/40 hover:bg-rose-500/20
+                      transition-all duration-150 ease-out overflow-hidden whitespace-nowrap
+                      ${active
+                        ? 'opacity-100 max-w-[100px] px-2.5'
+                        : 'opacity-0 max-w-0 px-0 border-transparent pointer-events-none'}`}
+        >
+          <X size={13} strokeWidth={2.5} />
+          Clear
+        </button>
 
         <IconDropdown
           ariaLabel="Sort"
