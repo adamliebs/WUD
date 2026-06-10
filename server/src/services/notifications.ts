@@ -94,6 +94,7 @@ function composePushTitle(type: NotificationType, fromName: string | null | unde
     case 'invite':          return `${fromName} wants to be your friend`;
     case 'friend_accepted': return `${fromName} accepted your request`;
     case 'host_offer':      return `You're up to host`;
+    case 'plan_invite':     return `${fromName} invited you to a plan`;
     default:                return null;
   }
 }
@@ -119,6 +120,7 @@ function bannerTitle(type: NotificationType): string {
     case 'activity_cancelled': return 'Plan cancelled';
     case 'chat_message':    return 'New message';
     case 'friend_accepted': return 'New friend';
+    case 'plan_invite':     return 'You\'re invited';
     default:                return 'WUD';
   }
 }
@@ -247,6 +249,7 @@ function shouldPushCategory(type: NotificationType, s: AppSettings): boolean {
     case 'activity_created':
     case 'activity_updated':
     case 'activity_cancelled':
+    case 'plan_invite':
       return s.notifyJoins;
     case 'chat_message':
       return s.notifyChat;

@@ -1,6 +1,6 @@
 import { burst as confetti } from '../lib/confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, BarChart3, CalendarPlus, Camera, Clock, Crown, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Send, Share2, ShieldOff, SmilePlus, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarPlus, Camera, Check, Clock, Crown, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Search, Send, Share2, ShieldOff, SmilePlus, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -40,6 +40,7 @@ function Inner({ activityId }: { activityId: string }) {
   const openEdit = useApp(s => s.setEditActivityId);
   const [tab, setTab] = useState<'details' | 'chat'>('details');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   // Outside-click + Escape close for the More popover.
   useEffect(() => {
@@ -329,6 +330,23 @@ function Inner({ activityId }: { activityId: string }) {
                 )}
               </div>
 
+              {/* Host: nudge specific friends to come. Distinct from the
+                  initial broadcast — useful when the plan's getting closer
+                  and the host wants to personally bug a few more people. */}
+              {isHost && !over && (
+                <button
+                  onClick={() => setInviteOpen(true)}
+                  className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
+                             text-sm font-bold text-white
+                             bg-gradient-to-br from-sky-500/90 to-blue-600/90
+                             shadow-[0_14px_30px_-14px_rgba(56,189,248,0.55)]
+                             active:scale-[0.99] transition"
+                >
+                  <UserPlus size={16} />
+                  Invite friends
+                </button>
+              )}
+
               {/* Add to calendar — exports an .ics that drops the plan into
                   the user's native calendar app. Visible to anyone viewing
                   the plan (not just attendees); hidden once the plan is
@@ -336,9 +354,9 @@ function Inner({ activityId }: { activityId: string }) {
               {!over && (
                 <button
                   onClick={() => void addToCalendar(activity, host.name)}
-                  className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
+                  className={`${isHost ? 'mt-2' : 'mt-4'} w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
                              text-sm font-bold text-zinc-100 bg-white/5 border border-white/10
-                             hover:bg-white/10 active:scale-[0.99] transition"
+                             hover:bg-white/10 active:scale-[0.99] transition`}
                 >
                   <CalendarPlus size={16} className="text-rose-300" />
                   Add to calendar
@@ -518,7 +536,164 @@ function Inner({ activityId }: { activityId: string }) {
           )}
         </div>
       )}
+
+      {isHost && (
+        <InviteFriendsSheet
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          activityId={activity.id}
+          activityTitle={activity.title}
+          // Only exclude confirmed-going friends — Maybe / Can't / unanswered
+          // are all legit re-nudge targets, and re-inviting the same person
+          // later is allowed (server-side).
+          excludeIds={new Set(activity.joinerIds)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Host-only friend picker. Lists my friends excluding anyone already going /
+ * maybe, with multi-select + a filter. Submitting fires a plan_invite
+ * notification + push to each picked friend via the inviteToActivity store
+ * action.
+ */
+function InviteFriendsSheet({
+  open, onClose, activityId, activityTitle, excludeIds,
+}: {
+  open: boolean;
+  onClose: () => void;
+  activityId: string;
+  activityTitle: string;
+  excludeIds: Set<string>;
+}) {
+  const friends = useApp(useShallow(s => s.friendIds.map(id => s.userById(id))));
+  const invite = useApp(s => s.inviteToActivity);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [q, setQ] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Reset selection + filter every time the sheet opens — picking up where
+  // the user left off after dismissing reads as a bug ("I cleared it!").
+  useEffect(() => {
+    if (open) {
+      setPicked(new Set());
+      setQ('');
+    }
+  }, [open]);
+
+  const available = friends.filter(u => !excludeIds.has(u.id));
+  const needle = q.trim().toLowerCase();
+  const filtered = needle
+    ? available.filter(u =>
+        u.name.toLowerCase().includes(needle) || u.handle.toLowerCase().includes(needle))
+    : available;
+
+  const togglePick = (id: string) => {
+    setPicked(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const submit = async () => {
+    if (picked.size === 0 || sending) return;
+    setSending(true);
+    try {
+      await invite(activityId, Array.from(picked));
+      onClose();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <BottomSheet open={open} onClose={onClose} size="tall" stiff>
+      <div className="h-full flex flex-col">
+        <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/5 shrink-0">
+          <button
+            onClick={onClose}
+            className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-zinc-200 hover:bg-white/5"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+          <div className="text-base font-bold text-white truncate">Invite to "{activityTitle}"</div>
+          <div className="min-w-[36px]" />
+        </div>
+
+        <div className="px-5 pt-3 shrink-0">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Filter your friends"
+              className="w-full pl-9 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-white text-sm placeholder:text-zinc-500
+                         focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400/30"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto overscroll-contain no-scrollbar px-5 pt-3 pb-4">
+          {filtered.length === 0 ? (
+            <div className="text-center text-sm text-zinc-400 py-10 leading-relaxed">
+              {available.length === 0
+                ? 'Everyone in your friend list is already going or marked maybe.'
+                : `No friend matches "${q}".`}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filtered.map(u => {
+                const isPicked = picked.has(u.id);
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => togglePick(u.id)}
+                    className={`flex items-center gap-3 p-2.5 rounded-2xl border transition text-left
+                      ${isPicked
+                        ? 'bg-sky-500/15 border-sky-400/50'
+                        : 'bg-white/5 border-white/10 hover:bg-white/[0.08]'}`}
+                  >
+                    <Avatar user={u} size={40} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-white truncate">{u.name}</div>
+                      <div className="text-[11px] text-zinc-400 truncate">@{u.handle}</div>
+                    </div>
+                    <div className={`h-6 w-6 rounded-full grid place-items-center shrink-0
+                      ${isPicked ? 'bg-sky-400 text-white' : 'border border-white/20'}`}>
+                      {isPicked && <Check size={14} strokeWidth={3} />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 pt-2 pb-[max(env(safe-area-inset-bottom),16px)] border-t border-white/5 shrink-0">
+          <motion.button
+            whileTap={{ scale: 0.98 }}
+            onClick={() => void submit()}
+            disabled={picked.size === 0 || sending}
+            className="w-full py-3 rounded-2xl font-bold text-white text-sm
+                       bg-gradient-to-br from-sky-500 to-blue-600
+                       shadow-[0_14px_30px_-14px_rgba(56,189,248,0.55)]
+                       disabled:opacity-50 disabled:shadow-none
+                       inline-flex items-center justify-center gap-2"
+          >
+            <UserPlus size={15} />
+            {sending
+              ? 'Sending…'
+              : picked.size === 0
+                ? 'Pick at least one friend'
+                : `Invite ${picked.size} ${picked.size === 1 ? 'friend' : 'friends'}`}
+          </motion.button>
+        </div>
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -647,15 +822,15 @@ function SquadTagRow({ squadIds, isOpenInvite }: { squadIds: string[]; isOpenInv
  *    • Non-host: "Come check out {Host}'s plan" — sharing on someone else's
  *      behalf reads weird with "wants you to join their plan".
  *
- *  The URL is the canonical https://app.wud.app link — iOS universal links
- *  resolve back to the native app, and the web build gracefully renders for
- *  recipients without WUD installed. */
+ *  The URL is the canonical https://whatudoing.app/plan/<id> link — the
+ *  server serves a landing page that tries the wud:// deep link and falls
+ *  back to the App Store / Play Store if the app isn't installed. */
 async function shareActivity(
   activity: import('../types').Activity,
   hostName: string,
   isHost: boolean,
 ): Promise<void> {
-  const url = `https://app.wud.app/plan/${activity.id}`;
+  const url = `https://whatudoing.app/plan/${activity.id}`;
   const text = isHost
     ? `Hey! What U Doing? Come join my plan: "${activity.title}"`
     : `Hey! What U Doing? I want you to come to ${hostName}'s plan: "${activity.title}"`;
@@ -711,7 +886,7 @@ function activityToIcs(activity: import('../types').Activity, hostName: string):
     const p = (n: number) => String(n).padStart(2, '0');
     return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
   };
-  const url = `https://app.wud.app/plan/${activity.id}`;
+  const url = `https://whatudoing.app/plan/${activity.id}`;
   const description = [
     `${hostName}'s plan on WUD`,
     activity.description ?? '',
@@ -763,7 +938,7 @@ async function addToCalendar(activity: import('../types').Activity, hostName: st
     const { Capacitor } = await import('@capacitor/core');
     if (Capacitor.isNativePlatform()) {
       const { AddToCalendar } = await import('../lib/add-to-calendar');
-      const planUrl = `https://app.wud.app/plan/${activity.id}`;
+      const planUrl = `https://whatudoing.app/plan/${activity.id}`;
       const description = [
         `${hostName}'s plan on WUD`,
         activity.description ?? '',

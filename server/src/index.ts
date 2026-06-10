@@ -15,6 +15,7 @@ import { closeDb, dbHealthy, migrate } from './db/index.js';
 import { requireAuth } from './auth/middleware.js';
 import { errorMiddleware } from './lib/http.js';
 import { logger } from './lib/logger.js';
+import { renderShareLanding } from './lib/share-landing.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { attachRealtime, closeRealtime, realtimeClientCount } from './realtime/gateway.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
@@ -113,6 +114,33 @@ app.use(express.static(publicDir, { index: 'index.html', extensions: ['html'] })
 // `/privacy/` trailing slash also resolves the same way.
 app.get('/privacy', (_req, res) => res.sendFile(path.join(publicDir, 'privacy.html')));
 app.get('/terms', (_req, res) => res.sendFile(path.join(publicDir, 'terms.html')));
+
+// Share landing — when a friend taps a https://whatudoing.app/plan/<id> link
+// (or /invite?from=<handle>) we serve a tiny page that tries the wud:// deep
+// link and falls back to the App Store / Play Store. The page also carries
+// OG tags so iMessage / WhatsApp previews look like a proper card.
+app.get('/plan/:id', (req, res) => {
+  const id = req.params.id;
+  if (!/^[a-zA-Z0-9_-]{1,40}$/.test(id)) {
+    res.status(404).type('text/plain').send('Not found');
+    return;
+  }
+  res.type('text/html').send(renderShareLanding({
+    title: 'Join the plan on WUD',
+    description: 'Open this plan in WUD to RSVP, chat with the crew, and see when it goes live.',
+    deepLink: `wud://plan/${id}`,
+  }));
+});
+
+app.get('/invite', (req, res) => {
+  const raw = String(req.query.from ?? '');
+  const handle = raw.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
+  res.type('text/html').send(renderShareLanding({
+    title: handle ? `@${handle} invited you to WUD` : 'You\'re invited to WUD',
+    description: 'WUD is a friends-only spontaneous-plans app. Tap below to open or download.',
+    deepLink: handle ? `wud://invite?from=${encodeURIComponent(handle)}` : 'wud://invite',
+  }));
+});
 
 app.use('/v1/auth', authRouter);
 

@@ -112,7 +112,11 @@ export type NotificationType =
   // The host edited a plan you're going to (start time, end time, or place).
   | 'activity_updated'
   // A plan you were part of was cancelled — host left without a successor.
-  | 'activity_cancelled';
+  | 'activity_cancelled'
+  // Host (or anyone going) pinged a specific friend to come along. Distinct
+  // from 'activity_created' (the initial broadcast) — this is a personal
+  // nudge later in the lifecycle: "hey, come too."
+  | 'plan_invite';
 
 export interface AppNotification {
   id: string;

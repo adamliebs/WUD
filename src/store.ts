@@ -425,6 +425,11 @@ interface State {
   joinActivity: (activityId: string) => void;
   leaveActivity: (activityId: string) => void;
   setRsvp: (activityId: string, state: RsvpState) => void;
+  /** Host nudges specific friends to a plan they're already running. The
+   *  server filters out anyone already RSVPed 'going' and non-friends; the
+   *  return surfaces both buckets so the caller can give clear feedback. */
+  inviteToActivity: (activityId: string, userIds: string[]) =>
+    Promise<{ invited: number; alreadyGoing: number; notFriend: number }>;
 
   sendChat: (activityId: string, text: string) => void;
   sendChatPhoto: (activityId: string, file: File, caption?: string) => void;
@@ -872,11 +877,13 @@ export const useApp = create<State>((set, get) => {
       try {
         const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
         await FirebaseAuthentication.createUserWithEmailAndPassword({ email, password });
-        // Fire-and-forget — the verification email is sent in the background.
-        // If it fails the user can resend from the in-app banner.
-        void FirebaseAuthentication.sendEmailVerification().catch(() => undefined);
         const { token } = await FirebaseAuthentication.getIdToken();
         if (!token) throw new Error('No ID token from Firebase');
+        // Verification email is sent by our server via SendGrid — much better
+        // deliverability than Firebase's default firebaseapp.com sender, and
+        // we control the template. Fire-and-forget; the user can resend from
+        // the verify-email banner if it doesn't arrive.
+        void authApi.sendVerification(token).catch(() => undefined);
         await completeFirebaseSignin(token, 'email', 'Could not create your account');
       } catch (e) {
         // Surface the raw Firebase error to the console so the iOS log captures
@@ -1634,11 +1641,24 @@ export const useApp = create<State>((set, get) => {
     resendEmailVerification: async () => {
       try {
         const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-        await FirebaseAuthentication.sendEmailVerification();
-        toast('Verification email sent — check your inbox.', 'success');
+        // We need a fresh Firebase ID token so the server can prove who's
+        // asking AND read their email out of the verified token's claims.
+        const { token } = await FirebaseAuthentication.getIdToken();
+        if (!token) throw new Error('No Firebase session');
+        const res = await authApi.sendVerification(token);
+        if (res.alreadyVerified) {
+          toast("You're already verified — refreshing.", 'default');
+          // Best-effort: pull the fresh emailVerified claim into our session
+          // so the verify-email screen stops showing on the next render.
+          void get().syncFirebaseUser();
+        } else {
+          toast('Verification email sent — check your inbox.', 'success');
+        }
         return true;
       } catch (e) {
-        const msg = friendlyFirebaseError(e, 'Could not send verification email');
+        const msg = e instanceof ApiError
+          ? e.message
+          : friendlyFirebaseError(e, 'Could not send verification email');
         if (msg) toast(msg, 'warn');
         return false;
       }
@@ -2069,6 +2089,26 @@ export const useApp = create<State>((set, get) => {
       });
     },
 
+    inviteToActivity: async (activityId, userIds) => {
+      try {
+        const res = await activityApi.invite(activityId, userIds);
+        if (res.invited > 0) {
+          toast(`Invited ${res.invited} ${res.invited === 1 ? 'friend' : 'friends'}`, 'success');
+        } else if (res.alreadyGoing > 0 && res.notFriend === 0) {
+          toast('Everyone you picked is already going', 'default');
+        } else if (res.notFriend > 0 && res.alreadyGoing === 0) {
+          toast('You can only invite your friends', 'warn');
+        } else {
+          toast('Nothing to send', 'default');
+        }
+        return res;
+      } catch (e) {
+        const msg = (e as { message?: string })?.message ?? 'Could not send invites';
+        toast(msg, 'warn');
+        return { invited: 0, alreadyGoing: 0, notFriend: userIds.length };
+      }
+    },
+
     leaveActivity: (activityId) => {
       void guard(async () => {
         const { dissolved, activity, users } = await activityApi.leave(activityId);
@@ -2430,7 +2470,9 @@ export function recurrenceLabel(r?: {
   return null;
 }
 
-/** Format a relative time like "in 30m" / "5m ago". */
+/** Format a relative time like "in 30m" / "5m ago". For >=1 day, appends the
+ *  weekday + short date so plans more than a day out have a concrete anchor
+ *  ("in 4d · Sat Jun 14") rather than just a vague "in Nd". */
 export function relTime(ms: number): string {
   const diff = ms - Date.now();
   const abs = Math.abs(diff);
@@ -2440,7 +2482,8 @@ export function relTime(ms: number): string {
   const h = Math.round(m / 60);
   if (h < 24) return diff >= 0 ? `in ${h}h` : `${h}h ago`;
   const d = Math.round(h / 24);
-  return diff >= 0 ? `in ${d}d` : `${d}d ago`;
+  const date = new Date(ms).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  return diff >= 0 ? `in ${d}d · ${date}` : `${d}d ago · ${date}`;
 }
 
 /** Format a time like "7:42 PM". */

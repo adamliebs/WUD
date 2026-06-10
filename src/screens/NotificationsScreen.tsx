@@ -25,6 +25,7 @@ const ICONS: Record<NotificationType, React.ReactNode> = {
   friend_accepted:    <Users size={14} />,
   activity_updated:   <Pencil size={14} />,
   activity_cancelled: <CalendarX size={14} />,
+  plan_invite:        <UserPlus size={14} />,
 };
 
 const TONES: Record<NotificationType, string> = {
@@ -42,6 +43,7 @@ const TONES: Record<NotificationType, string> = {
   friend_accepted:    'from-emerald-400 to-teal-600',
   activity_updated:   'from-amber-400 to-orange-500',
   activity_cancelled: 'from-zinc-400 to-zinc-700',
+  plan_invite:        'from-sky-400 to-blue-600',
 };
 
 export function NotificationsScreen() {

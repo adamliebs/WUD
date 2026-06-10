@@ -12,7 +12,7 @@ import type { User } from '../types';
  *  taps it and either lands in the iOS app (universal link) or in the web
  *  build's Welcome screen (which can read ?from to greet them by name). */
 async function shareInvite(me: User): Promise<void> {
-  const url = `https://app.wud.app/invite?from=${encodeURIComponent(me.handle)}`;
+  const url = `https://whatudoing.app/invite?from=${encodeURIComponent(me.handle)}`;
   const text = `Hey! What U Doing? "${me.name}" wants you on WUD — come hang out.`;
   try {
     const { Capacitor } = await import('@capacitor/core');
@@ -248,8 +248,17 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
   type Phase = 'idle' | 'working' | 'matched' | 'empty' | 'denied' | 'unavailable';
   const [phase, setPhase] = useState<Phase>('idle');
   const [matches, setMatches] = useState<(User & { isFriend: boolean })[]>([]);
+  const [matchQ, setMatchQ] = useState('');
   const addFriend = useApp(s => s.addFriend);
   const pushToast = useApp(s => s.pushToast);
+
+  const filteredMatches = useMemo(() => {
+    const needle = matchQ.trim().toLowerCase();
+    if (!needle) return matches;
+    return matches.filter(u =>
+      u.name.toLowerCase().includes(needle) || u.handle.toLowerCase().includes(needle),
+    );
+  }, [matches, matchQ]);
 
   const findInContacts = async () => {
     setPhase('working');
@@ -304,41 +313,38 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 z-50 bg-black/60"
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ opacity: 0, y: 24, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 24, scale: 0.96 }}
-        transition={{ type: 'spring', stiffness: 360, damping: 32 }}
-        className="absolute inset-x-4 top-1/2 -translate-y-1/2 z-50 rounded-3xl bg-[#15121b]
-                   border border-white/10 p-5 shadow-2xl max-h-[70vh] flex flex-col"
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-base font-bold text-white inline-flex items-center gap-2">
-            <Contact2 size={16} className="text-sky-300" />
-            Find friends from contacts
-          </div>
-          <button
-            onClick={onClose}
-            className="h-8 w-8 grid place-items-center rounded-full text-zinc-300 hover:bg-white/5"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-[70] bg-[#07060b] flex flex-col overscroll-none"
+    >
+      {/* Header — sits below the iOS status-bar inset. */}
+      <div className="pt-status px-3 pb-3 flex items-center justify-between border-b border-white/5 shrink-0">
+        <button
+          onClick={onClose}
+          className="h-9 w-9 -ml-1 grid place-items-center rounded-full text-white hover:bg-white/5"
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
+        <div className="text-base font-bold text-white inline-flex items-center gap-2">
+          <Contact2 size={15} className="text-sky-300" />
+          Contacts on WUD
         </div>
+        <div className="min-w-[36px]" />
+      </div>
 
+      {/* Scrollable body. `overflow-y-auto` + `overscroll-contain` keeps
+          scroll inside this sheet and stops the underlying overlay from
+          dragging away on iOS. */}
+      <div className="flex-1 overflow-y-auto overscroll-contain no-scrollbar px-4 pt-4 pb-[max(env(safe-area-inset-bottom),16px)]">
         {phase === 'idle' && (
           <>
             <div className="text-sm text-zinc-300 leading-relaxed mb-4">
-              We'll match the emails in your contacts against WUD accounts. Nothing else
-              is stored or shared — we just check who's already here.
+              We'll match the emails and phone numbers in your contacts against WUD
+              accounts. Nothing is stored — we just check who's already here.
             </div>
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -353,18 +359,36 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
         )}
 
         {phase === 'working' && (
-          <div className="text-center py-8">
-            <div className="text-sm text-zinc-300">Reading your contacts…</div>
+          <div className="text-center py-10 text-sm text-zinc-300">
+            Reading your contacts…
           </div>
         )}
 
         {phase === 'matched' && (
           <>
+            {/* Filter — for users with lots of contacts on WUD. */}
+            {matches.length > 4 && (
+              <div className="relative mb-3">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                <input
+                  value={matchQ}
+                  onChange={e => setMatchQ(e.target.value)}
+                  placeholder="Filter matches"
+                  className="w-full pl-9 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-white text-sm placeholder:text-zinc-500
+                             focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400/30"
+                />
+              </div>
+            )}
+
             <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 font-bold mb-2">
-              {matches.length} on WUD
+              {filteredMatches.length} on WUD
+              {matches.length !== filteredMatches.length && (
+                <span className="text-zinc-500"> · of {matches.length}</span>
+              )}
             </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-2">
-              {matches.map(u => (
+
+            <div className="flex flex-col gap-2">
+              {filteredMatches.map(u => (
                 <ContactMatchRow
                   key={u.id}
                   user={u}
@@ -372,29 +396,36 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
                   onAdd={() => addFriend(u.id)}
                 />
               ))}
+              {filteredMatches.length === 0 && (
+                <div className="text-center text-sm text-zinc-400 py-8">
+                  No matches for "{matchQ}".
+                </div>
+              )}
             </div>
           </>
         )}
 
         {phase === 'empty' && (
-          <div className="text-center py-6 text-sm text-zinc-400">
-            Nobody from your contacts is on WUD yet. Try the invite link — bring them over.
+          <div className="text-center py-10 text-sm text-zinc-400 leading-relaxed">
+            Nobody from your contacts is on WUD yet.<br />
+            Use the invite link to bring them over.
           </div>
         )}
 
         {phase === 'denied' && (
-          <div className="text-center py-6 text-sm text-zinc-400">
-            Contacts access was denied. You can re-enable it in Settings.
+          <div className="text-center py-10 text-sm text-zinc-400 leading-relaxed">
+            Contacts access was denied.<br />
+            You can re-enable it in your phone's Settings → WUD → Contacts.
           </div>
         )}
 
         {phase === 'unavailable' && (
-          <div className="text-center py-6 text-sm text-zinc-400">
+          <div className="text-center py-10 text-sm text-zinc-400">
             Contact matching is only available in the native app.
           </div>
         )}
-      </motion.div>
-    </>
+      </div>
+    </motion.div>
   );
 }
 

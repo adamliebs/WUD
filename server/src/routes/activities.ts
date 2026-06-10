@@ -10,6 +10,7 @@ import {
   leaveActivity, setRsvp, toggleReaction, updateActivity,
 } from '../services/activities.js';
 import { resolveHostOffers } from '../services/notifications.js';
+import { areFriends } from '../services/social.js';
 import { collectUserIds, hydrateUsers } from '../services/hydrate.js';
 import type { Activity, CategoryKey, RsvpState } from '../types.js';
 
@@ -162,4 +163,59 @@ activitiesRouter.post('/activities/:id/host/decline', handler((req, res) => {
 activitiesRouter.put('/activities/:id/reaction', handler((req, res) => {
   const activity = toggleReaction(uid(req), req.params.id, requireString(req.body, 'emoji'));
   res.json({ activity, ...withUsers([activity]) });
+}));
+
+/** POST /v1/activities/:id/invite  body: { userIds: string[] }
+ *
+ *  Host-only personal nudge — fires a plan_invite notification + push to each
+ *  recipient. Distinct from the broadcast at create-time: this is a "hey, come
+ *  too" later in the plan's lifecycle. The host explicitly chose these people
+ *  in a picker, so re-invites ARE allowed (useful for nudging as the plan
+ *  approaches). We only filter out:
+ *    • people already confirmed going (no point pinging "you're going!")
+ *    • people who aren't actually the host's friends (privacy)
+ *  We deliberately do NOT block re-invites: hosts often want to ping a
+ *  hesitant friend twice — once when the plan goes up and again an hour out. */
+activitiesRouter.post('/activities/:id/invite', handler((req, res) => {
+  const me = uid(req);
+  const row = getActivityRow(req.params.id);
+  if (!row) throw badRequest('ACTIVITY_NOT_FOUND', 'Plan not found');
+  if (row.host_id !== me) throw conflict('NOT_HOST', 'Only the host can invite people to a plan');
+
+  const raw = (req.body as { userIds?: unknown })?.userIds;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw badRequest('VALIDATION', 'userIds[] is required', 'userIds');
+  }
+  const userIds = Array.from(new Set(raw.filter((x): x is string =>
+    typeof x === 'string' && x.length > 0 && x !== me)))
+    .slice(0, 50); // hard cap per call so a single invite can't fanout-spam
+
+  const host = getUserRow(me);
+  const hostName = host?.name ?? 'A friend';
+
+  // Already-going set — pinging someone who already RSVPed 'going' is noise.
+  const going = new Set(
+    q.all<{ user_id: string }>(
+      "SELECT user_id FROM rsvps WHERE activity_id = ? AND state = 'going'",
+      req.params.id,
+    ).map(r => r.user_id),
+  );
+
+  let sent = 0;
+  let alreadyGoing = 0;
+  let notFriend = 0;
+  for (const userId of userIds) {
+    if (going.has(userId)) { alreadyGoing++; continue; }
+    if (!areFriends(me, userId)) { notFriend++; continue; }
+    const created = createNotification({
+      userId,
+      type: 'plan_invite',
+      fromId: me,
+      activityId: req.params.id,
+      body: `${hostName} invited you to "${row.title}"`,
+    });
+    if (created) sent++;
+  }
+
+  res.json({ invited: sent, alreadyGoing, notFriend });
 }));

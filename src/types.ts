@@ -145,7 +145,8 @@ export type NotificationType =
   | 'chat_message'     // new chat in an activity or squad you're part of
   | 'friend_accepted'  // your friend request was accepted
   | 'activity_updated' // the host edited a plan you're going to
-  | 'activity_cancelled'; // a plan you were going to was cancelled
+  | 'activity_cancelled' // a plan you were going to was cancelled
+  | 'plan_invite';     // host (or attendee) personally invited you to a plan
 
 export interface AppNotification {
   id: string;

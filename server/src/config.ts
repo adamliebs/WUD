@@ -111,4 +111,15 @@ export const config = {
    */
   firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH ?? '',
   firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
+
+  /**
+   * SendGrid transactional email — used to send verification + password reset
+   * emails from our own domain (noreply@whatudoing.app) so they don't land in
+   * junk like Firebase's default firebaseapp.com sender does. Without these
+   * set, the email lib falls back to logging the link to the console (so the
+   * server still boots in dev without SendGrid configured).
+   */
+  sendgridApiKey: process.env.SENDGRID_API_KEY ?? '',
+  emailFrom: process.env.EMAIL_FROM ?? 'noreply@whatudoing.app',
+  emailFromName: process.env.EMAIL_FROM_NAME ?? 'WUD',
 };

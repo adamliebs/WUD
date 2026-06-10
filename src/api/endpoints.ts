@@ -56,10 +56,21 @@ export const authApi = {
     color?: string;
   }) => api.post<AuthResult>('/auth/firebase', b, true),
 
-  /** Request a Firebase-driven password reset email. Always resolves 200 — the
-   *  server hides whether the email is actually registered (anti-enumeration). */
+  /** Request a password reset email. Server generates the Firebase reset
+   *  link and delivers it via SendGrid (from noreply@whatudoing.app). Always
+   *  resolves 200 — the server hides whether the email is actually registered
+   *  to prevent enumeration. */
   requestPasswordReset: (email: string) =>
     api.post<{ ok: true }>('/auth/email/reset', { email }, true),
+
+  /** Trigger a verification email through our SendGrid-backed sender. Server
+   *  verifies the Firebase ID token, generates the real Firebase action URL,
+   *  and emails it from noreply@whatudoing.app with our HTML template — far
+   *  better deliverability than Firebase's default firebaseapp.com sender. */
+  sendVerification: (idToken: string) =>
+    api.post<{ ok: boolean; alreadyVerified?: boolean }>(
+      '/auth/email/send-verification', { idToken }, true,
+    ),
 };
 
 /* ---- bootstrap ---- */
@@ -165,6 +176,14 @@ export const activityApi = {
 
   react: (id: string, emoji: string) =>
     api.put<ActivityResp>(`/activities/${id}/reaction`, { emoji }),
+
+  /** Personally invite friends to a plan the host is running. Re-invites
+   *  are allowed (server only filters out people already RSVPed 'going' and
+   *  non-friends). */
+  invite: (id: string, userIds: string[]) =>
+    api.post<{ invited: number; alreadyGoing: number; notFriend: number }>(
+      `/activities/${id}/invite`, { userIds },
+    ),
 };
 
 /* ---- chat ---- */
