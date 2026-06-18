@@ -414,22 +414,6 @@ function Inner({ activityId }: { activityId: string }) {
                 </button>
               )}
 
-              {/* Invite with link — share a personal invite link. A recipient
-                  who isn't on WUD / isn't a friend yet lands on the /invite
-                  page and is auto-friended on open (store.handleInviteLink),
-                  so they can then see and join the plan. */}
-              {isHost && !over && (
-                <button
-                  onClick={() => void shareInvite(me)}
-                  className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
-                             text-sm font-bold text-zinc-100 bg-white/5 border border-white/10
-                             hover:bg-white/10 active:scale-[0.99] transition"
-                >
-                  <Link2 size={16} className="text-sky-300" />
-                  Invite with link
-                </button>
-              )}
-
               {/* Add to calendar — exports an .ics that drops the plan into
                   the user's native calendar app. Visible to anyone viewing
                   the plan (not just attendees); hidden once the plan is
@@ -653,6 +637,7 @@ function InviteFriendsSheet({
 }) {
   const friends = useApp(useShallow(s => s.friendIds.map(id => s.userById(id))));
   const invite = useApp(s => s.inviteToActivity);
+  const me = useApp(s => s.me());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [q, setQ] = useState('');
   const [sending, setSending] = useState(false);
@@ -774,6 +759,19 @@ function InviteFriendsSheet({
                 ? 'Pick at least one friend'
                 : `Invite ${picked.size} ${picked.size === 1 ? 'friend' : 'friends'}`}
           </motion.button>
+
+          {/* Invite someone who isn't a friend yet — shares a personal invite
+              link. The recipient lands on the /invite page and is auto-friended
+              on open (store.handleInviteLink), so they can then join the plan. */}
+          <button
+            onClick={() => void shareInvite(me)}
+            className="mt-2 w-full py-2.5 rounded-2xl text-sm font-semibold text-zinc-300
+                       bg-white/5 border border-white/10 hover:bg-white/10 active:scale-[0.99] transition
+                       inline-flex items-center justify-center gap-2"
+          >
+            <Link2 size={15} className="text-sky-300" />
+            Invite someone with a link
+          </button>
         </div>
       </div>
     </BottomSheet>
