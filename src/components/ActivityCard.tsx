@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Clock, Lock, MapPin, Repeat, Users } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { categoryFor } from '../data/categories';
-import { useApp, clockTime, isLiveActivity, isPast, recurrenceLabel, relTime } from '../store';
+import { BUDDY_PLAN_ID, useApp, clockTime, isLiveActivity, isPast, recurrenceLabel, relTime } from '../store';
 import { mediaUrl } from '../api/client';
 import type { Activity } from '../types';
 import { Avatar, AvatarStack } from './Avatar';
@@ -49,6 +49,7 @@ export function ActivityCard({ activity }: Props) {
     // comes from the standard active:opacity transition below.
     <div
       onClick={() => open(activity.id)}
+      data-coach={activity.id === BUDDY_PLAN_ID ? 'demo-plan-card' : undefined}
       className={`relative overflow-hidden rounded-3xl glass cursor-pointer
                   border border-white/10
                   shadow-[0_18px_40px_-22px_rgba(0,0,0,0.65)]

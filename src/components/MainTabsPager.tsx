@@ -119,7 +119,20 @@ export function MainTabsPager() {
   };
 
   return (
-    <div ref={containerRef} className="absolute inset-0 overflow-hidden" onPointerDown={onPointerDown}>
+    <div
+      ref={containerRef}
+      className="absolute inset-0 overflow-hidden"
+      onPointerDown={onPointerDown}
+      // Pane positioning is done entirely via the translateX below, so this
+      // container must never carry a scroll offset of its own. An overflow:hidden
+      // box is still PROGRAMMATICALLY scrollable (e.g. a descendant calling
+      // scrollIntoView), which would shove panes out of place and wedge the
+      // pager. Snap any such scroll straight back to zero.
+      onScroll={e => {
+        if (e.currentTarget.scrollLeft !== 0) e.currentTarget.scrollLeft = 0;
+        if (e.currentTarget.scrollTop !== 0) e.currentTarget.scrollTop = 0;
+      }}
+    >
       <motion.div
         drag={width > 0 ? 'x' : false}
         dragControls={dragControls}

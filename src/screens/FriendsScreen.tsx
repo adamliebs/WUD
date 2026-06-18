@@ -8,43 +8,9 @@ import { socialApi } from '../api/endpoints';
 import { useApp } from '../store';
 import type { User } from '../types';
 
-/** Build the invite link + body for the native share sheet. The recipient
- *  taps it and either lands in the iOS app (universal link) or in the web
- *  build's Welcome screen (which can read ?from to greet them by name). */
-async function shareInvite(me: User): Promise<void> {
-  const url = `https://whatudoing.app/invite?from=${encodeURIComponent(me.handle)}`;
-  const text = `Hey! What U Doing? "${me.name}" wants you on WUD — come hang out.`;
-  try {
-    const { Capacitor } = await import('@capacitor/core');
-    if (Capacitor.isNativePlatform()) {
-      const { Share } = await import('@capacitor/share');
-      const can = await Share.canShare();
-      if (can.value) {
-        await Share.share({ title: 'Join me on WUD', text, url, dialogTitle: 'Invite friends' });
-        return;
-      }
-    }
-  } catch (e) {
-    // User dismissal surfaces as a throw; treat as silent no-op.
-    const msg = (e as { message?: string })?.message?.toLowerCase() ?? '';
-    if (msg.includes('cancel') || msg.includes('abort')) return;
-  }
-  // Web fallback.
-  try {
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      await navigator.share({ title: 'Join me on WUD', text, url });
-      return;
-    }
-  } catch (e) {
-    if ((e as { name?: string })?.name === 'AbortError') return;
-  }
-  try {
-    await navigator.clipboard.writeText(`${text}\n${url}`);
-    useApp.getState().pushToast('Invite copied to clipboard', 'success');
-  } catch {
-    useApp.getState().pushToast('Could not share the invite', 'warn');
-  }
-}
+// Invite-link share sheet — shared with the squad editor + Getting Started
+// checklist, so it lives in lib/share-invite.
+import { shareInvite } from '../lib/share-invite';
 
 type Tab = 'friends' | 'discover';
 
@@ -95,6 +61,7 @@ export function FriendsScreen() {
           <motion.button
             whileTap={{ scale: 0.985 }}
             onClick={() => setContactsOpen(true)}
+            data-coach="friends-contacts"
             className="w-full inline-flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-left
                        bg-gradient-to-br from-sky-500/15 via-cyan-500/10 to-blue-500/10
                        border border-sky-400/30
@@ -115,6 +82,7 @@ export function FriendsScreen() {
           <motion.button
             whileTap={{ scale: 0.985 }}
             onClick={() => void shareInvite(me)}
+            data-coach="friends-invite"
             className="w-full inline-flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-left
                        bg-gradient-to-br from-rose-500/15 via-pink-500/10 to-orange-500/10
                        border border-rose-400/30
@@ -153,6 +121,7 @@ export function FriendsScreen() {
               <button
                 key={t}
                 onClick={() => setTab(t)}
+                data-coach={t === 'discover' ? 'friends-discover' : undefined}
                 className="relative py-2 rounded-xl text-sm font-semibold text-zinc-300"
               >
                 {active && (
@@ -251,6 +220,18 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
   const [matchQ, setMatchQ] = useState('');
   const addFriend = useApp(s => s.addFriend);
   const pushToast = useApp(s => s.pushToast);
+  const me = useApp(s => s.me());
+  const recordInviteShared = useApp(s => s.recordInviteShared);
+  const setContactsSheetOpen = useApp(s => s.setContactsSheetOpen);
+
+  // Tell the coach overlay to pause while this full-screen modal is up — it
+  // sits above the modal in the stacking order, so an active tour would
+  // otherwise spotlight Friends-page controls hidden behind us. Resuming on
+  // unmount also advances the friend tour to its next step.
+  useEffect(() => {
+    setContactsSheetOpen(true);
+    return () => setContactsSheetOpen(false);
+  }, [setContactsSheetOpen]);
 
   const filteredMatches = useMemo(() => {
     const needle = matchQ.trim().toLowerCase();
@@ -406,9 +387,26 @@ function ContactFinderModal({ onClose }: { onClose: () => void }) {
         )}
 
         {phase === 'empty' && (
-          <div className="text-center py-10 text-sm text-zinc-400 leading-relaxed">
-            Nobody from your contacts is on WUD yet.<br />
-            Use the invite link to bring them over.
+          <div className="text-center py-10 px-2">
+            <div className="text-4xl mb-3">🛸</div>
+            <div className="text-sm text-zinc-300 font-semibold">
+              Nobody from your contacts is on WUD yet
+            </div>
+            <div className="text-sm text-zinc-400 leading-relaxed mt-1 mb-5">
+              Be the first — share your invite link and you'll be friends
+              automatically when they join.
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                void shareInvite(me).then(shared => { if (shared) recordInviteShared(); });
+              }}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white
+                         bg-gradient-to-br from-rose-500 to-orange-500
+                         shadow-[0_14px_30px_-12px_rgba(244,63,94,0.55)]"
+            >
+              Invite friends to WUD
+            </motion.button>
           </div>
         )}
 

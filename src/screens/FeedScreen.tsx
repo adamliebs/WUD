@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { isLiveActivity, useApp } from '../store';
 import { ActivityCard } from '../components/ActivityCard';
 import { FeedFilters } from '../components/FeedFilters';
+import { GettingStartedCard } from '../components/GettingStartedCard';
 import { LiveNowStrip } from '../components/LiveNowStrip';
 import { SquadsRail } from '../components/SquadsRail';
 import { RefreshButton } from '../components/RefreshButton';
@@ -120,6 +121,9 @@ export function FeedScreen() {
           (each bounce settles via a system spring that competes with our
           own scroll-driven renders). */}
       <div className="relative flex-1 overflow-y-auto overscroll-none no-scrollbar pb-32 pt-2">
+        {/* First-session walkthrough — quests that drive real actions. Shows
+            until completed or skipped, then never again (per account). */}
+        <GettingStartedCard />
         <LiveNowStrip />
         <SquadsRail />
         <FeedFilters count={activities.length} />
@@ -256,6 +260,7 @@ function FriendsQuickButton({ onClick }: { onClick: () => void }) {
     <motion.button
       whileTap={{ scale: 0.9 }}
       onClick={onClick}
+      data-coach="feed-friends"
       aria-label={pendingCount > 0 ? `Friends · ${pendingCount} pending request${pendingCount === 1 ? '' : 's'}` : 'Friends'}
       className="relative h-9 w-9 grid place-items-center rounded-full
                  bg-white/5 border border-white/10 text-zinc-200

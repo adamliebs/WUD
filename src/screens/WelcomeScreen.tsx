@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useMemo } from 'react';
+import { track } from '../lib/analytics';
 import { useApp } from '../store';
 
 /**
@@ -17,6 +18,7 @@ export function WelcomeScreen() {
   const setAuthIntent = useApp(s => s.setAuthIntent);
 
   const goAuth = (intent: 'signup' | 'login') => {
+    track(intent === 'signup' ? 'signup_started' : 'login_started');
     setAuthIntent(intent);
     setAuthState('auth');
   };

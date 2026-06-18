@@ -3,10 +3,11 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { newId, now, shortId } from '../lib/ids.js';
 import { publish } from '../realtime/bus.js';
 import type { PublicUser, Squad } from '../types.js';
+import { BUDDY_ID } from './buddy.js';
 import { messagesForSquad } from './chat.js';
 import { createNotification } from './notifications.js';
 import { hashPhoneRaw } from '../lib/phone.js';
-import { getSettings, getUserRow, toPublicUser } from './users.js';
+import { getSettings, getUserRow, getUserRowByHandle, toPublicUser } from './users.js';
 
 /* ===================== BLOCKS (helper) =====================
  * Inlined here (not imported from safety.ts) to avoid a circular import —
@@ -117,6 +118,56 @@ export function sendFriendRequest(requesterId: string, recipientId: string): str
   return id;
 }
 
+/**
+ * Invite-link friendship — "tap my link, we're friends."
+ *
+ * The normal request/accept handshake exists to guard against unsolicited
+ * adds. A personal invite link is the opposite case: the inviter chose to
+ * share it AND the invitee chose to open it, so consent is mutual by
+ * construction and we create the friendship instantly (this is also why the
+ * `allowFriendRequests` setting deliberately doesn't apply here). Blocks
+ * still win — a blocked-either-way pair reports the link as invalid rather
+ * than revealing the block.
+ */
+export function acceptFriendLink(
+  inviteeId: string, handle: string,
+): { friend: PublicUser; already: boolean } {
+  const inviter = getUserRowByHandle(handle);
+  // Buddy's link would be meaningless (everyone is already his friend).
+  if (!inviter || inviter.id === BUDDY_ID) {
+    throw notFound('USER_NOT_FOUND', 'That invite link is no longer valid');
+  }
+  if (inviter.id === inviteeId) {
+    throw badRequest('SELF_FRIEND', "That's your own invite link");
+  }
+  if (blockedUserIds(inviteeId).includes(inviter.id)) {
+    throw notFound('USER_NOT_FOUND', 'That invite link is no longer valid');
+  }
+  if (areFriends(inviteeId, inviter.id)) {
+    return { friend: toPublicUser(inviter), already: true };
+  }
+  const invitee = getUserRow(inviteeId);
+  tx(() => {
+    addFriendship(inviteeId, inviter.id);
+    // Fold any pending request between the two (either direction) into the
+    // new friendship so a stale "pending" row doesn't linger in either UI.
+    q.run(
+      `UPDATE friend_requests SET status = 'accepted', resolved_at = ?
+        WHERE status = 'pending'
+          AND ((requester_id = ? AND recipient_id = ?) OR (requester_id = ? AND recipient_id = ?))`,
+      now(), inviteeId, inviter.id, inviter.id, inviteeId,
+    );
+    resolveFriendInviteNotification(inviteeId, inviter.id);
+  });
+  createNotification({
+    userId: inviter.id,
+    type: 'friend_accepted',
+    fromId: inviteeId,
+    body: `${invitee?.name ?? 'Someone'} joined from your invite — you're now friends 🎉`,
+  });
+  return { friend: toPublicUser(inviter), already: false };
+}
+
 /** Resolve the friend-request ('invite') notification once it's been actioned. */
 function resolveFriendInviteNotification(recipientId: string, requesterId: string): void {
   q.run(
@@ -208,6 +259,9 @@ export function suggestedUsers(userId: string): PublicUser[] {
   const exclude = new Set<string>([userId, ...mine, ...pendingRequestPeers(userId), ...blocked]);
   const mutuals = new Map<string, number>();
   for (const friend of mine) {
+    // WUD Buddy is friends with literally everyone — traversing through him
+    // would surface every user on the platform as a "friend of friend."
+    if (friend === BUDDY_ID) continue;
     for (const fof of friendIds(friend)) {
       if (exclude.has(fof)) continue;
       mutuals.set(fof, (mutuals.get(fof) ?? 0) + 1);
@@ -231,7 +285,7 @@ export function discoverUsers(userId: string, query: string): PublicUser[] {
   const needle = query.trim().toLowerCase();
   if (needle.length < 2) return suggestedUsers(userId);
 
-  const exclude = new Set<string>([userId, ...friendIds(userId), ...blockedUserIds(userId)]);
+  const exclude = new Set<string>([userId, BUDDY_ID, ...friendIds(userId), ...blockedUserIds(userId)]);
   return q.all<{ id: string }>('SELECT id FROM users WHERE id != ?', userId)
     .filter(r => !exclude.has(r.id))
     .map(r => getUserRow(r.id))
@@ -349,6 +403,14 @@ export function isSquadHost(squadId: string, userId: string): boolean {
   return !!row && row.host_id === userId;
 }
 
+/** Users with an outstanding (pending) invite to this squad. */
+export function pendingInviteeIds(squadId: string): string[] {
+  return q.all<{ invitee_id: string }>(
+    "SELECT invitee_id FROM squad_invites WHERE squad_id = ? AND status = 'pending'",
+    squadId,
+  ).map(r => r.invitee_id);
+}
+
 function toSquad(row: SquadRow): Squad {
   return {
     id: row.id,
@@ -356,6 +418,7 @@ function toSquad(row: SquadRow): Squad {
     emoji: row.emoji,
     hostId: row.host_id,
     memberIds: squadMemberIds(row.id),
+    invitedIds: pendingInviteeIds(row.id),
     chat: messagesForSquad(row.id),
     createdAt: row.created_at,
   };
@@ -390,13 +453,18 @@ export function createSquad(input: {
       'INSERT INTO squads (id, name, emoji, host_id, created_at) VALUES (?, ?, ?, ?, ?)',
       id, name.slice(0, 30), input.emoji?.trim() || '✨', input.hostId, now(),
     );
+    // Friends join directly; non-friends get a squad invite instead — they
+    // become a member (and a friend) only when they accept.
     const friends = new Set(friendIds(input.hostId));
     for (const memberId of new Set(input.memberIds ?? [])) {
-      if (memberId !== input.hostId && friends.has(memberId)) {
+      if (memberId === input.hostId) continue;
+      if (friends.has(memberId)) {
         q.run(
           'INSERT OR IGNORE INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)',
           id, memberId, now(),
         );
+      } else {
+        createSquadInvite(id, input.hostId, memberId);
       }
     }
     return getSquad(id);
@@ -435,11 +503,15 @@ export function deleteSquad(squadId: string, actingUserId: string): void {
   fanFeedChanged(affected, 'squad.deleted');
 }
 
-/** Host-only: add a friend as a member. */
+/** Host-only: add a friend directly, or send a squad invite to a non-friend.
+ *  Friends join immediately (existing behavior); anyone else gets a
+ *  'squad_invite' notification and joins — becoming a friend at the same
+ *  time — only when they accept. */
 export function addSquadMember(squadId: string, actingUserId: string, memberId: string): Squad {
   if (!isSquadHost(squadId, actingUserId)) throw forbidden('Only the squad host can add members');
   if (!areFriends(actingUserId, memberId)) {
-    throw badRequest('NOT_A_FRIEND', 'You can only add your friends to a squad', 'memberId');
+    createSquadInvite(squadId, actingUserId, memberId, { throwOnRefusal: true });
+    return getSquad(squadId);
   }
   q.run(
     'INSERT OR IGNORE INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)',
@@ -447,6 +519,121 @@ export function addSquadMember(squadId: string, actingUserId: string, memberId: 
   );
   fanFeedChanged([memberId], 'squad.member.added');
   return getSquad(squadId);
+}
+
+/* --- squad invites (non-friend additions) ----------------------------------
+ *
+ * Adding someone who ISN'T a friend can't be a silent membership insert — the
+ * invitee never consented to share their plans/chat with this group. Instead
+ * the host's add becomes an invite; accepting it creates the friendship
+ * (host ↔ invitee) and the membership together, mirroring the invite-link
+ * flow's "consent on both sides" rule.
+ */
+
+/**
+ * Create (or revive) a pending invite. Silently skips cases where inviting
+ * makes no sense — already a member, already pending, blocked either way —
+ * unless `throwOnRefusal` is set (the single-add endpoint wants a real error
+ * to show the host; squad creation wants best-effort fan-out).
+ */
+export function createSquadInvite(
+  squadId: string,
+  inviterId: string,
+  inviteeId: string,
+  opts: { throwOnRefusal?: boolean } = {},
+): boolean {
+  const refuse = (code: string, message: string): false => {
+    if (opts.throwOnRefusal) throw conflict(code, message);
+    return false;
+  };
+  const invitee = getUserRow(inviteeId);
+  if (!invitee) return refuse('USER_NOT_FOUND', 'User not found');
+  if (inviteeId === inviterId) return false;
+  if (inviteeId === BUDDY_ID) return false; // the test friend is added directly, never invited
+  if (isInSquad(squadId, inviteeId)) return refuse('ALREADY_MEMBER', 'They are already in this squad');
+  if (blockedUserIds(inviterId).includes(inviteeId)) {
+    return refuse('USER_NOT_FOUND', 'User not found'); // don't reveal the block
+  }
+  // A squad invite implies a friendship on accept, so the recipient's
+  // "allow friend requests" opt-out applies here too.
+  if (!getSettings(inviteeId).allowFriendRequests) {
+    return refuse('NOT_ACCEPTING', 'This user is not accepting invites');
+  }
+  const existing = q.get<{ id: string; status: string }>(
+    'SELECT id, status FROM squad_invites WHERE squad_id = ? AND invitee_id = ?',
+    squadId, inviteeId,
+  );
+  if (existing?.status === 'pending') {
+    return refuse('ALREADY_INVITED', 'They already have a pending invite');
+  }
+  // Fresh insert, or revive a previously declined/accepted-then-left row.
+  q.run(
+    `INSERT INTO squad_invites (id, squad_id, inviter_id, invitee_id, status, created_at, resolved_at)
+     VALUES (?, ?, ?, ?, 'pending', ?, NULL)
+     ON CONFLICT (squad_id, invitee_id) DO UPDATE SET
+       status = 'pending', inviter_id = excluded.inviter_id,
+       created_at = excluded.created_at, resolved_at = NULL`,
+    newId(), squadId, inviterId, inviteeId, now(),
+  );
+  const inviter = getUserRow(inviterId);
+  const squad = q.get<{ name: string; emoji: string }>(
+    'SELECT name, emoji FROM squads WHERE id = ?', squadId,
+  );
+  createNotification({
+    userId: inviteeId,
+    type: 'squad_invite',
+    fromId: inviterId,
+    squadId,
+    body: `${inviter?.name ?? 'Someone'} invited you to join ${squad?.emoji ?? '✨'} ${squad?.name ?? 'their squad'}`,
+  });
+  return true;
+}
+
+/** Invitee accepts: friendship with the inviter + membership, atomically. */
+export function acceptSquadInvite(squadId: string, userId: string): Squad {
+  const inv = q.get<{ id: string; inviter_id: string }>(
+    "SELECT id, inviter_id FROM squad_invites WHERE squad_id = ? AND invitee_id = ? AND status = 'pending'",
+    squadId, userId,
+  );
+  if (!inv) throw notFound('INVITE_NOT_FOUND', 'Squad invite not found');
+  const squad = getSquad(squadId); // throws if the squad is gone
+  tx(() => {
+    q.run("UPDATE squad_invites SET status = 'accepted', resolved_at = ? WHERE id = ?", now(), inv.id);
+    addFriendship(inv.inviter_id, userId);
+    q.run(
+      'INSERT OR IGNORE INTO squad_members (squad_id, user_id, joined_at) VALUES (?, ?, ?)',
+      squadId, userId, now(),
+    );
+    q.run(
+      "UPDATE notifications SET read = 1, resolved = 1 WHERE user_id = ? AND type = 'squad_invite' AND squad_id = ?",
+      userId, squadId,
+    );
+  });
+  const accepter = getUserRow(userId);
+  createNotification({
+    userId: inv.inviter_id,
+    type: 'friend_accepted',
+    fromId: userId,
+    squadId,
+    body: `${accepter?.name ?? 'Someone'} joined ${squad.emoji} ${squad.name} — you're now friends 🎉`,
+  });
+  publish({ channel: `squad:${squadId}`, type: 'squad.updated', data: { squadId } });
+  fanFeedChanged([userId], 'squad.member.added');
+  return getSquad(squadId);
+}
+
+/** Invitee declines: mark the row + resolve the notification. No friendship. */
+export function declineSquadInvite(squadId: string, userId: string): void {
+  const inv = q.get<{ id: string }>(
+    "SELECT id FROM squad_invites WHERE squad_id = ? AND invitee_id = ? AND status = 'pending'",
+    squadId, userId,
+  );
+  if (!inv) throw notFound('INVITE_NOT_FOUND', 'Squad invite not found');
+  q.run("UPDATE squad_invites SET status = 'declined', resolved_at = ? WHERE id = ?", now(), inv.id);
+  q.run(
+    "UPDATE notifications SET read = 1, resolved = 1 WHERE user_id = ? AND type = 'squad_invite' AND squad_id = ?",
+    userId, squadId,
+  );
 }
 
 /** Host-only: remove a member. */

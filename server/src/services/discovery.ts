@@ -2,6 +2,7 @@ import { q } from '../db/index.js';
 import { now } from '../lib/ids.js';
 import type { Activity, CategoryKey, PublicUser } from '../types.js';
 import { canSeeActivity, getActivityRow, toActivity } from './activities.js';
+import { BUDDY_ID } from './buddy.js';
 import { friendIds } from './social.js';
 import { getUserRow, toPublicUser } from './users.js';
 
@@ -42,9 +43,13 @@ export function search(userId: string, query: string): SearchResults {
     .slice(0, 8)
     .map(toActivity);
 
-  // People — friends first, then everyone else.
+  // People — friends first, then everyone else. WUD Buddy (the built-in
+  // test friend) is excluded: surfacing a bot in people search reads as
+  // clutter once the user has real friends.
   const friends = new Set(friendIds(userId));
-  const userRows = q.all<{ id: string }>('SELECT id FROM users WHERE id != ?', userId);
+  const userRows = q.all<{ id: string }>(
+    'SELECT id FROM users WHERE id != ? AND id != ?', userId, BUDDY_ID,
+  );
   const matchedPeople = userRows
     .map(r => toPublicUser(getUserRow(r.id)!))
     .filter(u => u.name.toLowerCase().includes(needle) || u.handle.toLowerCase().includes(needle));

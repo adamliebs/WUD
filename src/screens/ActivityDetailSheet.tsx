@@ -11,15 +11,80 @@ import { ReactionBar } from '../components/ReactionBar';
 import { categoryFor } from '../data/categories';
 import { clockTime, isLiveActivity, isPast, recurrenceLabel, relTime, useApp } from '../store';
 import { mediaUrl } from '../api/client';
+import type { User } from '../types';
 
 export function ActivityDetailSheet() {
   const openId = useApp(s => s.openActivityId);
   const openActivity = useApp(s => s.openActivity);
+  // When the opened plan isn't visible to the viewer (a link forwarded by a
+  // non-friend), show the "add the host" gate instead of the plan detail.
+  const gate = useApp(s => s.planGate);
+  const gated = !!gate && gate.activityId === openId;
 
   return (
     <BottomSheet open={!!openId} onClose={() => openActivity(null)}>
-      {openId ? <Inner key={openId} activityId={openId} /> : null}
+      {!openId ? null
+        : gated ? <PlanGate host={gate!.host} onClose={() => openActivity(null)} />
+        : <Inner key={openId} activityId={openId} />}
     </BottomSheet>
+  );
+}
+
+/**
+ * Shown when someone opens a plan link they aren't connected to (none of their
+ * friends are in it). We never reveal the plan's details — just the host —
+ * and offer to add them, which is the path to actually unlocking it.
+ */
+function PlanGate({ host, onClose }: { host: User | null; onClose: () => void }) {
+  const addFriend = useApp(s => s.addFriend);
+  const meId = useApp(s => s.meId);
+  const isFriend = useApp(s => !!host && s.friendIds.includes(host.id));
+  const requested = useApp(s => !!host && s.outgoingRequests.some(r => r.to.id === host.id));
+  const isMe = !!host && host.id === meId;
+
+  return (
+    <div className="h-full flex flex-col items-center justify-center text-center px-7 pb-8">
+      <div className="text-5xl mb-1">🔒</div>
+      {host ? <Avatar user={host} size={84} ring /> : null}
+      <div className="text-lg font-bold text-white mt-4">You're not in this plan</div>
+      <div className="text-sm text-zinc-400 mt-2 leading-relaxed max-w-[290px]">
+        {host
+          ? <>None of your friends are in this plan yet. <span className="font-semibold text-white">{host.name}</span> invited you — add them to see the details and join.</>
+          : <>None of your friends are in this plan, and it’s not shared with you.</>}
+      </div>
+
+      {host && !isMe && (
+        <div className="mt-6 w-full max-w-[300px]">
+          {isFriend ? (
+            <div className="text-[13px] text-zinc-400">
+              You’re already friends with {host.name} — they may have set this plan to private or a specific squad.
+            </div>
+          ) : requested ? (
+            <div className="text-[13px] text-emerald-300 font-semibold">
+              Friend request sent ✓ — once {host.name} accepts, the plan unlocks.
+            </div>
+          ) : (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => addFriend(host.id)}
+              className="w-full py-3.5 rounded-2xl font-bold text-white text-[15px]
+                         bg-gradient-to-br from-rose-500 to-orange-500
+                         shadow-[0_18px_40px_-14px_rgba(244,63,94,0.6)]
+                         inline-flex items-center justify-center gap-2"
+            >
+              <UserPlus size={16} /> Add {host.name}
+            </motion.button>
+          )}
+        </div>
+      )}
+
+      <button
+        onClick={onClose}
+        className="mt-5 text-sm font-semibold text-zinc-400 hover:text-zinc-200 px-4 py-2"
+      >
+        Close
+      </button>
+    </div>
   );
 }
 
@@ -258,7 +323,8 @@ function Inner({ activityId }: { activityId: string }) {
           return (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => { setTab(t); if (t === 'chat') useApp.getState().coachSignal('detail-chat'); }}
+              data-coach={t === 'chat' ? 'detail-chat-tab' : undefined}
               className="relative py-2 rounded-xl text-sm font-semibold text-zinc-300"
             >
               {active && (
@@ -306,7 +372,7 @@ function Inner({ activityId }: { activityId: string }) {
                   internal dividers. Matches the Settings/Notifications card
                   pattern so the detail surface reads as part of the same
                   visual family. */}
-              <div className="rounded-2xl bg-white/[0.04] border border-white/8 divide-y divide-white/5 overflow-hidden">
+              <div data-coach="detail-info" className="rounded-2xl bg-white/[0.04] border border-white/8 divide-y divide-white/5 overflow-hidden">
                 {live ? (
                   <InfoRow
                     icon={<Clock size={16} />}
@@ -490,7 +556,7 @@ function Inner({ activityId }: { activityId: string }) {
             // a small helper line clarifies that Maybe / Can't are still on
             // the table.
             <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-3 gap-2">
+              <div data-coach="detail-join" className="grid grid-cols-3 gap-2">
                 <RsvpPill
                   label="Going"
                   emoji="✅"
@@ -1306,7 +1372,7 @@ function ChatPane({ activityId, canSend }: { activityId: string; canSend: boolea
       transition={{ duration: 0.18 }}
       className="absolute inset-0 flex flex-col"
     >
-      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 pb-3 relative">
+      <div ref={scrollRef} data-coach="detail-chat-body" className="flex-1 overflow-y-auto no-scrollbar px-4 pb-3 relative">
         {/* Privacy gate — non-members see a blurred preview of the chat
             with an overlay nudging them to join. Sender / message text
             isn't readable through the blur (8px is enough to soft-kerning

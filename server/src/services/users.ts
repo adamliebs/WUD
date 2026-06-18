@@ -3,6 +3,7 @@ import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { newId, now, shortId } from '../lib/ids.js';
 import { hashPhone, normalizePhone } from '../lib/phone.js';
 import type { AppSettings, PublicUser } from '../types.js';
+import { befriendBuddy } from './buddy.js';
 
 interface UserRow {
   id: string;
@@ -68,6 +69,14 @@ export function setEmailVerified(userId: string, verified: boolean): void {
 
 export function getUserRow(id: string): UserRow | undefined {
   return q.get<UserRow>('SELECT * FROM users WHERE id = ?', id);
+}
+
+/** Case-insensitive handle lookup — used by the invite-link flow, where the
+ *  shared URL carries the inviter's handle rather than an opaque id. */
+export function getUserRowByHandle(handle: string): UserRow | undefined {
+  const normalized = normalizeHandle(handle);
+  if (!normalized) return undefined;
+  return q.get<UserRow>('SELECT * FROM users WHERE handle = ? COLLATE NOCASE', normalized);
 }
 
 export function getPublicUser(id: string): PublicUser {
@@ -148,6 +157,9 @@ export function createUser(input: {
     'INSERT INTO user_settings (user_id, default_reminder_minutes) VALUES (?, ?)',
     id, 30,
   );
+  // Every fresh account starts friends with WUD Buddy (the built-in test
+  // friend) so pings + squads are demonstrable before any real friends land.
+  befriendBuddy(id);
   return getPublicUser(id);
 }
 

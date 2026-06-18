@@ -12,6 +12,8 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { config } from './config.js';
 import { closeDb, dbHealthy, migrate } from './db/index.js';
+import { ensureBuddyUser } from './services/buddy.js';
+import { getUserRowByHandle } from './services/users.js';
 import { requireAuth } from './auth/middleware.js';
 import { errorMiddleware } from './lib/http.js';
 import { logger } from './lib/logger.js';
@@ -19,6 +21,7 @@ import { renderShareLanding } from './lib/share-landing.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { attachRealtime, closeRealtime, realtimeClientCount } from './realtime/gateway.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
+import { analyticsRouter } from './routes/analytics.js';
 import { authRouter } from './routes/auth.js';
 import { bootstrapRouter } from './routes/bootstrap.js';
 import { usersRouter } from './routes/users.js';
@@ -33,6 +36,7 @@ import { uploadsRouter } from './routes/uploads.js';
 /* --- database ------------------------------------------------------------- */
 
 migrate(); // apply pending migrations
+ensureBuddyUser(); // the built-in "test friend" every account starts with
 mkdirSync(config.uploadsDir, { recursive: true }); // ensure the uploads volume exists
 
 /* --- app ------------------------------------------------------------------ */
@@ -135,14 +139,30 @@ app.get('/plan/:id', (req, res) => {
 app.get('/invite', (req, res) => {
   const raw = String(req.query.from ?? '');
   const handle = raw.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
+  // Personalize when the handle resolves: the inviter's name + avatar makes
+  // the landing read as a personal invitation. The app auto-friends the pair
+  // on arrival (see /v1/friends/link), so say so.
+  const inviter = handle ? getUserRowByHandle(handle) : undefined;
   res.type('text/html').send(renderShareLanding({
-    title: handle ? `@${handle} invited you to WUD` : 'You\'re invited to WUD',
-    description: 'WUD is a friends-only spontaneous-plans app. Tap below to open or download.',
+    title: inviter
+      ? `${inviter.name} invited you to WUD`
+      : handle ? `@${handle} invited you to WUD` : 'You\'re invited to WUD',
+    description: inviter
+      ? `WUD is a friends-only spontaneous-plans app. Join from this link and you and ${inviter.name} will be friends automatically.`
+      : 'WUD is a friends-only spontaneous-plans app. Tap below to open or download.',
     deepLink: handle ? `wud://invite?from=${encodeURIComponent(handle)}` : 'wud://invite',
+    inviter: inviter
+      ? { name: inviter.name, emoji: inviter.avatar_emoji, photoUrl: inviter.photo_url ?? undefined }
+      : undefined,
+    // Deferred-deep-link token copied to the clipboard so a fresh install can
+    // redeem the invite on first launch (the store can't carry ?from= through).
+    clipboardToken: handle ? `https://whatudoing.app/invite?from=${handle}` : undefined,
   }));
 });
 
 app.use('/v1/auth', authRouter);
+// Public analytics sink — measures the signup funnel before a session exists.
+app.use('/v1', analyticsRouter);
 
 /* --- authenticated routes ------------------------------------------------- */
 

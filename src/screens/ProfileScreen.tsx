@@ -1,8 +1,11 @@
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, ChevronRight, History, Pencil, Settings, Users, UserPlus } from 'lucide-react';
+import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
+import { ImageViewer } from '../components/ImageViewer';
 import { categoryFor } from '../data/categories';
+import { mediaUrl } from '../api/client';
 import { useApp, clockTime, relTime } from '../store';
 
 export function ProfileScreen() {
@@ -20,6 +23,8 @@ export function ProfileScreen() {
     ).length);
   const openActivity = useApp(s => s.openActivity);
   const openOverlay = useApp(s => s.openOverlay);
+  // Full-screen viewer for tapping your own profile photo.
+  const [viewerSrc, setViewerSrc] = useState<string | null>(null);
 
   return (
     <div className="h-full flex flex-col relative overflow-hidden">
@@ -33,9 +38,17 @@ export function ProfileScreen() {
         {/* Avatar overlap */}
         <div className="px-5 -mt-12">
           <div className="relative inline-block">
-            <div className="ring-4 ring-[#07060b] rounded-full">
+            {/* Tap the photo to view it full-screen (only when a real photo is
+                set — the emoji avatar has nothing to enlarge). */}
+            <button
+              type="button"
+              onClick={me.photoUrl ? () => setViewerSrc(mediaUrl(me.photoUrl) ?? null) : undefined}
+              disabled={!me.photoUrl}
+              aria-label={me.photoUrl ? 'View profile photo' : undefined}
+              className="ring-4 ring-[#07060b] rounded-full block"
+            >
               <Avatar user={me} size={88} />
-            </div>
+            </button>
             {/* Camera badge — opens Edit profile (and prompts photo upload) */}
             <motion.button
               whileTap={{ scale: 0.88 }}
@@ -230,6 +243,13 @@ export function ProfileScreen() {
           </div>
         </div>
       </div>
+
+      {/* Full-screen profile-photo viewer. */}
+      <AnimatePresence>
+        {viewerSrc && (
+          <ImageViewer src={viewerSrc} onClose={() => setViewerSrc(null)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

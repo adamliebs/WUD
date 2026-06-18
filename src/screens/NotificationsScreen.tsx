@@ -26,6 +26,7 @@ const ICONS: Record<NotificationType, React.ReactNode> = {
   activity_updated:   <Pencil size={14} />,
   activity_cancelled: <CalendarX size={14} />,
   plan_invite:        <UserPlus size={14} />,
+  squad_invite:       <Users size={14} />,
 };
 
 const TONES: Record<NotificationType, string> = {
@@ -44,6 +45,7 @@ const TONES: Record<NotificationType, string> = {
   activity_updated:   'from-amber-400 to-orange-500',
   activity_cancelled: 'from-zinc-400 to-zinc-700',
   plan_invite:        'from-sky-400 to-blue-600',
+  squad_invite:       'from-violet-400 to-purple-600',
 };
 
 export function NotificationsScreen() {
@@ -390,6 +392,8 @@ function NotificationRow({ n }: { n: AppNotification }) {
   const setTab = useApp(s => s.setTab);
   const accept = useApp(s => s.acceptHostOffer);
   const decline = useApp(s => s.declineHostOffer);
+  const acceptSquad = useApp(s => s.acceptSquadInvite);
+  const declineSquad = useApp(s => s.declineSquadInvite);
 
   const tone = TONES[n.type];
 
@@ -442,6 +446,24 @@ function NotificationRow({ n }: { n: AppNotification }) {
             >
               View plan →
             </button>
+          )}
+
+          {/* Squad invite — join (also auto-friends the inviter) or pass. */}
+          {n.type === 'squad_invite' && !n.resolved && (
+            <div className="mt-3 flex gap-2 items-stretch">
+              <div className="flex-1">
+                <PulseButton onClick={() => acceptSquad(n.id)} tone="violet">
+                  🤝 Join the squad
+                </PulseButton>
+              </div>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => declineSquad(n.id)}
+                className="px-4 py-3.5 rounded-2xl text-sm font-bold text-zinc-300 bg-white/5 border border-white/10"
+              >
+                Pass
+              </motion.button>
+            </div>
           )}
 
           {/* Friend request — jump to the Friends overlay to accept/decline. */}

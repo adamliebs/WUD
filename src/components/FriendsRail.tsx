@@ -116,6 +116,8 @@ export function FriendsRail() {
   }, [selected.size, customOpen]);
 
   const toggle = (id: string) => {
+    // Getting Started "ping a friend" tour: advance past the "pick someone" step.
+    useApp.getState().coachSignal('ping-select');
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -195,7 +197,9 @@ export function FriendsRail() {
 
   return (
     <>
-      <div className="px-1 mt-1 mb-4">
+      {/* Anchors for the Getting Started "ping a friend" tour — scroll target
+          (id) + coach-mark spotlight target (data-coach). */}
+      <div id="ping-rail" data-coach="ping-rail" className="px-1 mt-1 mb-4">
         {/* Header — title + selection state. Always shows "Ping your
             friends" so the surface's purpose is clear; the right side
             reflects the live selection ("3 selected" + a Clear pill) so
@@ -282,7 +286,7 @@ export function FriendsRail() {
               transition={{ duration: 0.2 }}
               className="overflow-hidden px-1"
             >
-              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+              <div data-coach="ping-presets" className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                 {PRESETS.map(p => (
                   <motion.button
                     key={p.label}

@@ -47,6 +47,7 @@ export function TabBar() {
               animate={{ scale: [1, 1.03, 1] }}
               transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
               onClick={() => setShowPostSheet(true)}
+              data-coach="tabbar-post"
               className="relative h-16 w-16 rounded-full grid place-items-center
                          text-white shadow-[0_18px_40px_-10px_rgba(251,146,60,0.7)]
                          ring-1 ring-white/15
@@ -59,7 +60,7 @@ export function TabBar() {
         </div>
 
         {/* Glass tab bar */}
-        <div className="glass-strong rounded-[28px] px-3 py-2 grid grid-cols-5 gap-1 relative">
+        <div data-coach="tabbar" className="glass-strong rounded-[28px] px-3 py-2 grid grid-cols-5 gap-1 relative">
           {/* index 0,1, [center], 3, 4 → render with a spacer in the middle */}
           {tabs.slice(0, 2).map(t => (
             <TabItem
@@ -109,6 +110,9 @@ function TabItem({
     <motion.button
       whileTap={{ scale: 0.9 }}
       onClick={onClick}
+      // Coach-mark anchor — the Getting Started tours spotlight the Floats
+      // tab ("float an idea" / "ping a friend" both live there).
+      data-coach={`tabbar-${tab.key}`}
       className="relative flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-2xl"
     >
       {active && (

@@ -4,6 +4,7 @@ import { logger } from '../lib/logger.js';
 import { sendFcm } from '../lib/push.js';
 import { publish } from '../realtime/bus.js';
 import type { AppNotification, AppSettings, NotificationType } from '../types.js';
+import { BUDDY_ID } from './buddy.js';
 import { getSettings } from './users.js';
 
 interface NotifRow {
@@ -12,6 +13,7 @@ interface NotifRow {
   from_id: string | null;
   activity_id: string | null;
   float_id: string | null;
+  squad_id: string | null;
   body: string;
   read: number;
   resolved: number;
@@ -25,6 +27,7 @@ function toNotification(r: NotifRow): AppNotification {
     fromId: r.from_id ?? 'system',
     activityId: r.activity_id ?? undefined,
     floatId: r.float_id ?? undefined,
+    squadId: r.squad_id ?? undefined,
     text: r.body,
     at: r.created_at,
     read: !!r.read,
@@ -42,6 +45,7 @@ export function createNotification(input: {
   fromId?: string;
   activityId?: string;
   floatId?: string;
+  squadId?: string;
   body: string;
 }): AppNotification | null {
   const id = newId();
@@ -53,10 +57,10 @@ export function createNotification(input: {
   // keep going.
   try {
     q.run(
-      `INSERT INTO notifications (id, user_id, type, from_id, activity_id, float_id, body, read, resolved, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+      `INSERT INTO notifications (id, user_id, type, from_id, activity_id, float_id, squad_id, body, read, resolved, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
       id, input.userId, input.type, input.fromId ?? null, input.activityId ?? null,
-      input.floatId ?? null, input.body, now(),
+      input.floatId ?? null, input.squadId ?? null, input.body, now(),
     );
   } catch (err) {
     logger.warn({ err, type: input.type, userId: input.userId }, '[notifications] insert failed (non-fatal)');
@@ -95,6 +99,7 @@ function composePushTitle(type: NotificationType, fromName: string | null | unde
     case 'friend_accepted': return `${fromName} accepted your request`;
     case 'host_offer':      return `You're up to host`;
     case 'plan_invite':     return `${fromName} invited you to a plan`;
+    case 'squad_invite':    return `${fromName} invited you to a squad`;
     default:                return null;
   }
 }
@@ -121,6 +126,7 @@ function bannerTitle(type: NotificationType): string {
     case 'chat_message':    return 'New message';
     case 'friend_accepted': return 'New friend';
     case 'plan_invite':     return 'You\'re invited';
+    case 'squad_invite':    return 'Squad invite';
     default:                return 'WUD';
   }
 }
@@ -263,6 +269,7 @@ function shouldPushCategory(type: NotificationType, s: AppSettings): boolean {
       return s.pingsEnabled;
     case 'invite':
     case 'friend_accepted':
+    case 'squad_invite':
       // Friend social events bypass per-category gating — they're rare
       // and almost always wanted. Master pushEnabled still applies.
       return true;
@@ -285,6 +292,24 @@ export function sendPing(senderId: string, text: string, recipientIds: string[])
       body: text,
     });
     delivered++;
+    // WUD Buddy (the built-in test friend) pings back after a beat, so a
+    // brand-new user with no real friends sees the full round-trip: their
+    // ping lands, then an alert arrives back. Delay keeps it feeling like
+    // a reply rather than an echo.
+    if (recipientId === BUDDY_ID) {
+      setTimeout(() => {
+        try {
+          createNotification({
+            userId: senderId,
+            type: 'ping',
+            fromId: BUDDY_ID,
+            body: '👋 Buddy here — that\'s exactly how pings land for your friends!',
+          });
+        } catch (err) {
+          logger.warn({ err }, '[buddy] ping auto-reply failed');
+        }
+      }, 1500);
+    }
   }
   return delivered;
 }

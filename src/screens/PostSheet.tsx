@@ -101,7 +101,7 @@ export function PostSheet() {
     if (!file) return;
     setBannerUploading(true);
     try {
-      const { url } = await uploadApi.photo(file);
+      const { url } = await uploadApi.photo(file, 'banner');
       setBannerUrl(url);
     } catch {
       pushToast('Could not upload that photo', 'warn');
@@ -249,6 +249,7 @@ export function PostSheet() {
             whileTap={!submitDisabled ? { scale: 0.94 } : undefined}
             onClick={submit}
             disabled={submitDisabled}
+            data-coach="post-submit"
             className={`px-4 py-1.5 rounded-full text-sm font-bold transition
                         ${submitDisabled
                           ? 'bg-white/5 text-zinc-500 cursor-not-allowed'
@@ -278,14 +279,14 @@ export function PostSheet() {
         <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-12">
           {/* Category chips */}
           <Section title="Category">
-            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
+            <div data-coach="post-category" className="flex gap-2 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
               {/* Custom — user-defined emoji + label. Lives FIRST so users
                   who don't see a fitting preset don't have to scroll the
                   whole strip to find the escape hatch. */}
               <motion.button
                 key="custom"
                 whileTap={{ scale: 0.92 }}
-                onClick={() => setCategory('custom')}
+                onClick={() => { setCategory('custom'); useApp.getState().coachSignal('post-category'); }}
                 className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
                             ${isCustom
                               ? 'bg-gradient-to-br from-fuchsia-500 to-rose-500 text-white border-fuchsia-300 shadow-[0_8px_24px_-10px_rgba(232,121,249,0.6)]'
@@ -301,7 +302,7 @@ export function PostSheet() {
                   <motion.button
                     key={c.key}
                     whileTap={{ scale: 0.92 }}
-                    onClick={() => setCategory(c.key)}
+                    onClick={() => { setCategory(c.key); useApp.getState().coachSignal('post-category'); }}
                     className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border transition
                                 ${active
                                   ? 'bg-white text-zinc-900 border-white'
@@ -366,6 +367,7 @@ export function PostSheet() {
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder={`e.g. ${cat.label} sesh`}
+              data-coach="post-title"
               aria-required="true"
               aria-invalid={!title.trim()}
               className={`w-full bg-white/5 border rounded-2xl px-3.5 py-2.5 text-white placeholder:text-zinc-500

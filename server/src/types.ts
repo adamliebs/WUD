@@ -94,6 +94,9 @@ export interface Squad {
   emoji: string;
   hostId: string;
   memberIds: string[];
+  /** Users with a pending squad invite (added by the host but not yet
+   *  accepted). Not members yet — shown as "Invited" rows in the UI. */
+  invitedIds: string[];
   chat: ChatMessage[];
   createdAt: number;
 }
@@ -116,7 +119,10 @@ export type NotificationType =
   // Host (or anyone going) pinged a specific friend to come along. Distinct
   // from 'activity_created' (the initial broadcast) — this is a personal
   // nudge later in the lifecycle: "hey, come too."
-  | 'plan_invite';
+  | 'plan_invite'
+  // A squad host invited you (a non-friend) to join their squad. Carries
+  // Join / Pass CTAs; accepting creates the friendship + membership together.
+  | 'squad_invite';
 
 export interface AppNotification {
   id: string;
@@ -124,6 +130,8 @@ export interface AppNotification {
   fromId: string;
   activityId?: string;
   floatId?: string;
+  /** Set for squad_invite so the Join/Pass CTAs know which squad to act on. */
+  squadId?: string;
   text: string;
   at: number;
   read: boolean;

@@ -61,7 +61,7 @@ export function EditProfileScreen() {
     if (!file) return;
     setUploading(true);
     try {
-      const { url } = await uploadApi.photo(file);
+      const { url } = await uploadApi.photo(file, 'avatar');
       setPhotoUrl(url);
     } catch {
       pushToast('Could not upload that photo', 'warn');
@@ -81,12 +81,19 @@ export function EditProfileScreen() {
     const phonePatch = trimmedPhone === (me.phone ?? '')
       ? undefined                     // unchanged — omit so we don't churn the server
       : (trimmedPhone === '' ? null : trimmedPhone);
+    // Photo semantics mirror phone: the server treats `undefined` as "leave
+    // unchanged" and only clears on an explicit `null`. So when the user
+    // removed their photo (photoUrl now undefined but they had one), send
+    // null — sending undefined silently kept the old photo (the remove bug).
+    const photoPatch = photoUrl === me.photoUrl
+      ? undefined                     // unchanged — omit
+      : (photoUrl ?? null);           // new url, or null to clear
     updateMe({
       name: name.trim() || 'You',
       handle: sanitize(handle) || 'you',
       avatar,
       color,
-      photoUrl,
+      ...(photoPatch !== undefined ? { photoUrl: photoPatch } : {}),
       ...(phonePatch !== undefined ? { phone: phonePatch } : {}),
     });
     closeOverlay();

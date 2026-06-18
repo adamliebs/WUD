@@ -5,8 +5,9 @@ interface Props {
   onClick?: (e: React.MouseEvent) => void;
   children: ReactNode;
   disabled?: boolean;
-  /** "primary" — rose→orange gradient (default). "amber" — for "take over hosting" */
-  tone?: 'primary' | 'amber';
+  /** "primary" — rose→orange gradient (default). "amber" — for "take over
+   *  hosting". "violet" — for squad invites. */
+  tone?: 'primary' | 'amber' | 'violet';
   /** "round" = circle-friendly halo (for the floating + button). "wide" = rectangle. */
   shape?: 'wide' | 'round';
   className?: string;
@@ -21,16 +22,22 @@ export function PulseButton({
   onClick, children, disabled, tone = 'primary', shape = 'wide', className = '', ariaLabel,
 }: Props) {
   const haloA =
-    tone === 'amber' ? 'bg-amber-500/40' : 'bg-rose-500/40';
+    tone === 'amber' ? 'bg-amber-500/40'
+    : tone === 'violet' ? 'bg-violet-500/40'
+    : 'bg-rose-500/40';
   const haloB =
-    tone === 'amber' ? 'bg-orange-400/30' : 'bg-orange-400/30';
+    tone === 'violet' ? 'bg-purple-400/30' : 'bg-orange-400/30';
   const gradient =
     tone === 'amber'
       ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500'
+      : tone === 'violet'
+      ? 'bg-gradient-to-r from-violet-500 to-purple-500'
       : 'bg-gradient-to-r from-rose-500 to-orange-500';
   const shadow =
     tone === 'amber'
       ? 'shadow-[0_18px_40px_-10px_rgba(251,146,60,0.6)]'
+      : tone === 'violet'
+      ? 'shadow-[0_18px_40px_-10px_rgba(139,92,246,0.6)]'
       : 'shadow-[0_18px_40px_-10px_rgba(244,63,94,0.6)]';
 
   const radius = shape === 'round' ? 'rounded-full' : 'rounded-2xl';

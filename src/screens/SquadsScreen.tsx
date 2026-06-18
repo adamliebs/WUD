@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, Loader2, LogOut, MessageCircle, Pencil, Plus, Send, SmilePlus, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Calendar, Camera, ChevronLeft, ChevronRight, Crown, Loader2, LogOut, MessageCircle, Pencil, Plus, Search, Send, SmilePlus, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { ActivityCard } from '../components/ActivityCard';
@@ -10,6 +10,8 @@ import { SwipeBackPage } from '../components/SwipeBackPage';
 import { categoryFor } from '../data/categories';
 import { clockTime, relTime, useApp } from '../store';
 import { mediaUrl } from '../api/client';
+import { socialApi } from '../api/endpoints';
+import { shareInvite } from '../lib/share-invite';
 import type { Activity, User } from '../types';
 
 type Mode =
@@ -48,7 +50,10 @@ export function SquadsScreen() {
   // Consumed lazily inside useState's initializer so the focus is cleared
   // exactly once, before the first render commits.
   const [mode, setMode] = useState<Mode>(() => {
-    const focusId = useApp.getState().consumeSquadFocus();
+    const s = useApp.getState();
+    // Create intent (Getting Started checklist) wins over a focus target.
+    if (s.consumeSquadCreateIntent()) return { type: 'create' };
+    const focusId = s.consumeSquadFocus();
     return focusId ? { type: 'detail', squadId: focusId, tab: 'plans' } : { type: 'list' };
   });
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -462,7 +467,7 @@ function MembersPane({ squadId }: { squadId: string }) {
         <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">
           Members · {members.length}
         </div>
-        {isHost && addableFriends.length > 0 && (
+        {isHost && (
           <button
             onClick={() => setShowAdd(v => !v)}
             className="text-[11px] uppercase tracking-[0.18em] font-bold text-rose-300"
@@ -492,6 +497,21 @@ function MembersPane({ squadId }: { squadId: string }) {
           />
         ))}
       </div>
+
+      {/* Outstanding squad invites — added by the host but not yet accepted.
+          They become members (and the host's friends) when they accept. */}
+      {(sq.invitedIds ?? []).length > 0 && (
+        <>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2">
+            Invited · {(sq.invitedIds ?? []).length}
+          </div>
+          <div className="flex flex-col gap-2">
+            {(sq.invitedIds ?? []).map(id => (
+              <PersonRow key={id} user={userById(id)} badge="invited" />
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Host-only: add picker */}
       <AnimatePresence initial={false}>
@@ -528,6 +548,17 @@ function MembersPane({ squadId }: { squadId: string }) {
                 ))}
               </div>
             )}
+
+            {/* Beyond friends: search the whole directory. A non-friend gets a
+                squad invite — they join (and become your friend) on accept. */}
+            <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mt-5 mb-2">
+              Invite anyone
+            </div>
+            <EveryoneSearch
+              excludeIds={[sq.hostId, ...sq.memberIds, ...(sq.invitedIds ?? []), ...friendIds]}
+              pickedIds={[]}
+              onToggle={u => addMember(squadId, u.id)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -606,7 +637,7 @@ function PersonRow({
   user, badge, trailing,
 }: {
   user: User;
-  badge?: 'host';
+  badge?: 'host' | 'invited';
   trailing?: React.ReactNode;
 }) {
   return (
@@ -621,7 +652,96 @@ function PersonRow({
           <Crown size={10} /> Host
         </span>
       )}
+      {badge === 'invited' && (
+        <span className="text-[10px] font-bold uppercase tracking-widest text-violet-200 bg-violet-400/15 border border-violet-300/30 px-2 py-1 rounded-full">
+          Invited
+        </span>
+      )}
       {trailing}
+    </div>
+  );
+}
+
+/**
+ * Debounced directory search for the squad picker's "Everyone" tab. Results
+ * come from /friends/discover — the server already excludes self, current
+ * friends, blocked pairs, and WUD Buddy; `excludeIds` additionally hides
+ * anyone the caller has covered elsewhere (existing members, friends list).
+ * With under two characters typed, the server returns "people you may know"
+ * (friends-of-friends), which makes a nice default state.
+ */
+function EveryoneSearch({
+  excludeIds, pickedIds, onToggle,
+}: {
+  excludeIds: string[];
+  pickedIds: string[];
+  onToggle: (user: User) => void;
+}) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<User[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBusy(true);
+    const t = setTimeout(() => {
+      socialApi.discover(q.trim())
+        .then(r => { if (!cancelled) setResults(r.users); })
+        .catch(() => { if (!cancelled) setResults([]); })
+        .finally(() => { if (!cancelled) setBusy(false); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
+
+  const visible = results.filter(u => !excludeIds.includes(u.id));
+
+  return (
+    <div>
+      <div className="relative">
+        <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
+        <input
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search anyone by name or handle"
+          className="w-full bg-white/5 border border-white/10 rounded-2xl pl-9 pr-4 py-3 text-sm text-white placeholder:text-zinc-500
+                     focus:outline-none focus:ring-2 focus:ring-violet-400/60 focus:border-violet-400/30"
+        />
+      </div>
+      <div className="flex flex-col gap-2 mt-3">
+        {visible.map(u => {
+          const picked = pickedIds.includes(u.id);
+          return (
+            <button
+              key={u.id}
+              onClick={() => onToggle(u)}
+              aria-pressed={picked}
+              className={`flex items-center gap-3 p-2.5 rounded-2xl border transition text-left
+                          ${picked
+                            ? 'bg-violet-500/15 border-violet-400/40'
+                            : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+            >
+              <Avatar user={u} size={36} />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white truncate">{u.name}</div>
+                <div className="text-[11px] text-zinc-400 truncate">@{u.handle}</div>
+              </div>
+              <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold
+                                ${picked
+                                  ? 'text-white bg-gradient-to-br from-violet-500 to-purple-500'
+                                  : 'text-zinc-300 bg-white/5 border border-white/10'}`}>
+                <UserPlus size={12} /> {picked ? 'Inviting' : 'Invite'}
+              </span>
+            </button>
+          );
+        })}
+        {!busy && visible.length === 0 && (
+          <div className="text-sm text-zinc-500 px-1">
+            {q.trim().length >= 2
+              ? 'Nobody matches that — check the spelling of their handle.'
+              : 'Type a name or handle to find people who aren’t your friends yet.'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -978,6 +1098,7 @@ function SquadEditor({ squadId, onDone }: { squadId?: string; onDone: () => void
   const createSquad = useApp(s => s.createSquad);
   const updateSquad = useApp(s => s.updateSquad);
   const friends = useApp(useShallow(s => s.friendIds.map(id => s.userById(id))));
+  const me = useApp(s => s.me());
 
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.name ?? '');
@@ -985,9 +1106,19 @@ function SquadEditor({ squadId, onDone }: { squadId?: string; onDone: () => void
   // For NEW squads we let the host pick initial members. For EDIT, member
   // management lives in the Members tab; this editor only edits identity.
   const [memberIds, setMemberIds] = useState<string[]>(existing?.memberIds ?? []);
+  // Member picker source: my friends (join instantly) vs the whole directory
+  // ("Everyone" — non-friends get a squad invite and join on accept).
+  const [pickerTab, setPickerTab] = useState<'friends' | 'everyone'>('friends');
+  // Non-friends picked from the Everyone tab. Kept as full User objects so
+  // the picked state survives the search results changing under them.
+  const [invitees, setInvitees] = useState<User[]>([]);
 
   const toggle = (id: string) =>
     setMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleInvitee = (user: User) =>
+    setInvitees(prev => prev.some(x => x.id === user.id)
+      ? prev.filter(x => x.id !== user.id)
+      : [...prev, user]);
 
   const canSave = name.trim().length > 0;
   const save = () => {
@@ -995,26 +1126,33 @@ function SquadEditor({ squadId, onDone }: { squadId?: string; onDone: () => void
     if (isEdit && existing) {
       updateSquad(existing.id, { name, emoji });
     } else {
-      createSquad({ name, emoji, memberIds });
+      // One list — the server splits it: friends become members immediately,
+      // everyone else gets a squad invite.
+      createSquad({ name, emoji, memberIds: [...memberIds, ...invitees.map(u => u.id)] });
     }
     onDone();
   };
 
   return (
-    <div className="pb-32">
-      {/* Hero */}
-      <div className="relative h-32 bg-gradient-to-br from-rose-500/30 to-orange-500/30 border-b border-white/5">
-        <div className="absolute inset-0 grid place-items-center text-6xl">
-          {emoji || '✨'}
+    // Fill the page as a flex column: the content scrolls in the middle, the
+    // save bar is a fixed footer. (It used to be position:absolute bottom-0,
+    // but its offset parent is the scrolling page — so it parked at the bottom
+    // of the *content* and covered the friends list once the list grew.)
+    <div className="absolute inset-0 flex flex-col">
+      <div className="flex-1 overflow-y-auto no-scrollbar">
+        {/* Hero */}
+        <div className="relative h-32 bg-gradient-to-br from-rose-500/30 to-orange-500/30 border-b border-white/5">
+          <div className="absolute inset-0 grid place-items-center text-6xl">
+            {emoji || '✨'}
+          </div>
         </div>
-      </div>
 
-      <div className="px-4 pt-5">
+        <div className="px-4 pt-5 pb-6">
         {/* Name + emoji inputs */}
         <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2 px-1">
           Identity
         </div>
-        <div className="flex gap-2">
+        <div data-coach="squad-name" className="flex gap-2">
           <input
             value={emoji}
             onChange={e => setEmoji(Array.from(e.target.value).slice(0, 4).join(''))}
@@ -1037,43 +1175,87 @@ function SquadEditor({ squadId, onDone }: { squadId?: string; onDone: () => void
           <>
             <div className="flex items-center justify-between mt-5 mb-2 px-1">
               <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">Members</div>
-              <div className="text-[11px] text-zinc-500">{memberIds.length} of {friends.length}</div>
+              <div className="text-[11px] text-zinc-500">{memberIds.length + invitees.length} picked</div>
             </div>
-            <div className="flex flex-col gap-2">
-              {friends.map(f => {
-                const picked = memberIds.includes(f.id);
-                return (
-                  <button
-                    key={f.id}
-                    onClick={() => toggle(f.id)}
-                    aria-pressed={picked}
-                    className={`flex items-center gap-3 p-2.5 rounded-2xl border transition text-left
-                                ${picked
-                                  ? 'bg-rose-500/15 border-rose-400/40'
-                                  : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-                  >
-                    <Avatar user={f} size={36} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-white truncate">{f.name}</div>
-                      <div className="text-[11px] text-zinc-400 truncate">@{f.handle}</div>
-                    </div>
-                    <div className={`h-6 w-6 rounded-full grid place-items-center border-2
-                                     ${picked
-                                       ? 'bg-gradient-to-br from-rose-500 to-orange-500 border-rose-400'
-                                       : 'border-white/20'}`}>
-                      {picked && (
-                        <svg viewBox="0 0 12 12" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="2,7 5,10 10,3" />
-                        </svg>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-              {friends.length === 0 && (
-                <div className="text-zinc-500 text-sm">Add friends first, then group them into squads.</div>
-              )}
+
+            {/* Friends join instantly; "Everyone" search invites non-friends.
+                data-coach anchors the Getting Started squad tour's spotlight. */}
+            <div data-coach="squad-everyone" className="grid grid-cols-2 bg-white/5 border border-white/10 rounded-2xl p-1 mb-3">
+              {(['friends', 'everyone'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setPickerTab(t)}
+                  className={`py-2 rounded-xl text-xs font-semibold transition
+                              ${pickerTab === t ? 'bg-white text-zinc-900' : 'text-zinc-300'}`}
+                >
+                  {t === 'friends' ? 'Friends' : 'Everyone'}
+                </button>
+              ))}
             </div>
+
+            {pickerTab === 'friends' ? (
+              <div className="flex flex-col gap-2">
+                {friends.map(f => {
+                  const picked = memberIds.includes(f.id);
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => toggle(f.id)}
+                      aria-pressed={picked}
+                      className={`flex items-center gap-3 p-2.5 rounded-2xl border transition text-left
+                                  ${picked
+                                    ? 'bg-rose-500/15 border-rose-400/40'
+                                    : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                    >
+                      <Avatar user={f} size={36} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-white truncate">{f.name}</div>
+                        <div className="text-[11px] text-zinc-400 truncate">@{f.handle}</div>
+                      </div>
+                      <div className={`h-6 w-6 rounded-full grid place-items-center border-2
+                                       ${picked
+                                         ? 'bg-gradient-to-br from-rose-500 to-orange-500 border-rose-400'
+                                         : 'border-white/20'}`}>
+                        {picked && (
+                          <svg viewBox="0 0 12 12" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="2,7 5,10 10,3" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+                {friends.length === 0 && (
+                  <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                    <div className="text-zinc-400 text-sm">
+                      No friends yet — search <span className="font-semibold text-white">Everyone</span> to
+                      invite people by name, or share your invite link.
+                    </div>
+                    <button
+                      onClick={() => void shareInvite(me)}
+                      className="mt-3 w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest text-white
+                                 bg-gradient-to-br from-rose-500 to-orange-500"
+                    >
+                      Share your invite link
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <EveryoneSearch
+                excludeIds={friends.map(f => f.id)}
+                pickedIds={invitees.map(u => u.id)}
+                onToggle={toggleInvitee}
+              />
+            )}
+
+            {invitees.length > 0 && (
+              <div className="text-[11px] text-violet-300/90 mt-3 px-1">
+                {invitees.length === 1
+                  ? `${invitees[0].name} isn't a friend yet — they'll get an invite and join (you'll become friends) when they accept.`
+                  : `${invitees.length} people will get invites — each joins (and becomes your friend) when they accept.`}
+              </div>
+            )}
             <div className="text-[11px] text-zinc-500 mt-2 px-1">
               You're automatically the host. Members can leave; only you can add/remove.
             </div>
@@ -1085,11 +1267,16 @@ function SquadEditor({ squadId, onDone }: { squadId?: string; onDone: () => void
             Manage members from the People tab.
           </div>
         )}
+        </div>
       </div>
 
-      {/* Sticky save */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-4
-                      bg-[#0a070f]/95 backdrop-blur-md border-t border-white/10">
+      {/* Save bar — fixed footer, always visible above the scrolling content.
+          Safe-area padding keeps it clear of the iOS home indicator. */}
+      <div
+        data-coach="squad-save"
+        className="shrink-0 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),16px)]
+                   bg-[#0a070f]/95 backdrop-blur-md border-t border-white/10"
+      >
         <PulseButton onClick={save} disabled={!canSave}>
           {isEdit ? 'Save squad' : 'Create squad'}
         </PulseButton>

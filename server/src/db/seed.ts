@@ -5,6 +5,10 @@
  * The "admin" account can be logged into with:
  *   email: admin@wud.app   password: admin1234
  *
+ * A clean tester account with ZERO friends (for checking onboarding from
+ * scratch — auto-intro, Getting Started checklist, empty feed):
+ *   email: fresh@wud.app   password: fresh1234
+ *
  * Seed shape (May 2026):
  *   • 9 users (6 friends of admin, 3 friends-of-friends).
  *   • 2 squads — BFFs (4 ppl) and Run Club (3 ppl) — both hosted by admin.
@@ -23,6 +27,7 @@
 import { migrate, q, tx } from './index.js';
 import { hashPassword } from '../lib/password.js';
 import { newId, now } from '../lib/ids.js';
+import { ensureBuddyUser } from '../services/buddy.js';
 
 const min = (n: number) => n * 60_000;
 
@@ -48,6 +53,12 @@ const USERS: SeedUser[] = [
   { id: 'u_noah',  name: 'Noah',       handle: 'noahw',   emoji: '🧑‍🚀', color: 'from-teal-500/25 via-cyan-500/15 to-sky-500/10',        photoUrl: FACE(11) },
   { id: 'u_zoe',   name: 'Zoe',        handle: 'zoey',    emoji: '🦊',  color: 'from-violet-500/25 via-fuchsia-500/15 to-pink-500/10',   photoUrl: FACE(47) },
   { id: 'u_liam',  name: 'Liam',       handle: 'liamk',   emoji: '🥷',  color: 'from-zinc-400/25 via-zinc-500/15 to-zinc-600/10',        photoUrl: FACE(68) },
+  // Clean tester account — deliberately part of NO friendship, squad, plan, or
+  // notification below, so it logs in exactly like a brand-new signup: zero
+  // friends (WUD Buddy is added at server boot), empty feed, and the
+  // auto-played onboarding intro + Getting Started checklist fire from scratch.
+  //   login → fresh@wud.app / fresh1234
+  { id: 'u_fresh', name: 'Sky',        handle: 'sky',     emoji: '🌤️', color: 'from-sky-500/25 via-indigo-500/15 to-violet-500/10',     photoUrl: '' },
 ];
 
 /**
@@ -100,14 +111,23 @@ function run(): void {
       q.run(
         `INSERT INTO users (id, name, handle, avatar_emoji, color, photo_url, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        u.id, u.name, u.handle, u.emoji, u.color, u.photoUrl, ts, ts,
+        // Empty photoUrl → NULL so the avatar falls back to the emoji.
+        u.id, u.name, u.handle, u.emoji, u.color, u.photoUrl || null, ts, ts,
       );
       q.run(
         'INSERT INTO user_settings (user_id, default_reminder_minutes) VALUES (?, ?)',
         u.id, 30,
       );
-      const email = u.id === 'u_me' ? 'admin@wud.app' : `${u.handle}@wud.app`;
-      const hash = u.id === 'u_me' ? hashPassword('admin1234') : demoHash;
+      // admin + the clean tester get memorable dedicated logins; everyone
+      // else is <handle>@wud.app / demo1234.
+      const email =
+        u.id === 'u_me' ? 'admin@wud.app'
+        : u.id === 'u_fresh' ? 'fresh@wud.app'
+        : `${u.handle}@wud.app`;
+      const hash =
+        u.id === 'u_me' ? hashPassword('admin1234')
+        : u.id === 'u_fresh' ? hashPassword('fresh1234')
+        : demoHash;
       q.run(
         `INSERT INTO auth_identities (id, user_id, provider, provider_subject, email, password_hash, created_at)
          VALUES (?, ?, 'email', ?, ?, ?, ?)`,
@@ -272,8 +292,15 @@ function run(): void {
     mkNotif('invite', 'u_mike',  'a21', 'Mike RSVP\'d to "Smashburger meetup" — now visible to you',         ts - min(20));
   });
 
+  // The wipe above removed WUD Buddy (the built-in test friend). Recreate him
+  // here so `npm run seed` leaves a complete DB — Buddy + a friendship with
+  // every account, including the fresh tester — without needing a server
+  // restart to re-run ensureBuddyUser at boot.
+  ensureBuddyUser();
+
   console.log('✅ Seed complete.');
   console.log('   Admin login →  email: admin@wud.app   password: admin1234');
+  console.log('   Fresh tester → email: fresh@wud.app   password: fresh1234  (0 friends — onboarding from scratch)');
   console.log(`   ${USERS.length} users, ${FRIEND_IDS.length + CROSS_FRIENDSHIPS.length} friendships, 24 activities (2 live now), 2 squads.`);
 }
 

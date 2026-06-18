@@ -18,6 +18,11 @@ export interface Squad {
   hostId: string;
   /** Squad members — does NOT include the host. */
   memberIds: string[];
+  /** Users with a pending squad invite (host added a non-friend; they haven't
+   *  accepted yet). Rendered as "Invited" rows — not members until accept.
+   *  Optional defensively: a server that predates squad invites omits it,
+   *  and the UI must degrade to "no pending invites" rather than crash. */
+  invitedIds?: string[];
   /** Per-squad chat. Reuses ChatMessage so text / photos / polls all work. */
   chat: ChatMessage[];
   createdAt: number;
@@ -146,7 +151,8 @@ export type NotificationType =
   | 'friend_accepted'  // your friend request was accepted
   | 'activity_updated' // the host edited a plan you're going to
   | 'activity_cancelled' // a plan you were going to was cancelled
-  | 'plan_invite';     // host (or attendee) personally invited you to a plan
+  | 'plan_invite'      // host (or attendee) personally invited you to a plan
+  | 'squad_invite';    // a squad host invited you (non-friend) — Join/Pass CTAs
 
 export interface AppNotification {
   id: string;
@@ -155,10 +161,12 @@ export interface AppNotification {
   activityId?: string;
   /** Set for float_* notifications so the card can deep-link into the float. */
   floatId?: string;
+  /** Set for squad_invite so the Join/Pass CTAs know which squad to act on. */
+  squadId?: string;
   text: string;
   at: number;
   read: boolean;
-  // Action state for host_offer
+  // Action state for host_offer + squad_invite
   resolved?: boolean;
 }
 

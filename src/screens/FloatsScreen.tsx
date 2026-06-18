@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Avatar, AvatarStack } from '../components/Avatar';
 import { FriendsRail } from '../components/FriendsRail';
 import { RefreshButton } from '../components/RefreshButton';
-import { useApp } from '../store';
+import { BUDDY_FLOAT_ID, useApp } from '../store';
 import type { Float, FloatResponseState, FloatTiming } from '../types';
 
 /**
@@ -211,6 +211,8 @@ function Composer() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.1 }}
+      // Coach-mark anchor for the Getting Started "float an idea" tour.
+      data-coach="float-composer"
       className="relative rounded-3xl p-4 mb-5
                  bg-gradient-to-br from-fuchsia-500/15 via-rose-500/10 to-orange-500/10
                  border border-fuchsia-400/25 backdrop-blur-sm"
@@ -236,6 +238,7 @@ function Composer() {
           onChange={e => setQuestion(e.target.value.slice(0, 120))}
           onKeyDown={e => { if (e.key === 'Enter') void send(); }}
           placeholder="anyone keen for a surf?"
+          data-coach="float-question"
           className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-2.5 text-white placeholder:text-zinc-500
                      focus:outline-none focus:ring-2 focus:ring-fuchsia-400/60 text-sm"
         />
@@ -254,14 +257,14 @@ function Composer() {
       </div>
 
       {/* Rough timing chips */}
-      <div className="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar">
+      <div data-coach="float-timing" className="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar">
         {TIMINGS.map(t => {
           const active = timing === t.key;
           return (
             <motion.button
               key={t.key}
               whileTap={{ scale: 0.92 }}
-              onClick={() => setTiming(active ? undefined : t.key)}
+              onClick={() => { setTiming(active ? undefined : t.key); useApp.getState().coachSignal('float-timing'); }}
               className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-widest transition border
                           ${active
                             ? 'bg-white text-zinc-900 border-white'
@@ -298,6 +301,7 @@ function Composer() {
         whileTap={canSend ? { scale: 0.97 } : undefined}
         disabled={!canSend}
         onClick={send}
+        data-coach="float-send"
         className={`mt-3 w-full inline-flex items-center justify-center gap-1.5 py-3 rounded-2xl
                     text-sm font-bold tracking-wide
                     ${canSend
@@ -334,6 +338,9 @@ function FloatCard({ float: f, myId, delay }: { float: Float; myId: string; dela
   const removeFloat = useApp(s => s.removeFloat);
   const setLockingFloatId = useApp(s => s.setLockingFloatId);
   const userById = useApp(s => s.userById);
+  // While a coach tour is running, freeze the card's bob + layout animation so
+  // the spotlight target stays put (a moving target glitched the overlay).
+  const coachActive = useApp(s => s.coach !== null);
 
   const isMine = f.senderId === myId;
   const myResponse = f.responses.find(r => r.userId === myId)?.state;
@@ -380,18 +387,24 @@ function FloatCard({ float: f, myId, delay }: { float: Float; myId: string; dela
 
   return (
     <motion.div
-      layout
+      // `layout` makes a card chase its neighbours when the list reorders. That
+      // fought the coach-mark spotlight (which measures the card's box) and read
+      // as a screen glitch, so disable it while a tutorial is running.
+      layout={coachActive ? false : true}
       // Entrance: rises in from below like a balloon released. Idle: gentle bob.
       initial={{ opacity: 0, y: 50, scale: 0.9 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -80, scale: 0.85, transition: { duration: 0.5 } }}
       transition={{ type: 'spring', stiffness: 220, damping: 22, delay }}
+      data-coach={f.id === BUDDY_FLOAT_ID ? 'demo-float-card' : undefined}
       className="relative"
     >
       <motion.div
-        // Gentle continuous float. Independent rotation so it doesn't look mechanical.
-        animate={{ y: [0, -4, 0, 2, 0], rotate: [0, 0.3, 0, -0.3, 0] }}
-        transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+        // Gentle continuous float. Independent rotation so it doesn't look
+        // mechanical. Frozen while a coach tour is active — a constantly-moving
+        // spotlight target was the source of the "screen glitches" report.
+        animate={coachActive ? { y: 0, rotate: 0 } : { y: [0, -4, 0, 2, 0], rotate: [0, 0.3, 0, -0.3, 0] }}
+        transition={coachActive ? { duration: 0.2 } : { duration: 6, repeat: Infinity, ease: 'easeInOut' }}
         className={`relative rounded-3xl p-4 border bg-gradient-to-br ${palette.from} ${palette.via} ${palette.to} ${palette.ring}
                     shadow-[0_22px_50px_-24px_rgba(0,0,0,0.6)] backdrop-blur-sm`}
       >

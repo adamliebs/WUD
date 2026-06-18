@@ -4,9 +4,9 @@ import { q } from '../db/index.js';
 import { badRequest, conflict } from '../lib/errors.js';
 import { handler, optionalString, requireString } from '../lib/http.js';
 import { createNotification } from '../services/notifications.js';
-import { getUserRow } from '../services/users.js';
+import { getUserRow, toPublicUser } from '../services/users.js';
 import {
-  createActivity, feedFor, getActivity, getActivityRow, hasFoFAvailable, historyFor,
+  canSeeActivity, createActivity, feedFor, getActivity, getActivityRow, hasFoFAvailable, historyFor,
   leaveActivity, setRsvp, toggleReaction, updateActivity,
 } from '../services/activities.js';
 import { resolveHostOffers } from '../services/notifications.js';
@@ -71,9 +71,27 @@ activitiesRouter.post('/activities', handler((req, res) => {
 }));
 
 /** GET /v1/activities/:id */
+/**
+ * GET /v1/activities/:id
+ *
+ * Visibility-gated. A viewer who can see the plan (host, squad member,
+ * friend-of-host on an open invite, or FoF on a public open invite) gets the
+ * full activity. Anyone else — e.g. someone a plan link was forwarded to who
+ * isn't connected to the host — gets a minimal preview: just the host's public
+ * profile, so the client can show a "you're not in this plan — add <host>"
+ * gate instead of leaking the title, attendees, place, or chat. Returns 404
+ * only when the plan genuinely doesn't exist.
+ */
 activitiesRouter.get('/activities/:id', handler((req, res) => {
+  const row = getActivityRow(req.params.id);
+  if (!row) { res.status(404).json({ error: { code: 'ACTIVITY_NOT_FOUND', message: 'Plan not found', field: null } }); return; }
+  if (!canSeeActivity(uid(req), row)) {
+    const host = getUserRow(row.host_id);
+    res.json({ visible: false, host: host ? toPublicUser(host) : null });
+    return;
+  }
   const activity = getActivity(req.params.id);
-  res.json({ activity, ...withUsers([activity]) });
+  res.json({ visible: true, activity, ...withUsers([activity]) });
 }));
 
 /** PATCH /v1/activities/:id — host-only edit. */

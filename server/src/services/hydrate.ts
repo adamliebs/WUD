@@ -26,6 +26,7 @@ export function collectUserIds(opts: {
   for (const s of opts.squads ?? []) {
     ids.add(s.hostId);
     s.memberIds.forEach(i => ids.add(i));
+    s.invitedIds.forEach(i => ids.add(i));
     s.chat.forEach(m => { if (m.authorId && m.authorId !== 'system') ids.add(m.authorId); });
   }
   for (const n of opts.notifications ?? []) {

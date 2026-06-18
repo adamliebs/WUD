@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
-import { hasSeenTutorial, useApp } from './store';
+import { useApp } from './store';
+import { CoachMarks } from './components/CoachMarks';
 import { DismissKeyboardOnSwipe } from './components/DismissKeyboardOnSwipe';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoadingOverlay } from './components/LoadingOverlay';
@@ -27,22 +28,15 @@ function App() {
   const authState = useApp(s => s.authState);
   const init = useApp(s => s.init);
   const showTutorial = useApp(s => s.showTutorial);
-  const setShowTutorial = useApp(s => s.setShowTutorial);
 
   // On mount, resume a saved session (if a token is in localStorage).
   useEffect(() => { init(); }, [init]);
 
-  // First-run tutorial trigger — fires when the user first reaches the
-  // signed-in app on a device that hasn't seen the tutorial before. Stored
-  // per-device (localStorage) rather than per-user, so a returning user on
-  // a fresh install gets the refresher and the same account on multiple
-  // devices each see it once. The `setShowTutorial(false)` write inside
-  // the tutorial flips the localStorage flag, so this useEffect won't fire
-  // again after Skip / Get started.
-  useEffect(() => {
-    if (authState !== 'app') return;
-    if (!hasSeenTutorial()) setShowTutorial(true);
-  }, [authState, setShowTutorial]);
+  // First-run guidance now lives in the Getting Started checklist on the
+  // Feed (components/GettingStartedCard) — quests that walk the user through
+  // actually posting, floating, pinging, and making a squad. The screenshot
+  // tutorial no longer auto-shows; it remains available as "Replay tutorial"
+  // in Settings (which sets showTutorial directly).
 
   return (
     <PhoneFrame>
@@ -103,6 +97,10 @@ function MainApp() {
       <PollComposerSheet />
       <ReportSheet />
       <OverlayHost />
+      {/* Getting Started coach marks — dim + spotlight + tooltip over the
+          real UI. Renders nothing when no tour is active. Sits above sheets
+          and overlays (z-60) so it can point INTO them. */}
+      <CoachMarks />
     </motion.div>
   );
 }

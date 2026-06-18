@@ -130,10 +130,18 @@ export const safetyApi = {
 export interface ActivityResp { activity: Activity; users: User[] }
 export interface LeaveResp { dissolved: boolean; activity?: Activity; users: User[] }
 
+/** GET /activities/:id response. A viewer who can see the plan gets the full
+ *  activity; anyone else (e.g. a forwarded link to a non-friend) gets a
+ *  minimal gate payload — just the host — so the client can show an
+ *  "add the host to see this plan" screen instead of the plan itself. */
+export type ActivityGetResp =
+  | { visible?: true; activity: Activity; users: User[] }
+  | { visible: false; host: User | null };
+
 export const activityApi = {
   feed: () => api.get<{ activities: Activity[]; hasFoF: boolean; users: User[] }>('/feed'),
   history: () => api.get<{ activities: Activity[]; users: User[] }>('/history'),
-  get: (id: string) => api.get<ActivityResp>(`/activities/${id}`),
+  get: (id: string) => api.get<ActivityGetResp>(`/activities/${id}`),
 
   create: (b: {
     category: CategoryKey; customEmoji?: string; customLabel?: string;
@@ -223,6 +231,11 @@ export const socialApi = {
     api.post<{ users: (User & { isFriend: boolean })[] }>('/friends/contact-match', input),
   addFriend: (recipientId: string) =>
     api.post<{ requestId: string }>('/friend-requests', { recipientId }),
+  /** Invite-link friendship — the caller opened someone's personal invite
+   *  link, so the server creates the friendship instantly (no handshake).
+   *  `already` is true when the pair were friends before the call. */
+  friendLink: (handle: string) =>
+    api.post<{ friend: User; already: boolean }>('/friends/link', { handle }),
   removeFriend: (userId: string) => api.del(`/friends/${userId}`),
   friendRequests: () => api.get<{ requests: IncomingRequest[] }>('/friend-requests'),
   outgoingRequests: () => api.get<{ requests: OutgoingRequest[] }>('/friend-requests/outgoing'),
@@ -245,15 +258,28 @@ export const socialApi = {
   removeSquadMember: (id: string, userId: string) =>
     api.del<{ squad: Squad }>(`/squads/${id}/members/${userId}`),
   leaveSquad: (id: string) => api.post(`/squads/${id}/leave`),
+  /** Accept a pending squad invite — joins the squad AND auto-friends the
+   *  inviter in one step (consent to join doubles as consent to be friends). */
+  acceptSquadInvite: (squadId: string) =>
+    api.post<{ squad: Squad; users: User[] }>(`/squads/${squadId}/invites/accept`),
+  declineSquadInvite: (squadId: string) =>
+    api.post(`/squads/${squadId}/invites/decline`),
 };
 
 /* ---- uploads ---- */
 
+/** Upload kind — controls the server-side downscale cap. 'avatar' is capped
+ *  smaller (it renders tiny); 'banner'/'photo' get a generous cap. The server
+ *  always re-encodes to compressed WebP, so the stored file is far smaller
+ *  than the camera/screenshot original regardless of kind. */
+export type UploadKind = 'avatar' | 'banner' | 'photo';
+
 export const uploadApi = {
   /** Upload a photo file to the server; resolves to its absolute URL. */
-  photo: (file: File) => {
+  photo: (file: File, kind: UploadKind = 'photo') => {
     const form = new FormData();
     form.append('photo', file);
+    form.append('kind', kind);
     return api.upload<{ url: string }>('/uploads', form);
   },
 };

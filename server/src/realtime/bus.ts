@@ -32,6 +32,9 @@ export type RealtimeEvent =
   | { channel: `activity:${string}`; type: 'host.transferred';     data: unknown }
   | { channel: `squad:${string}`;    type: 'message.created';      data: unknown }
   | { channel: `squad:${string}`;    type: 'message.updated';      data: unknown }
+  // Membership changed (e.g. a squad invite was accepted) — subscribers
+  // refetch the squad. The client treats any squad:* event as "refetch".
+  | { channel: `squad:${string}`;    type: 'squad.updated';        data: unknown }
   | { channel: `presence:friends`;   type: 'presence.changed';     data: unknown };
 
 const emitter = new EventEmitter();

@@ -25,10 +25,26 @@ export function renderShareLanding(opts: {
   description: string;
   /** The wud:// deep link that opens the relevant in-app screen. */
   deepLink: string;
+  /** When set (invite links), the page leads with the inviter's face + name
+   *  so the landing reads as a personal invitation, not a generic app ad. */
+  inviter?: { name: string; emoji: string; photoUrl?: string };
+  /** When set (invite links), the page copies this string to the clipboard on
+   *  a store-button tap. It's the deferred-deep-link bridge: a fresh install
+   *  can't carry ?from= through the App/Play Store, so the freshly-installed
+   *  app reads the clipboard on first launch and redeems the invite. */
+  clipboardToken?: string;
 }): string {
   const title = escapeHtml(opts.title);
   const description = escapeHtml(opts.description);
   const deepLink = escapeHtml(opts.deepLink);
+  const clipboardToken = opts.clipboardToken ?? '';
+  const inviterBlock = opts.inviter
+    ? `<div class="inviter">${
+        opts.inviter.photoUrl
+          ? `<img class="inviter-avatar" src="${escapeHtml(opts.inviter.photoUrl)}" alt="" />`
+          : `<span class="inviter-avatar inviter-emoji">${escapeHtml(opts.inviter.emoji)}</span>`
+      }</div>`
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -62,18 +78,30 @@ export function renderShareLanding(opts: {
     box-shadow: none;
   }
   .hint { color: #a1a1aa; font-size: 12px; margin-top: 14px; }
+  .inviter { margin-top: 18px; }
+  .inviter-avatar {
+    width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 2px solid rgba(255,255,255,0.15);
+    box-shadow: 0 14px 30px -14px rgba(244, 63, 94, 0.45);
+  }
+  .inviter-emoji {
+    font-size: 36px;
+    background: linear-gradient(135deg, rgba(244,63,94,0.35), rgba(249,115,22,0.25));
+  }
 </style>
 </head>
 <body>
   <main class="wrap">
     <div class="brand"><span class="dot"></span>WUD</div>
+    ${inviterBlock}
     <h1>${title}</h1>
     <p class="tagline">${description}</p>
 
     <div class="stack">
       <a id="open-app" class="store-btn" href="${deepLink}">Open in WUD</a>
-      <a class="store-btn secondary" href="${APP_STORE_URL}">Download on the App Store</a>
-      <a class="store-btn secondary" href="${PLAY_STORE_URL}">Get it on Google Play</a>
+      <a class="store-btn secondary" data-store href="${APP_STORE_URL}">Download on the App Store</a>
+      <a class="store-btn secondary" data-store href="${PLAY_STORE_URL}">Get it on Google Play</a>
     </div>
 
     <p class="hint">
@@ -83,6 +111,25 @@ export function renderShareLanding(opts: {
   </main>
 
   <script>
+    // Deferred-deep-link bridge: stash the invite on the clipboard so a fresh
+    // install (which can't carry ?from= through the store) can read it on first
+    // launch and auto-friend the inviter. Best-effort; needs a secure context
+    // and (in Safari) a user gesture, so we also fire it from the store-button
+    // taps below where a gesture is guaranteed.
+    var INVITE_TOKEN = ${JSON.stringify(clipboardToken)};
+    function copyInviteToken() {
+      if (!INVITE_TOKEN) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(INVITE_TOKEN).catch(function () {});
+        }
+      } catch (e) { /* clipboard blocked — fall back to the second-tap path */ }
+    }
+    // Copy on any store-button tap (a real gesture → reliable write).
+    Array.prototype.forEach.call(document.querySelectorAll('[data-store]'), function (a) {
+      a.addEventListener('click', copyInviteToken);
+    });
+
     // Try the deep link straight away. If WUD is installed, the OS hands off
     // before the timeout fires; if not, we fall through to the App Store /
     // Play Store based on platform.
@@ -90,6 +137,7 @@ export function renderShareLanding(opts: {
       var ua = navigator.userAgent || '';
       var isIOS = /iPhone|iPad|iPod/i.test(ua);
       var isAndroid = /Android/i.test(ua);
+      copyInviteToken(); // best-effort on load (covers the auto-redirect path)
       if (!isIOS && !isAndroid) return; // Desktop — just show the buttons.
 
       var deepLink = ${JSON.stringify(opts.deepLink)};
@@ -109,6 +157,7 @@ export function renderShareLanding(opts: {
       // who *did* hand off (their browser tab went into background).
       setTimeout(function () {
         if (hiddenAt > 0) return;
+        copyInviteToken();
         window.location.href = fallback;
       }, 1600);
     })();

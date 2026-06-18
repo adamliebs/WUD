@@ -530,6 +530,13 @@ export function setRsvp(userId: string, activityId: string, state: RsvpState | '
   if (!row) throw notFound('ACTIVITY_NOT_FOUND', 'Plan not found');
   if (isPast(row)) throw conflict('RSVP_ACTIVITY_OVER', 'This plan has already started');
   if (row.host_id === userId) throw badRequest('HOST_NO_RSVP', 'You are hosting this plan');
+  // Only people who can actually see the plan may RSVP — closes the path where
+  // a forwarded plan link let a non-friend join a plan they can't otherwise
+  // see. Clearing an RSVP ('none') is always allowed so anyone who somehow
+  // ended up on the list can remove themselves.
+  if (state !== 'none' && !canSeeActivity(userId, row)) {
+    throw forbidden('You need to be connected to the host to join this plan');
+  }
 
   return tx(() => {
     const existing = q.get<{ state: RsvpState }>(

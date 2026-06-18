@@ -9,9 +9,80 @@ import {
   connectRealtime, disconnectRealtime, type RealtimeEvent,
   subscribeChannel,
 } from './api/socket';
+import { track } from './lib/analytics';
+import { burst } from './lib/confetti';
 import { notify, registerPushAfterAuth } from './native';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/** WUD Buddy — the built-in "test friend" 🤖 every account starts with, so
+ *  pings + squads are demonstrable before any real friends land. Fixed id,
+ *  mirrored from the server (server/src/services/buddy.ts). */
+export const BUDDY_ID = 'u_wud_buddy';
+
+/** A demo plan hosted by WUD Buddy, hardcoded CLIENT-SIDE (never in the DB) so
+ *  every onboarding user has a real-looking plan to open, join, and explore
+ *  during the "Join and explore a plan" tour — even with an empty feed. It
+ *  lives in the normal `activities` array but every server-touching path
+ *  (open/refetch, RSVP, chat send) is short-circuited to act locally; see
+ *  isDemoPlan() guards. Shown until the user dismisses onboarding. */
+export const BUDDY_PLAN_ID = 'demo_buddy_plan';
+export const isDemoPlan = (id: string | null | undefined): boolean => id === BUDDY_PLAN_ID;
+
+/** Build a fresh demo plan anchored to "now" so it always reads as starting
+ *  soon. Carries a welcome message from Buddy so the chat isn't empty. */
+function buddyDemoPlan(): Activity {
+  const now = Date.now();
+  return {
+    id: BUDDY_PLAN_ID,
+    hostId: BUDDY_ID,
+    category: 'coffee',
+    title: 'Coffee with WUD Buddy',
+    place: 'The corner café',
+    description: "Your very first plan 🎉 It's just for practice — tap “Going” to RSVP, then open the Chat tab to see how it all works. Nothing here is real, so explore freely!",
+    startsAt: now + 20 * 60_000,
+    endsAt: now + 80 * 60_000,
+    joinerIds: [],
+    maybeIds: [],
+    cantIds: [],
+    isPrivate: false,
+    squadIds: [],
+    isOpenInvite: true,
+    reactions: [],
+    createdAt: now,
+    chat: [
+      {
+        id: 'demo_msg_1',
+        authorId: BUDDY_ID,
+        at: now - 4 * 60_000,
+        type: 'text',
+        text: "Hey! 👋 Welcome to WUD. This is a practice plan — tap “Going” below to join, then come say hi in here.",
+      },
+    ],
+  };
+}
+
+/** A demo float from WUD Buddy, hardcoded client-side (mirrors the demo plan)
+ *  so the "Reply to a float" tour always has a soft proposal to respond to. */
+export const BUDDY_FLOAT_ID = 'demo_buddy_float';
+export const isDemoFloat = (id: string | null | undefined): boolean => id === BUDDY_FLOAT_ID;
+
+function buddyDemoFloat(): Float {
+  const now = Date.now();
+  return {
+    id: BUDDY_FLOAT_ID,
+    senderId: BUDDY_ID,
+    question: 'Beach walk this weekend? 🏖️ No pressure — just floating it!',
+    emoji: '🏖️',
+    timing: 'weekend',
+    isOpenInvite: true,
+    isPrivate: false,
+    squadIds: [],
+    responses: [],
+    createdAt: now - 2 * 60_000,
+    expiresAt: now + 8 * 60 * 60_000,
+  };
+}
 
 /** localStorage key remembering that the user has already seen the swipe-
  *  through tutorial. Per-device — a fresh install replays it, which we
@@ -40,6 +111,336 @@ function readTabSeen(tab: 'feed' | 'floats'): number {
 }
 function writeTabSeen(tab: 'feed' | 'floats', ts: number): void {
   try { localStorage.setItem(TAB_SEEN_PREFIX + tab, String(ts)); } catch { /* private mode */ }
+}
+
+/* ---- Getting Started: interactive coach-mark tours ----
+ *
+ * Each checklist quest launches a short guided tour over the REAL UI:
+ * the screen dims, the relevant control is spotlighted, and a tooltip
+ * explains the move. Steps advance when the user actually does the thing
+ * (learn-by-doing), via an explicit signal from a tapped control, or via a
+ * "Got it" button for free-form steps. Always skippable. Rendered by
+ * components/CoachMarks.tsx; targets are tagged with [data-coach="<key>"].
+ */
+export type QuestKey = 'intro' | 'friend' | 'explore' | 'post' | 'float' | 'squad' | 'ping';
+/** The "first action" quests shown as checklist rows. `intro` is the
+ *  auto-played welcome tour and has no checklist row or completion goal. */
+export const CHECKLIST_QUESTS: Exclude<QuestKey, 'intro'>[] = ['friend', 'explore', 'post', 'float', 'squad', 'ping'];
+
+export interface CoachStep {
+  /** [data-coach] attribute value of the element to spotlight. '' = no
+   *  spotlight: a centered card over a full dim (used by the intro slides). */
+  target: string;
+  title: string;
+  text: string;
+  /** When true the dim layer doesn't block taps — guidance only, for steps
+   *  where the user works the real control underneath (type a title, pick a
+   *  chip). Tap-to-navigate steps leave this off so the dim funnels the tap. */
+  free?: boolean;
+  /** Label for the manual-advance button (default 'Got it →'). */
+  cta?: string;
+  advance:
+    | { kind: 'state'; check: (s: State) => boolean }  // auto — user did the thing
+    | { kind: 'signal'; signal: string }               // a tagged control reported its tap
+    | { kind: 'manual' };                              // explicit "Next" button
+}
+
+/**
+ * Click-by-click guided tours. Each step spotlights ONE control and says
+ * exactly what to tap; the step advances when the user actually does it
+ * (state check or a signal fired from the control's onClick), so the user is
+ * led through the whole flow tap by tap rather than reading one summary.
+ * The final "do it" step of each quest waits on questDone — completing the
+ * real action closes the tour with confetti (see CoachMarks).
+ */
+export const COACH_STEPS: Record<QuestKey, CoachStep[]> = {
+  // Auto-played once on first launch. Two quick slides: a big centered hello
+  // (no spotlight — the checklist card is too tall to highlight cleanly on
+  // slide one), then a short nudge pointing at the Getting Started checklist,
+  // whose own click-by-click tours teach the rest by doing.
+  intro: [
+    {
+      target: '',
+      title: 'Welcome to WUD 👋',
+      text: 'See what your friends are up to and make spontaneous plans together.',
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'getting-started',
+      title: 'Start here',
+      text: 'Tap any step and we’ll walk you through it.',
+      cta: 'Got it 🚀',
+      advance: { kind: 'manual' },
+    },
+  ],
+
+  // A guided survey of the three ways to add people. Steps are `free` so the
+  // user can actually tap along (contacts / discover / invite) while being
+  // walked through them; adding anyone trips questDone('friend'), which closes
+  // the tour early with confetti (see CoachMarks goal-done).
+  friend: [
+    {
+      target: 'feed-friends',
+      title: 'Open Friends',
+      text: 'Tap the people icon in the top-right to open your Friends page.',
+      advance: { kind: 'state', check: s => s.overlay === 'friends' },
+    },
+    {
+      target: 'friends-contacts',
+      title: 'Way 1 — your contacts',
+      text: 'Tap “Find friends in your contacts” to see who’s already on WUD — each match gets an Add button. Nothing is stored. Tap Next when you’re back.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'friends-discover',
+      title: 'Way 2 — search anyone',
+      text: 'Tap Discover, then type a friend’s name or @handle and hit Add to send a request.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'friends-invite',
+      title: 'Way 3 — invite your crew',
+      text: 'Nobody on WUD yet? Tap “Invite friends” to share your link — when they join from it, you’re friends automatically.',
+      free: true,
+      cta: 'Got it 🎉',
+      advance: { kind: 'manual' },
+    },
+  ],
+
+  // Open Buddy's demo plan, join it, read the details, then see the chat.
+  // The demo plan is client-only (buddyDemoPlan) so every step works offline
+  // with an empty feed. exploredPlan is set when this tour finishes.
+  explore: [
+    {
+      target: 'demo-plan-card',
+      title: 'Step 1 — open a plan',
+      text: 'WUD Buddy posted a practice plan. Tap the card to open it.',
+      advance: { kind: 'state', check: s => isDemoPlan(s.openActivityId) },
+    },
+    {
+      target: 'detail-join',
+      title: 'Step 2 — join it',
+      text: 'Tap “Going” to RSVP. That’s how you jump into any plan — the host and everyone going can see you’re in.',
+      free: true,
+      advance: { kind: 'state', check: s => (s.activities.find(a => a.id === BUDDY_PLAN_ID)?.joinerIds ?? []).includes(s.meId) },
+    },
+    {
+      target: 'detail-info',
+      title: 'Step 3 — the details',
+      text: 'Here’s the when, where, and who’s going. Every plan shows this at a glance.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'detail-chat-tab',
+      title: 'Step 4 — open the chat',
+      text: 'Every plan has its own group chat. Tap Chat to open it.',
+      advance: { kind: 'signal', signal: 'detail-chat' },
+    },
+    {
+      target: 'detail-chat-body',
+      title: 'Step 5 — say hi 👋',
+      text: 'This is the plan’s chat — Buddy already left a message. You can send texts, photos and polls here with everyone going. That’s the whole loop!',
+      free: true,
+      cta: 'Done 🎉',
+      advance: { kind: 'manual' },
+    },
+  ],
+
+  post: [
+    {
+      target: 'tabbar-post',
+      title: 'Step 1 — tap +',
+      text: 'Tap the big + button to start a new plan.',
+      advance: { kind: 'state', check: s => s.showPostSheet },
+    },
+    {
+      target: 'post-category',
+      title: 'Step 2 — pick a category',
+      text: 'Tap a category chip — Coffee, Gym, Surf, whatever fits.',
+      free: true,
+      advance: { kind: 'signal', signal: 'post-category' },
+    },
+    {
+      target: 'post-title',
+      title: 'Step 3 — name it',
+      text: 'Type what you’re doing, e.g. “Sunset surf at Llandudno”. Then tap Next.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'post-submit',
+      title: 'Step 4 — post it',
+      text: 'Tap Post — your friends see it on their feed instantly. (Set the time first if it’s for later.)',
+      free: true,
+      advance: { kind: 'state', check: s => questDone(s, 'post') },
+    },
+  ],
+
+  // Floats, both sides: first reply to one WUD Buddy sent you, then float your
+  // own idea. (Buddy's demo float is client-only — see buddyDemoFloat.)
+  float: [
+    {
+      target: 'tabbar-floats',
+      title: 'Step 1 — open Floats',
+      text: 'Tap the Floats tab. A float is a soft “anyone keen?” before it’s a real plan.',
+      advance: { kind: 'state', check: s => s.tab === 'floats' },
+    },
+    {
+      target: 'demo-float-card',
+      title: 'Step 2 — reply to a float',
+      text: 'WUD Buddy floated an idea to YOU. Tap Keen, Maybe, or Nah on the card — that’s how you reply to any float.',
+      free: true,
+      advance: { kind: 'state', check: s => {
+        const f = s.floats.find(x => x.id === BUDDY_FLOAT_ID);
+        return !!f && f.responses.some(r => r.userId === s.meId);
+      } },
+    },
+    {
+      target: 'float-question',
+      title: 'Step 3 — float your own',
+      text: 'Now your turn. Type an idea like “anyone keen for coffee?” — or tap a preset below. Then tap Next.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'float-timing',
+      title: 'Step 4 — when?',
+      text: 'Tap a rough time — Today, Tomorrow, Weekend or Whenever.',
+      free: true,
+      advance: { kind: 'signal', signal: 'float-timing' },
+    },
+    {
+      target: 'float-send',
+      title: 'Step 5 — float it',
+      text: 'Tap Float it. Friends reply keen / maybe / can’t — lock it into a real plan when enough bite.',
+      free: true,
+      advance: { kind: 'state', check: s => questDone(s, 'float') },
+    },
+  ],
+
+  squad: [
+    {
+      target: 'squad-name',
+      title: 'Step 1 — name your squad',
+      text: 'Give it a name like “Surf crew” or “Flatmates”. Pick an emoji if you like. Then tap Next.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'squad-everyone',
+      title: 'Step 2 — add people',
+      text: 'Friends join instantly. Tap “Everyone” to search anyone on WUD — they’ll get an invite and join (and become your friend) when they accept.',
+      free: true,
+      cta: 'Next →',
+      advance: { kind: 'manual' },
+    },
+    {
+      target: 'squad-save',
+      title: 'Step 3 — create it',
+      text: 'Tap Create squad. Now you’ve got a private group to post plans and chat with.',
+      free: true,
+      advance: { kind: 'state', check: s => questDone(s, 'squad') },
+    },
+  ],
+
+  ping: [
+    {
+      target: 'tabbar-floats',
+      title: 'Step 1 — open Floats',
+      text: 'The ping rail lives on the Floats tab — tap it.',
+      advance: { kind: 'state', check: s => s.tab === 'floats' },
+    },
+    {
+      target: 'ping-rail',
+      title: 'Step 2 — pick someone',
+      text: 'Tap a friend’s face to select them. Try WUD Buddy 🤖 — he pings right back.',
+      free: true,
+      advance: { kind: 'signal', signal: 'ping-select' },
+    },
+    {
+      target: 'ping-presets',
+      title: 'Step 3 — fire a ping',
+      text: 'Tap a preset like “WUD? 👀”. That’s a ping — a quick nudge to your crew.',
+      free: true,
+      advance: { kind: 'state', check: s => questDone(s, 'ping') },
+    },
+  ],
+};
+
+/** Whether a quest's real-world goal is complete — shared by the checklist
+ *  card and the coach overlay (which auto-closes when the goal lands). The
+ *  intro has no goal, so it only ever advances/ends manually. */
+export function questDone(s: State, quest: QuestKey): boolean {
+  switch (quest) {
+    case 'intro':   return false;
+    case 'friend':  return s.friendIds.some(id => id !== BUDDY_ID) || s.questFlags.invitesSent >= 3;
+    case 'explore': return s.questFlags.exploredPlan;
+    case 'post':    return s.activities.some(a => a.hostId === s.meId);
+    case 'float':   return s.floats.some(f => f.senderId === s.meId && f.id !== BUDDY_FLOAT_ID);
+    case 'squad':   return s.squads.some(sq => sq.hostId === s.meId);
+    case 'ping':    return s.questFlags.pingDone;
+  }
+}
+
+/** Getting Started quest flags that CAN'T be derived from server data (the
+ *  rest of the checklist — posted / floated / made-a-squad / has-a-friend —
+ *  is computed live from the store). Persisted per-user so the card survives
+ *  restarts and doesn't reappear after completion. */
+export interface QuestFlags {
+  /** Invite shares fired from the checklist's "invite 3 friends" fallback. */
+  invitesSent: number;
+  /** The user has sent at least one ping (no local record exists otherwise). */
+  pingDone: boolean;
+  /** The "Join and explore a plan" tour has been completed. */
+  exploredPlan: boolean;
+  /** The user has replied to a float (Buddy's demo float, or any real one). */
+  repliedFloat: boolean;
+  /** Card dismissed — either completed with fanfare or skipped manually. */
+  dismissed: boolean;
+  /** The auto-played welcome intro tour has run once. */
+  introSeen: boolean;
+  /** Checklist card collapsed to just its header (user preference, persisted). */
+  collapsed: boolean;
+}
+const QUESTS_KEY_PREFIX = 'wud:quests:';
+const DEFAULT_QUEST_FLAGS: QuestFlags = {
+  invitesSent: 0, pingDone: false, exploredPlan: false, repliedFloat: false,
+  dismissed: false, introSeen: false, collapsed: false,
+};
+function readQuestFlags(userId: string): QuestFlags {
+  try {
+    const raw = localStorage.getItem(QUESTS_KEY_PREFIX + userId);
+    if (!raw) return DEFAULT_QUEST_FLAGS;
+    return { ...DEFAULT_QUEST_FLAGS, ...(JSON.parse(raw) as Partial<QuestFlags>) };
+  } catch { return DEFAULT_QUEST_FLAGS; }
+}
+function writeQuestFlags(userId: string, flags: QuestFlags): void {
+  try { localStorage.setItem(QUESTS_KEY_PREFIX + userId, JSON.stringify(flags)); } catch { /* private mode */ }
+}
+
+/** Invite-link handle captured before the user had a session (deep link on a
+ *  fresh install, or ?from= on the web). Persisted so it survives the whole
+ *  welcome → signup → onboarding flow, then consumed right after bootstrap —
+ *  that's what makes "tap my link, we're friends" work for brand-new users. */
+const PENDING_INVITE_KEY = 'wud:pending-invite';
+function readPendingInvite(): string | null {
+  try { return localStorage.getItem(PENDING_INVITE_KEY); } catch { return null; }
+}
+function writePendingInvite(handle: string | null): void {
+  try {
+    if (handle) localStorage.setItem(PENDING_INVITE_KEY, handle);
+    else localStorage.removeItem(PENDING_INVITE_KEY);
+  } catch { /* private mode */ }
 }
 
 type Tab = 'feed' | 'floats' | 'notifications' | 'profile';
@@ -153,6 +554,10 @@ interface State {
   // UI
   tab: Tab;
   openActivityId: string | null;
+  /** When the opened plan isn't visible to me (a forwarded link from a
+   *  non-friend), the server returns just the host and we show an "add them
+   *  to see this plan" gate instead of the detail. Null = normal/visible. */
+  planGate: { activityId: string; host: User | null } | null;
   showPostSheet: boolean;
   /** Optional initial audience config consumed by PostSheet on its next
    *  open. Set by `openPostSheetForSquad` (the + button inside a squad's
@@ -166,6 +571,9 @@ interface State {
    *  tapping a chip lands on that squad, not the index. Cleared by
    *  SquadsScreen once consumed. */
   squadFocusId: string | null;
+  /** When the Squads overlay opens, jump straight to the New-squad editor.
+   *  Set by openSquadCreate (Getting Started checklist); consumed once. */
+  squadCreateIntent: boolean;
   /** Optimistic chat placeholders awaiting server confirmation, keyed by
    *  `<kind>:<id>` (e.g. `activity:abc` or `squad:xyz`) — matches the
    *  realtime channel naming so callers can share one slice across
@@ -284,6 +692,54 @@ interface State {
    *  it has navigated to it, so re-opening the overlay later goes to the
    *  list again). */
   consumeSquadFocus: () => string | null;
+  /** Open the Squads overlay straight onto the "New squad" editor. Used by
+   *  the Getting Started checklist so the quest tap lands in the flow. */
+  openSquadCreate: () => void;
+  /** Consume + clear the create intent (mirrors consumeSquadFocus). */
+  consumeSquadCreateIntent: () => boolean;
+
+  /* ---- Getting Started checklist + coach tours ---- */
+  questFlags: QuestFlags;
+  /** Transient (not persisted): the user explicitly reopened the checklist
+   *  from Settings. Forces the card to show even when every step is done, and
+   *  suppresses the auto-celebrate-then-hide so they can replay steps. Reset
+   *  on dismiss / sign-out. */
+  questsReopened: boolean;
+  /** Transient: a deferred/stashed invite is currently being redeemed into a
+   *  friendship. The onboarding intro waits on this so its dim doesn't bury
+   *  the "you're now friends" celebration. */
+  pendingInviteConsuming: boolean;
+  /** Count an invite share fired from the checklist's invite-3 fallback. */
+  recordInviteShared: () => void;
+  /** Hide the checklist (completed or skipped). Reversible via reopenQuests. */
+  dismissQuests: () => void;
+  /** Bring a skipped checklist back (Settings → Getting started). */
+  reopenQuests: () => void;
+  /** Collapse / expand the checklist card down to its header (persisted). */
+  setQuestsCollapsed: (collapsed: boolean) => void;
+  /** Mark the auto-played welcome intro as seen so it never replays. */
+  markIntroSeen: () => void;
+  /** Active coach-mark tour, or null. Step indexes into COACH_STEPS[quest].
+   *  `replay` is true when the quest's goal was already complete at launch
+   *  (the user re-ran a finished step) — it suppresses the "you did it!"
+   *  auto-close so the replay can actually play through. */
+  coach: { quest: QuestKey; step: number; replay: boolean } | null;
+  /** True while the full-screen contacts-finder modal is open. The coach
+   *  overlay pauses itself when this is set — the modal sits in its own
+   *  high layer and has its own guidance (match rows / invite), so a tour
+   *  spotlight would otherwise point at controls hidden behind it. */
+  contactsSheetOpen: boolean;
+  setContactsSheetOpen: (open: boolean) => void;
+  /** Launch a quest's guided tour: navigates to the right starting surface,
+   *  then walks the user through the real controls step by step. */
+  startQuest: (quest: QuestKey) => void;
+  /** Advance to the next step (or finish). Used by Got-it buttons + watchers. */
+  advanceCoach: () => void;
+  /** Close the active tour (skip or natural end). */
+  endCoach: () => void;
+  /** A tagged control was tapped — advances a step waiting on this signal.
+   *  No-op when no tour is active, so call sites stay unconditional. */
+  coachSignal: (signal: string) => void;
 
   /** Incoming friend requests awaiting my response. */
   friendRequests: { id: string; from: User; at: number }[];
@@ -294,6 +750,14 @@ interface State {
   removeFriend: (userId: string) => void;
   acceptFriendRequest: (requestId: string) => void;
   declineFriendRequest: (requestId: string) => void;
+  /** An invite link (wud://invite?from=<handle> or web ?from=) arrived.
+   *  Stashes the handle; if already signed in, friends the pair instantly —
+   *  otherwise the stash is consumed right after the next bootstrap. */
+  handleInviteLink: (handle: string) => void;
+  /** Join a squad from a squad_invite notification — also auto-friends the
+   *  inviter (consent to join doubles as consent to be friends). */
+  acceptSquadInvite: (notificationId: string) => void;
+  declineSquadInvite: (notificationId: string) => void;
   /** Cancel a request I previously sent. Server-side this is the same
    *  endpoint as decline; the difference is who's acting on it. */
   cancelFriendRequest: (requestId: string) => void;
@@ -507,9 +971,17 @@ export const useApp = create<State>((set, get) => {
 
   const refreshActivity = async (id: string) => {
     try {
-      const { activity, users } = await activityApi.get(id);
-      mergeUsers(users);
-      upsertActivity(activity);
+      const r = await activityApi.get(id);
+      // Not visible to me (a plan link forwarded by a non-friend) — the server
+      // returns just the host so we can show the "add them to see this" gate
+      // instead of the plan. Don't cache it as a real activity.
+      if (r.visible === false) {
+        if (r.host) mergeUsers([r.host]);
+        set({ planGate: { activityId: id, host: r.host } });
+        return;
+      }
+      mergeUsers(r.users);
+      upsertActivity(r.activity);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) removeActivity(id);
     }
@@ -518,16 +990,22 @@ export const useApp = create<State>((set, get) => {
   const refreshFeed = async () => {
     const { activities, users } = await activityApi.feed();
     mergeUsers(users);
-    set(state => ({
-      // Replace the upcoming-and-live partition; keep past activities (History) intact.
-      // The cutoff is endsAt now, so an activity that's mid-window still counts
-      // as current and gets refreshed from the server response, not preserved
-      // as a stale "past" record.
-      activities: dedupeById([
-        ...activities,
-        ...state.activities.filter(a => a.endsAt < Date.now()),
-      ]),
-    }));
+    set(state => {
+      // Preserve the client-only Buddy demo plan (with its current join/chat
+      // state) across the server refresh — it's never in the feed response.
+      const demo = state.activities.find(a => a.id === BUDDY_PLAN_ID);
+      return {
+        // Replace the upcoming-and-live partition; keep past activities (History) intact.
+        // The cutoff is endsAt now, so an activity that's mid-window still counts
+        // as current and gets refreshed from the server response, not preserved
+        // as a stale "past" record.
+        activities: dedupeById([
+          ...activities,
+          ...(demo ? [demo] : []),
+          ...state.activities.filter(a => a.endsAt < Date.now() && a.id !== BUDDY_PLAN_ID),
+        ]),
+      };
+    });
     syncSubscriptions();
   };
 
@@ -594,7 +1072,12 @@ export const useApp = create<State>((set, get) => {
     try {
       const { floats, users } = await floatApi.list();
       mergeUsers(users);
-      set({ floats: dedupeById(floats) });
+      set(state => {
+        // Preserve the client-only Buddy demo float (with my current response)
+        // across the server refresh — it's never in the floats response.
+        const demo = state.floats.find(f => f.id === BUDDY_FLOAT_ID);
+        return { floats: dedupeById(demo ? [demo, ...floats] : floats) };
+      });
     } catch (e) {
       // Floats are non-critical — fail silently rather than dumping a toast.
       if (e instanceof ApiError && e.status >= 500) {
@@ -613,6 +1096,46 @@ export const useApp = create<State>((set, get) => {
     const { requests } = await socialApi.outgoingRequests();
     mergeUsers(requests.map(r => r.to));
     set({ outgoingRequests: requests });
+  };
+
+  /** Redeem a stashed invite-link handle into an instant friendship. Called
+   *  after every bootstrap (and immediately when a link arrives while signed
+   *  in). Permanent failures (bad handle, own link, blocked) clear the stash
+   *  quietly; a network failure keeps it for the next attempt. */
+  const consumePendingInvite = async (): Promise<void> => {
+    const handle = readPendingInvite();
+    if (!handle) return;
+    // Gate the auto-started onboarding intro while this runs so the two
+    // welcome moments don't collide — the intro's full-screen dim would
+    // otherwise bury the "you're now friends" toast. On a successful new
+    // friendship we hold the gate a beat longer so the toast + confetti land
+    // before the intro takes over.
+    set({ pendingInviteConsuming: true });
+    let holdMs = 0;
+    try {
+      const { friend, already } = await socialApi.friendLink(handle);
+      writePendingInvite(null);
+      mergeUsers([friend]);
+      await refreshFriends();
+      if (already) {
+        toast(`You and ${friend.name} are already friends ✌️`);
+      } else {
+        toast(`You're now friends with ${friend.name} 👋`, 'success');
+        burst({ particleCount: 90, spread: 75, origin: { y: 0.7 } });
+        track('friend_added', { via: 'invite' });
+        holdMs = 1800;
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status !== 0) {
+        // 4xx — the link can't ever succeed (own link / unknown / blocked).
+        // Drop it silently: an error toast on first launch is confusing noise.
+        writePendingInvite(null);
+      }
+      // Network failure: keep the stash — the next bootstrap retries.
+    } finally {
+      if (holdMs) await new Promise(r => setTimeout(r, holdMs));
+      set({ pendingInviteConsuming: false });
+    }
   };
   const refreshFriendRequests = async () => {
     const { requests } = await socialApi.friendRequests();
@@ -742,16 +1265,23 @@ export const useApp = create<State>((set, get) => {
     if (hold > elapsed) {
       await new Promise(r => setTimeout(r, hold - elapsed));
     }
+    // Onboarding users get the client-only Buddy demo plan dropped into their
+    // feed (so "Join and explore a plan" has something to open even with an
+    // empty feed). Skipped once they've dismissed/finished onboarding.
+    const flags = readQuestFlags(b.user.id);
+    const seedDemo = !flags.dismissed;
     set({
       meId: b.user.id,
+      // Per-user quest progress — hydrate now that we know who's signed in.
+      questFlags: flags,
       // b.user is the privileged /me shape (includes `phone`); b.users is
       // from hydrateUsers and excludes private fields. Put b.user LAST so
       // dedupeUsers' "later wins" rule keeps the version with phone — the
       // earlier order silently dropped phone on every bootstrap.
       users: dedupeUsers([...b.users, b.user]),
       friendIds: b.friendIds,
-      activities: dedupeById(b.activities),
-      floats: dedupeById(b.floats ?? []),
+      activities: dedupeById(seedDemo ? [buddyDemoPlan(), ...b.activities] : b.activities),
+      floats: dedupeById(seedDemo ? [buddyDemoFloat(), ...(b.floats ?? [])] : (b.floats ?? [])),
       squads: b.squads,
       notifications: b.notifications,
       settings: b.settings,
@@ -767,6 +1297,9 @@ export const useApp = create<State>((set, get) => {
     // The user is now authenticated — push the device's FCM token to the
     // backend so we can target them with remote pushes. No-op on web.
     registerPushAfterAuth();
+    // Redeem a stashed invite link (deep link that arrived before signup,
+    // or web ?from=) into an instant friendship.
+    void consumePendingInvite();
   };
 
   /**
@@ -965,7 +1498,7 @@ export const useApp = create<State>((set, get) => {
    */
   const savePhotoBestEffort = async (file: File): Promise<void> => {
     try {
-      const { url } = await uploadApi.photo(file);
+      const { url } = await uploadApi.photo(file, 'avatar');
       const { user } = await meApi.update({ photoUrl: url });
       set(s => ({ users: dedupeUsers([...s.users, user]) }));
     } catch (e) {
@@ -1071,6 +1604,7 @@ export const useApp = create<State>((set, get) => {
 
     tab: 'feed',
     openActivityId: null,
+    planGate: null,
     showPostSheet: false,
     postSheetInit: null,
     showGoLiveSheet: false,
@@ -1081,6 +1615,12 @@ export const useApp = create<State>((set, get) => {
     feedFilters: { timeWindow: 'all', sort: 'soonest' },
     overlay: null,
     squadFocusId: null,
+    squadCreateIntent: false,
+    questFlags: DEFAULT_QUEST_FLAGS,
+    questsReopened: false,
+    pendingInviteConsuming: false,
+    coach: null,
+    contactsSheetOpen: false,
     pendingMessages: {},
     // Tutorial sits off by default; the App-level trigger turns it on the
     // first time the user lands in `authState === 'app'` and the local
@@ -1516,10 +2056,10 @@ export const useApp = create<State>((set, get) => {
       return !!f.category || !!f.customLabel || f.timeWindow !== 'all' || f.sort !== 'soonest' || !!f.includeLive;
     },
     openOverlay: (o) => {
-      // Closing the squads overlay also drops any pending focus target so
-      // a stale id can't hijack the next open.
+      // Closing the squads overlay also drops any pending focus/create
+      // target so a stale intent can't hijack the next open.
       const patch: Partial<State> = { overlay: o };
-      if (o !== 'squads') patch.squadFocusId = null;
+      if (o !== 'squads') { patch.squadFocusId = null; patch.squadCreateIntent = false; }
       set(patch);
       // Refresh the slice an overlay shows when it opens, so it's never stale.
       if (o === 'history') void refreshHistory();
@@ -1547,14 +2087,188 @@ export const useApp = create<State>((set, get) => {
       if (id) set({ squadFocusId: null });
       return id;
     },
+    openSquadCreate: () => {
+      set({ squadCreateIntent: true, squadFocusId: null, overlay: 'squads' });
+      void refreshSquads();
+    },
+    consumeSquadCreateIntent: () => {
+      const v = get().squadCreateIntent;
+      if (v) set({ squadCreateIntent: false });
+      return v;
+    },
+
+    /* ---- Getting Started checklist ---- */
+
+    recordInviteShared: () => {
+      const flags = { ...get().questFlags, invitesSent: get().questFlags.invitesSent + 1 };
+      writeQuestFlags(get().meId, flags);
+      set({ questFlags: flags });
+    },
+    dismissQuests: () => {
+      const flags = { ...get().questFlags, dismissed: true };
+      writeQuestFlags(get().meId, flags);
+      // Onboarding is over — pull the client-only Buddy demo plan + float out.
+      set(state => ({
+        questFlags: flags,
+        questsReopened: false,
+        activities: state.activities.filter(a => a.id !== BUDDY_PLAN_ID),
+        floats: state.floats.filter(f => f.id !== BUDDY_FLOAT_ID),
+        openActivityId: isDemoPlan(state.openActivityId) ? null : state.openActivityId,
+      }));
+    },
+    reopenQuests: () => {
+      const flags = { ...get().questFlags, dismissed: false, collapsed: false };
+      writeQuestFlags(get().meId, flags);
+      // Re-seed the demo plan + float if gone (they power the explore/reply
+      // tours), and flag the reopen so the card shows even when all done.
+      set(state => ({
+        questFlags: flags,
+        questsReopened: true,
+        activities: state.activities.some(a => a.id === BUDDY_PLAN_ID)
+          ? state.activities
+          : [buddyDemoPlan(), ...state.activities],
+        floats: state.floats.some(f => f.id === BUDDY_FLOAT_ID)
+          ? state.floats
+          : [buddyDemoFloat(), ...state.floats],
+      }));
+    },
+    setQuestsCollapsed: (collapsed) => {
+      const flags = { ...get().questFlags, collapsed };
+      writeQuestFlags(get().meId, flags);
+      set({ questFlags: flags });
+    },
+    markIntroSeen: () => {
+      if (get().questFlags.introSeen) return;
+      const flags = { ...get().questFlags, introSeen: true };
+      writeQuestFlags(get().meId, flags);
+      set({ questFlags: flags });
+    },
+
+    /* ---- coach-mark tours ---- */
+
+    startQuest: (quest) => {
+      // Clear anything covering the first target, then land on its surface.
+      const s = get();
+      // If the welcome intro is on screen (its slide 2 invites tapping a step),
+      // count it as seen so it doesn't auto-replay next launch.
+      if (s.coach?.quest === 'intro' && quest !== 'intro') get().markIntroSeen();
+      if (s.showPostSheet) set({ showPostSheet: false, postSheetInit: null });
+      if (s.openActivityId) set({ openActivityId: null });
+      // Replay = the quest's goal is already done. The tour still plays, but
+      // its "you did it!" auto-close is suppressed so it doesn't slam shut.
+      const replay = questDone(s, quest);
+      if (quest === 'intro') {
+        // Welcome tour — land on the feed where its targets live.
+        set({ overlay: null });
+        get().setTab('feed');
+        set({ coach: { quest, step: 0, replay } });
+        return;
+      }
+      if (quest === 'friend') {
+        set({ overlay: null });
+        get().setTab('feed');
+        set({ coach: { quest, step: 0, replay } });
+        return;
+      }
+      if (quest === 'explore') {
+        // Reset the demo plan to a fresh (un-joined) copy so the join step is
+        // always doable — replays included.
+        set(state => ({
+          overlay: null,
+          activities: [buddyDemoPlan(), ...state.activities.filter(a => a.id !== BUDDY_PLAN_ID)],
+        }));
+        get().setTab('feed');
+        set({ coach: { quest, step: 0, replay } });
+        return;
+      }
+      if (quest === 'squad') {
+        // The squad steps live inside the New-squad editor — open it.
+        get().openSquadCreate();
+        set({ coach: { quest, step: 0, replay } });
+        return;
+      }
+      if (quest === 'float') {
+        // Reset Buddy's demo float to a fresh (un-answered) copy so the reply
+        // step is always doable. Skip the "open the tab" step if already there.
+        set(state => ({
+          overlay: null,
+          floats: [buddyDemoFloat(), ...state.floats.filter(f => f.id !== BUDDY_FLOAT_ID)],
+        }));
+        set({ coach: { quest, step: get().tab === 'floats' ? 1 : 0, replay } });
+        return;
+      }
+      if (quest === 'ping') {
+        set({ overlay: null });
+        // Already on Floats → skip the "go to the tab" step.
+        set({ coach: { quest, step: get().tab === 'floats' ? 1 : 0, replay } });
+        return;
+      }
+      // post — the + button floats over every tab, no navigation needed.
+      set({ overlay: null, coach: { quest, step: 0, replay } });
+    },
+    advanceCoach: () => {
+      const c = get().coach;
+      if (!c) return;
+      const steps = COACH_STEPS[c.quest];
+      if (c.step + 1 >= steps.length) {
+        track('tour_finished', { quest: c.quest });
+        if (c.quest === 'intro') get().markIntroSeen();
+        // Finishing the explore tour marks the quest done + celebrates (the
+        // quest has no server-derived goal, so completion is tour-driven). On a
+        // replay it's already done — just close quietly.
+        if (c.quest === 'explore' && !get().questFlags.exploredPlan) {
+          const flags = { ...get().questFlags, exploredPlan: true };
+          writeQuestFlags(get().meId, flags);
+          set({ questFlags: flags });
+          burst({ particleCount: 110, spread: 80, origin: { y: 0.5 } });
+        }
+        set({ coach: null });
+      } else {
+        set({ coach: { quest: c.quest, step: c.step + 1, replay: c.replay } });
+      }
+    },
+    endCoach: () => {
+      // Skipping the intro still counts as "seen" — don't nag again.
+      if (get().coach?.quest === 'intro') get().markIntroSeen();
+      set({ coach: null });
+    },
+    setContactsSheetOpen: (open) => {
+      set({ contactsSheetOpen: open });
+      if (open) return;
+      // Coming back out of the contacts modal during the friend tour. If they
+      // added someone in there the quest is already done — celebrate + close
+      // (the coach was unmounted while paused, so its own goal-done effect
+      // didn't get to fire). Otherwise advance past the contacts step to the
+      // Discover guidance so they don't re-read the card they just acted on.
+      const c = get().coach;
+      if (c && c.quest === 'friend' && c.step === 1) {
+        if (questDone(get(), 'friend')) {
+          burst({ particleCount: 90, spread: 75, origin: { y: 0.5 } });
+          get().endCoach();
+        } else {
+          get().advanceCoach();
+        }
+      }
+    },
+    coachSignal: (signal) => {
+      const c = get().coach;
+      if (!c) return;
+      const step = COACH_STEPS[c.quest][c.step];
+      if (step?.advance.kind === 'signal' && step.advance.signal === signal) {
+        get().advanceCoach();
+      }
+    },
     setShowGoLiveSheet: (b) => set({ showGoLiveSheet: b }),
     setEditActivityId: (id) => set({ editActivityId: id }),
     setPollComposerActivityId: (id) => set({ pollComposerActivityId: id }),
 
     /** Opening an activity refetches it (fresh chat/RSVPs) + subscribes for realtime. */
     openActivity: (id) => {
-      set({ openActivityId: id });
-      if (id) {
+      // Clear any stale gate from a previous open before fetching.
+      set({ openActivityId: id, planGate: null });
+      // The Buddy demo plan is client-only — no channel to subscribe to and
+      // nothing to refetch (a server GET would 404).
+      if (id && !isDemoPlan(id)) {
         subscribeChannel(`activity:${id}`);
         void refreshActivity(id);
       }
@@ -1563,6 +2277,21 @@ export const useApp = create<State>((set, get) => {
     /* ---- auth ---- */
 
     init: () => {
+      track('app_open');
+      // Web build: an invite link opened in the browser carries ?from=<handle>.
+      // Capture it before any auth routing so it survives the signup flow,
+      // then scrub it from the URL so a reload doesn't re-stash a stale one.
+      try {
+        if (typeof window !== 'undefined') {
+          const from = new URLSearchParams(window.location.search).get('from');
+          if (from) {
+            get().handleInviteLink(from);
+            const url = new URL(window.location.href);
+            url.searchParams.delete('from');
+            window.history.replaceState({}, '', url.toString());
+          }
+        }
+      } catch { /* malformed URL — ignore */ }
       if (!tokens.hasSession) return;   // no session → splash advances to welcome
       void doBootstrap({ holdSplashMs: 1800 }).catch(() => {
         tokens.clear();
@@ -1588,6 +2317,7 @@ export const useApp = create<State>((set, get) => {
           const provider = pending.provider;
           set({ pendingSignup: null });
           await doBootstrap();
+          track('signup_completed', { provider });
           // Phone + photo are optional. Done as follow-up PATCHes so the
           // auth endpoints don't need to thread these fields through
           // (and a network blip on either step doesn't strand the user
@@ -1609,6 +2339,7 @@ export const useApp = create<State>((set, get) => {
         tokens.set(r.accessToken, r.refreshToken);
         set({ pendingSignup: null });
         await doBootstrap();
+        track('signup_completed', { provider: 'email' });
         if (phone && phone.trim()) await savePhoneBestEffort(phone);
         if (photoFile) await savePhotoBestEffort(photoFile);
         // Legacy email register has no Firebase user, so email is unverified
@@ -1696,8 +2427,9 @@ export const useApp = create<State>((set, get) => {
       set({
         meId: '', users: [], friendIds: [], friendRequests: [], outgoingRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
         notifications: [], squads: [],
-        tab: 'feed', openActivityId: null, showPostSheet: false,
-        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, pendingMessages: {},
+        tab: 'feed', openActivityId: null, planGate: null, showPostSheet: false,
+        showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, squadCreateIntent: false, pendingMessages: {},
+        questFlags: DEFAULT_QUEST_FLAGS, questsReopened: false, pendingInviteConsuming: false, coach: null, contactsSheetOpen: false,
         feedFilters: { timeWindow: 'all', sort: 'soonest' },
         pendingSignup: null, authState: 'welcome',
       });
@@ -1712,8 +2444,9 @@ export const useApp = create<State>((set, get) => {
         set({
           meId: '', users: [], friendIds: [], friendRequests: [], outgoingRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
           notifications: [], squads: [],
-          tab: 'feed', openActivityId: null, showPostSheet: false,
-          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, pendingMessages: {},
+          tab: 'feed', openActivityId: null, planGate: null, showPostSheet: false,
+          showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, squadCreateIntent: false, pendingMessages: {},
+          questFlags: DEFAULT_QUEST_FLAGS, questsReopened: false, pendingInviteConsuming: false, coach: null, contactsSheetOpen: false,
           feedFilters: { timeWindow: 'all', sort: 'soonest' },
           pendingSignup: null, authState: 'welcome',
         });
@@ -1745,6 +2478,46 @@ export const useApp = create<State>((set, get) => {
         await socialApi.removeFriend(userId);
         await refreshFriends();
         toast(`Removed ${name}`, 'warn');
+      });
+    },
+
+    handleInviteLink: (handle) => {
+      // Normalize to the server's handle alphabet so junk in the URL can't
+      // stash garbage. Empty after cleaning → ignore.
+      const cleaned = handle.trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20);
+      if (!cleaned) return;
+      writePendingInvite(cleaned);
+      if (get().authState === 'app') void consumePendingInvite();
+    },
+
+    acceptSquadInvite: (notificationId) => {
+      const n = get().notifications.find(x => x.id === notificationId);
+      if (!n?.squadId) return;
+      void guard(async () => {
+        const { squad, users } = await socialApi.acceptSquadInvite(n.squadId!);
+        mergeUsers(users);
+        set(state => ({
+          squads: state.squads.some(s => s.id === squad.id)
+            ? state.squads.map(s => (s.id === squad.id ? squad : s))
+            : [...state.squads, squad],
+        }));
+        subscribeChannel(`squad:${squad.id}`);
+        // Joining a squad unlocks its plans + makes the inviter a friend.
+        await Promise.all([refreshFriends(), refreshNotifications(), refreshFeed()]);
+        const inviter = get().userById(n.fromId).name;
+        track('friend_added', { via: 'squad_invite' });
+        toast(`Joined ${squad.emoji} ${squad.name} — you're now friends with ${inviter} 🎉`, 'success');
+        burst({ particleCount: 90, spread: 75, origin: { y: 0.7 } });
+      });
+    },
+
+    declineSquadInvite: (notificationId) => {
+      const n = get().notifications.find(x => x.id === notificationId);
+      if (!n?.squadId) return;
+      void guard(async () => {
+        await socialApi.declineSquadInvite(n.squadId!);
+        await refreshNotifications();
+        toast('Passed on the squad invite', 'default');
       });
     },
 
@@ -1805,6 +2578,7 @@ export const useApp = create<State>((set, get) => {
         await refreshFriendRequests();
         await refreshFriends();
         await refreshNotifications();   // the 'invite' alert is now resolved
+        track('friend_added', { via: 'request' });
         if (req) toast(`You're now friends with ${req.from.name}`, 'success');
       });
     },
@@ -1850,9 +2624,15 @@ export const useApp = create<State>((set, get) => {
 
     createSquad: ({ name, emoji, memberIds }) => {
       void guard(async () => {
-        await socialApi.createSquad({ name, emoji, memberIds });
+        const { squad } = await socialApi.createSquad({ name, emoji, memberIds });
         await refreshSquads();
+        track('squad_created');
         toast(`Created squad ${emoji || '✨'} ${name}`, 'success');
+        // Non-friends in the member pick became invites — tell the host.
+        const invited = (squad.invitedIds ?? []).length;
+        if (invited > 0) {
+          toast(`${invited} ${invited === 1 ? 'invite' : 'invites'} sent — they join when they accept`, 'default');
+        }
       });
     },
     updateSquad: (squadId, patch) => {
@@ -1872,8 +2652,13 @@ export const useApp = create<State>((set, get) => {
     },
     addMemberToSquad: (squadId, userId) => {
       void guard(async () => {
-        await socialApi.addSquadMember(squadId, userId);
+        const { squad } = await socialApi.addSquadMember(squadId, userId);
         await refreshSquad(squadId);
+        // Non-friends get an invite instead of instant membership — make the
+        // difference visible so the host isn't confused by the Invited row.
+        if ((squad.invitedIds ?? []).includes(userId)) {
+          toast(`Invite sent to ${get().userById(userId).name} — they join when they accept`, 'success');
+        }
       });
     },
     removeMemberFromSquad: (squadId, userId) => {
@@ -1959,6 +2744,7 @@ export const useApp = create<State>((set, get) => {
         upsertActivity(activity);
         subscribeChannel(`activity:${activity.id}`);
         set({ showPostSheet: false });
+        track('post_created', { category: input.category });
         toast('Posted — your squad can see it', 'success');
       });
     },
@@ -1983,6 +2769,7 @@ export const useApp = create<State>((set, get) => {
         const { float, users } = await floatApi.create(input);
         mergeUsers(users);
         upsertFloat(float);
+        track('float_created');
         toast('Floated 🎈', 'success');
         return float;
       } catch (e) {
@@ -2007,6 +2794,16 @@ export const useApp = create<State>((set, get) => {
             { userId: myId, state, at: Date.now() },
           ];
       upsertFloat({ ...before, responses: optimisticResponses });
+
+      // Buddy demo float — purely local; mark the "reply to a float" quest done.
+      if (isDemoFloat(floatId)) {
+        if (!get().questFlags.repliedFloat) {
+          const flags = { ...get().questFlags, repliedFloat: true };
+          writeQuestFlags(myId, flags);
+          set({ questFlags: flags });
+        }
+        return;
+      }
 
       void (async () => {
         try {
@@ -2042,12 +2839,15 @@ export const useApp = create<State>((set, get) => {
         });
         upsertFloat(float);
         // Pull the newly-created activity into the local cache so the user
-        // can jump straight into it from the float card.
+        // can jump straight into it from the float card. (We're the host, so
+        // it's always visible — narrow past the gate variant.)
         try {
-          const { activity, users } = await activityApi.get(activityId);
-          mergeUsers(users);
-          upsertActivity(activity);
-          subscribeChannel(`activity:${activityId}`);
+          const r = await activityApi.get(activityId);
+          if (r.visible !== false) {
+            mergeUsers(r.users);
+            upsertActivity(r.activity);
+            subscribeChannel(`activity:${activityId}`);
+          }
         } catch { /* non-fatal */ }
         toast('Locked in 🎉', 'success');
         set({ lockingFloatId: null });
@@ -2075,6 +2875,38 @@ export const useApp = create<State>((set, get) => {
     joinActivity: (activityId) => get().setRsvp(activityId, 'going'),
 
     setRsvp: (activityId, state) => {
+      // Buddy demo plan — RSVP is purely local (no server row exists). Toggle
+      // me through the three lists, and have Buddy reply in-chat on a join.
+      if (isDemoPlan(activityId)) {
+        const meId = get().meId;
+        set(s => ({
+          activities: s.activities.map(a => {
+            if (a.id !== activityId) return a;
+            const strip = (ids: string[]) => ids.filter(id => id !== meId);
+            const joiner = state === 'going' ? [...strip(a.joinerIds), meId] : strip(a.joinerIds);
+            const maybe  = state === 'maybe' ? [...strip(a.maybeIds), meId]  : strip(a.maybeIds);
+            const cant   = state === 'cant'  ? [...strip(a.cantIds), meId]   : strip(a.cantIds);
+            const justJoined = state === 'going' && !a.joinerIds.includes(meId);
+            const chat = justJoined
+              ? [...a.chat, {
+                  id: `demo_msg_${uid()}`,
+                  authorId: BUDDY_ID,
+                  at: Date.now(),
+                  type: 'text' as const,
+                  text: "You're in! 🙌 That's all there is to it. Tap the Chat tab to keep the conversation going.",
+                }]
+              : a.chat;
+            return { ...a, joinerIds: joiner, maybeIds: maybe, cantIds: cant, chat };
+          }),
+        }));
+        toast(
+          state === 'going' ? "You're going — nice! 🎉" :
+          state === 'maybe' ? 'Marked maybe' :
+          state === 'cant' ? 'Marked can\'t make it' : 'Cleared your RSVP',
+          state === 'cant' ? 'warn' : state === 'going' ? 'success' : 'default',
+        );
+        return;
+      }
       void guard(async () => {
         const { activity, users } = await activityApi.rsvp(activityId, state);
         mergeUsers(users);
@@ -2124,6 +2956,22 @@ export const useApp = create<State>((set, get) => {
     },
 
     toggleReaction: (activityId, emoji) => {
+      // Buddy demo plan — toggle my single reaction locally (no server row).
+      if (isDemoPlan(activityId)) {
+        const meId = get().meId;
+        set(s => ({
+          activities: s.activities.map(a => {
+            if (a.id !== activityId) return a;
+            const mine = a.reactions.find(r => r.userId === meId);
+            const without = a.reactions.filter(r => r.userId !== meId);
+            const next = mine && mine.emoji === emoji
+              ? without
+              : [...without, { emoji, userId: meId, at: Date.now() }];
+            return { ...a, reactions: next };
+          }),
+        }));
+        return;
+      }
       void guard(async () => {
         const { activity, users } = await activityApi.react(activityId, emoji);
         mergeUsers(users);
@@ -2136,6 +2984,26 @@ export const useApp = create<State>((set, get) => {
     sendChat: (activityId, text) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      // Buddy demo plan — keep the chat entirely local: append my message, then
+      // a short Buddy reply so the practice chat feels alive (no server).
+      if (isDemoPlan(activityId)) {
+        const meId = get().meId;
+        const appendDemo = (msg: ChatMessage) => set(s => ({
+          activities: s.activities.map(a =>
+            a.id === activityId ? { ...a, chat: [...a.chat, msg] } : a),
+        }));
+        appendDemo({ id: `demo_msg_${uid()}`, authorId: meId, at: Date.now(), type: 'text', text: trimmed });
+        setTimeout(() => {
+          appendDemo({
+            id: `demo_msg_${uid()}`,
+            authorId: BUDDY_ID,
+            at: Date.now(),
+            type: 'text',
+            text: "🎉 Nice — that's exactly how it works! In a real plan your friends would see that. You've got the hang of WUD.",
+          });
+        }, 1200);
+        return;
+      }
       const localId = uid();
       addPending(`activity:${activityId}`, {
         id: `pending-${localId}`,
@@ -2152,6 +3020,16 @@ export const useApp = create<State>((set, get) => {
       });
     },
     sendChatPhoto: (activityId, file, caption) => {
+      // Demo plan — append the photo locally (its own blob URL), no upload.
+      if (isDemoPlan(activityId)) {
+        const previewUrl = URL.createObjectURL(file);
+        set(s => ({
+          activities: s.activities.map(a => a.id === activityId
+            ? { ...a, chat: [...a.chat, { id: `demo_msg_${uid()}`, authorId: get().meId, at: Date.now(), type: 'photo' as const, photoUrl: previewUrl, text: caption }] }
+            : a),
+        }));
+        return;
+      }
       const localId = uid();
       const previewUrl = URL.createObjectURL(file);
       addPending(`activity:${activityId}`, {
@@ -2176,6 +3054,19 @@ export const useApp = create<State>((set, get) => {
       );
     },
     sendPoll: (activityId, question, optionTexts) => {
+      // Demo plan — drop a fully-local poll bubble (no server).
+      if (isDemoPlan(activityId)) {
+        set(s => ({
+          pollComposerActivityId: null,
+          activities: s.activities.map(a => a.id === activityId
+            ? { ...a, chat: [...a.chat, {
+                id: `demo_msg_${uid()}`, authorId: get().meId, at: Date.now(), type: 'poll' as const,
+                poll: { question, options: optionTexts.map((text, i) => ({ id: `demo-opt-${i}`, text, voterIds: [] })) },
+              }] }
+            : a),
+        }));
+        return;
+      }
       const localId = uid();
       // Close the composer right away so the optimistic poll bubble is
       // visible in the chat instead of competing with the open sheet.
@@ -2228,6 +3119,8 @@ export const useApp = create<State>((set, get) => {
           chat: a.chat.map(m => m.id !== messageId ? m : { ...m, reactions: flip(m.reactions) }),
         }),
       }));
+      // Demo plan — the optimistic flip above is the whole story (no server row).
+      if (isDemoPlan(activityId)) return;
       void guard(async () => {
         await chatApi.reactToMessage(messageId, emoji);
         await refreshActivity(activityId);
@@ -2319,6 +3212,13 @@ export const useApp = create<State>((set, get) => {
           return;
         }
         const { delivered } = await miscApi.ping(text, recipients);
+        // Getting Started: pings leave no local record, so completion of the
+        // "ping a friend" quest is flagged here on the first successful send.
+        if (!get().questFlags.pingDone) {
+          const flags = { ...get().questFlags, pingDone: true };
+          writeQuestFlags(get().meId, flags);
+          set({ questFlags: flags });
+        }
         // Name-aware confirmation. Resolves recipient names from the user
         // cache so the toast reads "You pinged Sarah" instead of the old
         // anonymous "Pinged 1 friend". Falls back to a count phrase once
@@ -2331,6 +3231,7 @@ export const useApp = create<State>((set, get) => {
           : names.length === 2 ? `${names[0]} and ${names[1]}`
           : names.length <= 4 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
           : `${names[0]}, ${names[1]} + ${names.length - 2} more`;
+        track('ping_sent', { recipients: recipients.length });
         toast(`You pinged ${namePhrase} 👋`, 'success');
         // delivered may differ from recipients.length when some recipients
         // have pings disabled — surface that quietly so the sender knows

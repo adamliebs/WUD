@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  Bell, ChevronLeft, Download, FileText, Heart, LogOut, MessageCircle,
+  Bell, ChevronLeft, Download, FileText, Heart, ListChecks, LogOut, MessageCircle,
   Megaphone, PlayCircle, ShieldCheck, ShieldOff, Trash2, UserCircle, UserPlus, Zap, Clock,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -123,6 +123,8 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
   const signOut = useApp(s => s.signOut);
   const setShowTutorial = useApp(s => s.setShowTutorial);
   const openOverlay = useApp(s => s.openOverlay);
+  const reopenQuests = useApp(s => s.reopenQuests);
+  const setTab = useApp(s => s.setTab);
 
   const set = <K extends keyof AppSettings>(k: K) => (v: AppSettings[K]) =>
     updateSettings({ [k]: v } as Partial<AppSettings>);
@@ -304,6 +306,18 @@ function SettingsListBody({ onGo }: { onGo: (s: SubScreen) => void }) {
 
       {/* About */}
       <Group title="About">
+        <Row
+          icon={<ListChecks size={16} />}
+          label="Getting started"
+          sub="Reopen the first-steps checklist + guided tours"
+          chevron
+          onClick={() => {
+            // Un-dismiss the checklist, then land on the Feed where it lives.
+            reopenQuests();
+            openOverlay(null);
+            setTab('feed');
+          }}
+        />
         <Row
           icon={<PlayCircle size={16} />}
           label="Replay tutorial"

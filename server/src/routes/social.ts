@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { uid } from '../auth/middleware.js';
 import { handler, optionalString, requireString } from '../lib/http.js';
 import {
-  acceptFriendRequest, addSquadMember, createSquad, declineFriendRequest, deleteSquad,
+  acceptFriendLink, acceptFriendRequest, acceptSquadInvite, addSquadMember, createSquad,
+  declineFriendRequest, declineSquadInvite, deleteSquad,
   discoverUsers, getSquad, incomingRequests, leaveSquad, listFriends, listSquadsForUser,
   matchContacts, outgoingRequests, removeFriend, removeSquadMember, sendFriendRequest, updateSquad,
 } from '../services/social.js';
@@ -42,6 +43,16 @@ socialRouter.post('/friends/contact-match', handler((req, res) => {
     : [];
   const matches = matchContacts(uid(req), { emails, phones });
   res.json({ users: matches.map(m => ({ ...m.user, isFriend: m.isFriend })) });
+}));
+
+/** POST /v1/friends/link — body: { handle }.
+ *  Invite-link friendship: the caller opened someone's personal invite link
+ *  (wud://invite?from=<handle>), so the friendship is created instantly —
+ *  no request/accept round-trip. Returns the new friend (and `already` when
+ *  the pair were friends before the call). */
+socialRouter.post('/friends/link', handler((req, res) => {
+  const result = acceptFriendLink(uid(req), requireString(req.body, 'handle'));
+  res.status(result.already ? 200 : 201).json(result);
 }));
 
 socialRouter.delete('/friends/:userId', handler((req, res) => {
@@ -136,5 +147,18 @@ socialRouter.delete('/squads/:id/members/:userId', handler((req, res) => {
 
 socialRouter.post('/squads/:id/leave', handler((req, res) => {
   leaveSquad(req.params.id, uid(req));
+  res.json({ ok: true });
+}));
+
+/* ---- squad invites (non-friend additions) ---- */
+
+/** Accept the pending invite to this squad: joins + auto-friends the inviter. */
+socialRouter.post('/squads/:id/invites/accept', handler((req, res) => {
+  const squad = acceptSquadInvite(req.params.id, uid(req));
+  res.json({ squad, ...squadUsers([squad]) });
+}));
+
+socialRouter.post('/squads/:id/invites/decline', handler((req, res) => {
+  declineSquadInvite(req.params.id, uid(req));
   res.json({ ok: true });
 }));
