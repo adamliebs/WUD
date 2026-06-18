@@ -32,6 +32,7 @@ let nextNotifId = 1;
 function closeTopLayer(): boolean {
   const s = useApp.getState();
   if (s.coach)                  { s.endCoach(); return true; }
+  if (s.openProfileId)          { s.openProfile(null); return true; }
   if (s.pollComposerActivityId) { s.setPollComposerActivityId(null); return true; }
   if (s.lockingFloatId)         { s.setLockingFloatId(null); return true; }
   if (s.editActivityId)         { s.setEditActivityId(null); return true; }

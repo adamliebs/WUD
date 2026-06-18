@@ -23,6 +23,7 @@ export function ProfileScreen() {
     ).length);
   const openActivity = useApp(s => s.openActivity);
   const openOverlay = useApp(s => s.openOverlay);
+  const openProfile = useApp(s => s.openProfile);
   // Full-screen viewer for tapping your own profile photo.
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
 
@@ -232,13 +233,18 @@ export function ProfileScreen() {
             </motion.button>
 
             {friends.map(u => (
-              <div key={u.id} className="flex items-center gap-3 p-2.5 rounded-2xl bg-white/5 border border-white/10">
+              <button
+                key={u.id}
+                onClick={() => openProfile(u.id)}
+                className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-white/5 border border-white/10
+                           hover:bg-white/10 active:bg-white/[0.13] transition text-left"
+              >
                 <Avatar user={u} size={36} />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{u.name}</div>
                   <div className="text-[11px] text-zinc-400 truncate">@{u.handle}</div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

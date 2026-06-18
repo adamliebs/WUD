@@ -1,6 +1,6 @@
 import { burst as confetti } from '../lib/confetti';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, BarChart3, CalendarPlus, Camera, Check, Clock, Crown, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Search, Send, Share2, ShieldOff, SmilePlus, UserPlus, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarPlus, Camera, Check, Clock, Crown, Link2, Loader2, Lock, MapPin, MessageCircle, MoreHorizontal, Pencil, Repeat, Search, Send, Share2, ShieldOff, SmilePlus, UserPlus, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar } from '../components/Avatar';
@@ -11,6 +11,7 @@ import { ReactionBar } from '../components/ReactionBar';
 import { categoryFor } from '../data/categories';
 import { clockTime, isLiveActivity, isPast, recurrenceLabel, relTime, useApp } from '../store';
 import { mediaUrl } from '../api/client';
+import { shareInvite } from '../lib/share-invite';
 import type { User } from '../types';
 
 export function ActivityDetailSheet() {
@@ -410,6 +411,22 @@ function Inner({ activityId }: { activityId: string }) {
                 >
                   <UserPlus size={16} />
                   Invite friends
+                </button>
+              )}
+
+              {/* Invite with link — share a personal invite link. A recipient
+                  who isn't on WUD / isn't a friend yet lands on the /invite
+                  page and is auto-friended on open (store.handleInviteLink),
+                  so they can then see and join the plan. */}
+              {isHost && !over && (
+                <button
+                  onClick={() => void shareInvite(me)}
+                  className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl
+                             text-sm font-bold text-zinc-100 bg-white/5 border border-white/10
+                             hover:bg-white/10 active:scale-[0.99] transition"
+                >
+                  <Link2 size={16} className="text-sky-300" />
+                  Invite with link
                 </button>
               )}
 
@@ -1289,13 +1306,20 @@ function PersonRow({
   user: { id: string; name: string; handle: string; avatar: string; color: string; photoUrl?: string };
   badge?: 'host' | 'maybe' | 'cant';
 }) {
+  const openProfile = useApp(s => s.openProfile);
   const badgeStyles: Record<NonNullable<typeof badge>, { cls: string; label: string }> = {
     host:  { cls: 'text-amber-200 bg-amber-400/15 border-amber-300/30',  label: '👑 Host' },
     maybe: { cls: 'text-sky-200 bg-sky-400/15 border-sky-400/30',        label: '🤔 Maybe' },
     cant:  { cls: 'text-zinc-300 bg-zinc-500/15 border-zinc-500/30',     label: '✕ Can\'t' },
   };
+  // Tap a person to open their profile (stats + add-friend) — the main way to
+  // friend someone you only know from sharing an event.
   return (
-    <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-white/5 border border-white/10">
+    <button
+      onClick={() => openProfile(user.id)}
+      className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-white/5 border border-white/10
+                 hover:bg-white/10 active:bg-white/[0.13] transition text-left"
+    >
       <Avatar user={user} size={36} />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-white truncate">{user.name}</div>
@@ -1306,7 +1330,7 @@ function PersonRow({
           {badgeStyles[badge].label}
         </span>
       )}
-    </div>
+    </button>
   );
 }
 

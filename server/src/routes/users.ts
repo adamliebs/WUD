@@ -3,6 +3,8 @@ import { uid } from '../auth/middleware.js';
 import { badRequest } from '../lib/errors.js';
 import { handler, optionalString, requireString } from '../lib/http.js';
 import { revokeAllForUser } from '../services/auth.js';
+import { getUserProfile } from '../services/social.js';
+import { recentVisiblePlansFor } from '../services/activities.js';
 import { db } from '../db/index.js';
 import {
   getPrivateUser, getPublicUser, getSettings, registerDevice, removeDevice,
@@ -68,4 +70,12 @@ usersRouter.delete('/account', handler((req, res) => {
 /** GET /v1/users/:id — public-safe profile of another user. */
 usersRouter.get('/users/:id', handler((req, res) => {
   res.json({ user: getPublicUser(req.params.id) });
+}));
+
+/** GET /v1/users/:id/profile — viewer-relative profile: identity + social
+ *  stats (friend count, mutual friends) + relationship (friend / pending). */
+usersRouter.get('/users/:id/profile', handler((req, res) => {
+  const viewer = uid(req);
+  const profile = getUserProfile(viewer, req.params.id);   // throws 404 if blocked/missing
+  res.json({ ...profile, recentPlans: recentVisiblePlansFor(viewer, req.params.id, 3) });
 }));

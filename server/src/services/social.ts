@@ -233,6 +233,84 @@ export function outgoingRequests(userId: string) {
   ).map(r => ({ id: r.id, to: toPublicUser(getUserRow(r.recipient_id)!), at: r.created_at }));
 }
 
+/** Friendship-request state between the viewer and another user — drives the
+ *  Add / Requested / Respond button on a profile. */
+export function friendRequestState(viewerId: string, otherId: string): 'none' | 'outgoing' | 'incoming' {
+  const r = q.get<{ requester_id: string }>(
+    `SELECT requester_id FROM friend_requests
+      WHERE status = 'pending'
+        AND ((requester_id = ? AND recipient_id = ?) OR (requester_id = ? AND recipient_id = ?))`,
+    viewerId, otherId, otherId, viewerId,
+  );
+  if (!r) return 'none';
+  return r.requester_id === viewerId ? 'outgoing' : 'incoming';
+}
+
+export interface UserProfile {
+  user: PublicUser;
+  /** Their total friends (WUD Buddy excluded — he's everyone's friend). */
+  friendCount: number;
+  /** Friends in common with the viewer (Buddy + the viewer excluded). */
+  mutualCount: number;
+  /** A handful of mutual-friend objects, for an avatar stack. */
+  mutuals: PublicUser[];
+  /** Their friends (capped), each flagged with whether the VIEWER is already
+   *  friends with them — drives the friend-their-friends Add buttons. */
+  friends: (PublicUser & { isFriend: boolean })[];
+  isFriend: boolean;
+  isMe: boolean;
+  requestState: 'none' | 'outgoing' | 'incoming';
+}
+
+/**
+ * A viewer-relative profile for another user: public identity plus social
+ * stats (friend count, mutual friends) and the viewer's relationship to them
+ * (friend / pending request). Blocked-either-way pairs 404 so a block hides
+ * the profile, not just the feed.
+ */
+export function getUserProfile(viewerId: string, targetId: string): UserProfile {
+  const row = getUserRow(targetId);
+  if (!row) throw notFound('USER_NOT_FOUND', 'User not found');
+  if (viewerId !== targetId && blockedUserIds(viewerId).includes(targetId)) {
+    throw notFound('USER_NOT_FOUND', 'User not found');
+  }
+  // WUD Buddy is friends with everyone — showing that as a stat is nonsense,
+  // so the bot's profile reports no friends / no mutuals.
+  if (targetId === BUDDY_ID) {
+    return {
+      user: toPublicUser(row),
+      friendCount: 0, mutualCount: 0, mutuals: [], friends: [],
+      isFriend: areFriends(viewerId, targetId), isMe: false,
+      requestState: 'none',
+    };
+  }
+  // Exclude WUD Buddy + the viewer + blocked-either-way from stats/lists.
+  const blocked = new Set(blockedUserIds(viewerId));
+  const theirFriends = friendIds(targetId)
+    .filter(id => id !== BUDDY_ID && id !== viewerId && !blocked.has(id));
+  const mine = new Set(friendIds(viewerId).filter(id => id !== BUDDY_ID));
+  const mutualIds = theirFriends.filter(id => mine.has(id));
+  return {
+    user: toPublicUser(row),
+    friendCount: theirFriends.length,
+    mutualCount: mutualIds.length,
+    mutuals: mutualIds.slice(0, 8)
+      .map(getUserRow)
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map(toPublicUser),
+    // Mutuals first (most relevant), then the rest. Each flagged so the UI can
+    // show an Add button on the ones the viewer isn't connected to.
+    friends: [...mutualIds, ...theirFriends.filter(id => !mine.has(id))]
+      .slice(0, 30)
+      .map(getUserRow)
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map(r => ({ ...toPublicUser(r), isFriend: mine.has(r.id) })),
+    isFriend: areFriends(viewerId, targetId),
+    isMe: viewerId === targetId,
+    requestState: friendRequestState(viewerId, targetId),
+  };
+}
+
 /** Users with a pending friend request to/from this user (either direction). */
 function pendingRequestPeers(userId: string): Set<string> {
   const rows = q.all<{ requester_id: string; recipient_id: string }>(

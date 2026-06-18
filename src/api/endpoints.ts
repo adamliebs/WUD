@@ -219,9 +219,37 @@ export const chatApi = {
 export interface IncomingRequest { id: string; from: User; at: number }
 export interface OutgoingRequest { id: string; to: User; at: number }
 
+/** Viewer-relative profile of another user — identity + social stats +
+ *  relationship, powering the tappable profile sheet. */
+export interface ProfilePlan {
+  id: string;
+  title: string;
+  category: CategoryKey;
+  customEmoji?: string;
+  customLabel?: string;
+  startsAt: number;
+  endsAt: number;
+  place: string;
+  going: number;
+  isPast: boolean;
+}
+
+export interface UserProfileResp {
+  user: User;
+  friendCount: number;
+  mutualCount: number;
+  mutuals: User[];
+  friends: (User & { isFriend: boolean })[];
+  recentPlans: ProfilePlan[];
+  isFriend: boolean;
+  isMe: boolean;
+  requestState: 'none' | 'outgoing' | 'incoming';
+}
+
 export const socialApi = {
   friends: () => api.get<{ friends: User[] }>('/friends'),
   discover: (q: string) => api.get<{ users: User[] }>(`/friends/discover?q=${encodeURIComponent(q)}`),
+  profile: (id: string) => api.get<UserProfileResp>(`/users/${id}/profile`),
   /** Match contact-book entries against WUD users — used by the "Find friends
    *  from your contacts" flow on iOS/Android. Both fields are optional; the
    *  server returns the union of matches. Raw phone numbers are sent over

@@ -558,6 +558,10 @@ interface State {
    *  non-friend), the server returns just the host and we show an "add them
    *  to see this plan" gate instead of the detail. Null = normal/visible. */
   planGate: { activityId: string; host: User | null } | null;
+  /** User id whose profile sheet is open (tap any avatar / person row), or
+   *  null. The sheet fetches stats + relationship on open. */
+  openProfileId: string | null;
+  openProfile: (id: string | null) => void;
   showPostSheet: boolean;
   /** Optional initial audience config consumed by PostSheet on its next
    *  open. Set by `openPostSheetForSquad` (the + button inside a squad's
@@ -1605,6 +1609,7 @@ export const useApp = create<State>((set, get) => {
     tab: 'feed',
     openActivityId: null,
     planGate: null,
+    openProfileId: null,
     showPostSheet: false,
     postSheetInit: null,
     showGoLiveSheet: false,
@@ -2263,6 +2268,8 @@ export const useApp = create<State>((set, get) => {
     setPollComposerActivityId: (id) => set({ pollComposerActivityId: id }),
 
     /** Opening an activity refetches it (fresh chat/RSVPs) + subscribes for realtime. */
+    openProfile: (id) => set({ openProfileId: id }),
+
     openActivity: (id) => {
       // Clear any stale gate from a previous open before fetching.
       set({ openActivityId: id, planGate: null });
@@ -2427,7 +2434,7 @@ export const useApp = create<State>((set, get) => {
       set({
         meId: '', users: [], friendIds: [], friendRequests: [], outgoingRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
         notifications: [], squads: [],
-        tab: 'feed', openActivityId: null, planGate: null, showPostSheet: false,
+        tab: 'feed', openActivityId: null, planGate: null, openProfileId: null, showPostSheet: false,
         showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, squadCreateIntent: false, pendingMessages: {},
         questFlags: DEFAULT_QUEST_FLAGS, questsReopened: false, pendingInviteConsuming: false, coach: null, contactsSheetOpen: false,
         feedFilters: { timeWindow: 'all', sort: 'soonest' },
@@ -2444,7 +2451,7 @@ export const useApp = create<State>((set, get) => {
         set({
           meId: '', users: [], friendIds: [], friendRequests: [], outgoingRequests: [], blockedIds: [], blockedUsers: [], activities: [], floats: [],
           notifications: [], squads: [],
-          tab: 'feed', openActivityId: null, planGate: null, showPostSheet: false,
+          tab: 'feed', openActivityId: null, planGate: null, openProfileId: null, showPostSheet: false,
           showGoLiveSheet: false, editActivityId: null, pollComposerActivityId: null, overlay: null, squadFocusId: null, squadCreateIntent: false, pendingMessages: {},
           questFlags: DEFAULT_QUEST_FLAGS, questsReopened: false, pendingInviteConsuming: false, coach: null, contactsSheetOpen: false,
           feedFilters: { timeWindow: 'all', sort: 'soonest' },

@@ -186,6 +186,62 @@ export function historyFor(userId: string): Activity[] {
   return rows.map(toActivity);
 }
 
+/** A compact plan row for a user's profile — just enough to render a tappable
+ *  summary (the full activity loads on tap, gated by visibility). */
+export interface ProfilePlan {
+  id: string;
+  title: string;
+  category: string;
+  customEmoji?: string;
+  customLabel?: string;
+  startsAt: number;
+  endsAt: number;
+  place: string;
+  going: number;        // host + going RSVPs
+  isPast: boolean;
+}
+
+/**
+ * Recent plans `targetId` hosts or is going to, filtered to ones the viewer is
+ * allowed to see (canSeeActivity). Upcoming first, then most-recent past —
+ * capped. Used by the profile sheet's "recent plans" section.
+ */
+export function recentVisiblePlansFor(viewerId: string, targetId: string, limit = 6): ProfilePlan[] {
+  const rows = q.all<ActivityRow>(
+    `SELECT DISTINCT a.* FROM activities a
+       LEFT JOIN rsvps r ON r.activity_id = a.id AND r.user_id = ? AND r.state = 'going'
+      WHERE a.dissolved_at IS NULL AND (a.host_id = ? OR r.user_id IS NOT NULL)
+      ORDER BY a.starts_at DESC`,
+    targetId, targetId,
+  );
+  const ts = now();
+  const out: ProfilePlan[] = [];
+  for (const row of rows) {
+    if (!canSeeActivity(viewerId, row)) continue;
+    const going = q.get<{ n: number }>(
+      "SELECT COUNT(*) n FROM rsvps WHERE activity_id = ? AND state = 'going'", row.id,
+    )!.n;
+    out.push({
+      id: row.id,
+      title: row.title,
+      category: row.category,
+      customEmoji: row.custom_emoji ?? undefined,
+      customLabel: row.custom_label ?? undefined,
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
+      place: row.place,
+      going: 1 + going,
+      isPast: row.ends_at < ts,
+    });
+    if (out.length >= limit) break;
+  }
+  // Upcoming/live first (soonest), then recent past.
+  return out.sort((a, b) => {
+    if (a.isPast !== b.isPast) return a.isPast ? 1 : -1;
+    return a.isPast ? b.startsAt - a.startsAt : a.startsAt - b.startsAt;
+  });
+}
+
 /* ===================== create ===================== */
 
 export function createActivity(hostId: string, input: {

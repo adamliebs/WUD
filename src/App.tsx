@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useApp } from './store';
 import { CoachMarks } from './components/CoachMarks';
 import { DismissKeyboardOnSwipe } from './components/DismissKeyboardOnSwipe';
+import { UserProfileSheet } from './components/UserProfileSheet';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { PhoneFrame } from './components/PhoneFrame';
@@ -97,6 +98,9 @@ function MainApp() {
       <PollComposerSheet />
       <ReportSheet />
       <OverlayHost />
+      {/* Tap-any-avatar profile sheet (stats + add friend). Sits above the
+          activity detail sheet so it can open from an event's people list. */}
+      <UserProfileSheet />
       {/* Getting Started coach marks — dim + spotlight + tooltip over the
           real UI. Renders nothing when no tour is active. Sits above sheets
           and overlays (z-60) so it can point INTO them. */}

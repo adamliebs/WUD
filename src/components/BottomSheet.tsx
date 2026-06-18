@@ -11,10 +11,15 @@ interface Props {
    *  only. Use for sheets where the user is making a commitment (lock-in,
    *  confirmation) and an accidental pull-to-dismiss reads as a bug. */
   stiff?: boolean;
+  /** Raise the sheet above another open BottomSheet (z 54/55 instead of
+   *  40/50) — e.g. the profile sheet opened from the activity detail sheet. */
+  elevated?: boolean;
 }
 
-export function BottomSheet({ open, onClose, children, size = 'full', stiff = false }: Props) {
+export function BottomSheet({ open, onClose, children, size = 'full', stiff = false, elevated = false }: Props) {
   const top = size === 'full' ? 48 : 96;
+  const zBackdrop = elevated ? 'z-[54]' : 'z-40';
+  const zPanel = elevated ? 'z-[55]' : 'z-50';
 
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.y > 120 || info.velocity.y > 600) onClose();
@@ -25,14 +30,14 @@ export function BottomSheet({ open, onClose, children, size = 'full', stiff = fa
       {open && (
         <>
           <motion.div
-            className="absolute inset-0 z-40 bg-black/55"
+            className={`absolute inset-0 ${zBackdrop} bg-black/55`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
           <motion.div
-            className="absolute left-0 right-0 z-50 glass-strong rounded-t-[28px] shadow-2xl overflow-hidden"
+            className={`absolute left-0 right-0 ${zPanel} glass-strong rounded-t-[28px] shadow-2xl overflow-hidden`}
             style={{ top, bottom: 0 }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
