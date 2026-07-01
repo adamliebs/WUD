@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, Mail, X } from 'lucide-react';
 import { useState } from 'react';
 import { platform } from '../native';
+import { firebaseWebReady } from '../firebase-web';
 import { PulseButton } from '../components/PulseButton';
 import { useApp } from '../store';
 
@@ -163,16 +164,20 @@ export function AuthScreen() {
               {isSignup ? 'Sign up with Apple' : 'Continue with Apple'}
             </button>
           )}
-          <button
-            onClick={() => void signInWithGoogle()}
-            disabled={authBusy}
-            className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl
-                       bg-white text-zinc-900 font-semibold text-[15px]
-                       active:bg-zinc-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <GoogleLogo />
-            {isSignup ? 'Sign up with Google' : 'Continue with Google'}
-          </button>
+          {/* Google works on native always, and on the web only once a
+              Firebase Web app is configured (VITE_FIREBASE_APP_ID). */}
+          {(platform !== 'web' || firebaseWebReady) && (
+            <button
+              onClick={() => void signInWithGoogle()}
+              disabled={authBusy}
+              className="flex items-center justify-center gap-2 w-full py-3 rounded-2xl
+                         bg-white text-zinc-900 font-semibold text-[15px]
+                         active:bg-zinc-200 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <GoogleLogo />
+              {isSignup ? 'Sign up with Google' : 'Continue with Google'}
+            </button>
+          )}
         </div>
 
         {/* Divider — "or with email" */}

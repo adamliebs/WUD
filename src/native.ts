@@ -67,6 +67,42 @@ function handleDeepLink(url: string): void {
   }
 }
 
+/* ────────────────────────── Web entry deep links ────────────────────────── */
+
+// The web build has no native `appUrlOpen` event, so a visitor who lands on
+// https://whatudoing.app/app?invite=<handle> or …?plan=<id> (the "Continue in
+// browser" target on the share-landing pages) needs the URL parsed once at
+// startup. Invites redeem the same way as a native deep link (stashed, then
+// auto-friended after signup); a plan id is held until the user is signed in.
+let pendingWebPlanId: string | null = null;
+
+/** Parse the current web URL once at boot. No-op on native. */
+export function handleWebEntryLink(): void {
+  if (isNative) return;
+  try {
+    const url = new URL(window.location.href);
+    const from = (url.searchParams.get('invite') ?? url.searchParams.get('from') ?? '')
+      .replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
+    if (from) { useApp.getState().handleInviteLink(from); return; }
+    const pathMatch = /\/(?:plan|activity)\/([a-zA-Z0-9_-]{1,40})/.exec(url.pathname);
+    const id = url.searchParams.get('plan') ?? (pathMatch ? pathMatch[1] : null);
+    if (id && /^[a-zA-Z0-9_-]{1,40}$/.test(id)) pendingWebPlanId = id;
+  } catch {
+    /* malformed URL — ignore */
+  }
+}
+
+/** Open a web-linked plan once the user is authenticated. Called from App when
+ *  authState flips to 'app'. Safe to call repeatedly; fires at most once. */
+export function consumePendingWebPlan(): void {
+  if (!pendingWebPlanId) return;
+  const s = useApp.getState();
+  if (s.authState !== 'app') return;
+  const id = pendingWebPlanId;
+  pendingWebPlanId = null;
+  s.openActivity(id);
+}
+
 /* ──────────────────── Deferred invite (clipboard bridge) ─────────────────── */
 
 /** Set once we've checked the clipboard for a deferred invite, so we don't

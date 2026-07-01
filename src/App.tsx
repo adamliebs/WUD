@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { useApp } from './store';
+import { consumePendingWebPlan } from './native';
 import { CoachMarks } from './components/CoachMarks';
 import { DismissKeyboardOnSwipe } from './components/DismissKeyboardOnSwipe';
 import { UserProfileSheet } from './components/UserProfileSheet';
@@ -32,6 +33,12 @@ function App() {
 
   // On mount, resume a saved session (if a token is in localStorage).
   useEffect(() => { init(); }, [init]);
+
+  // Web: once signed in, open any plan that arrived via a web link
+  // (?plan= or /plan/:id) — held by native.handleWebEntryLink until auth.
+  useEffect(() => {
+    if (authState === 'app') consumePendingWebPlan();
+  }, [authState]);
 
   // First-run guidance now lives in the Getting Started checklist on the
   // Feed (components/GettingStartedCard) — quests that walk the user through

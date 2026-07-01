@@ -14,7 +14,7 @@
 
 const APP_STORE_URL = 'https://apps.apple.com/us/app/wud-what-u-doing/id6775162871';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=app.wud.app';
-const SITE_URL = 'https://whatudoing.app';
+export const SITE_URL = 'https://whatudoing.app';
 
 const escapeHtml = (s: string): string =>
   s.replace(/[&<>"']/g, (c) =>
@@ -33,11 +33,25 @@ export function renderShareLanding(opts: {
    *  can't carry ?from= through the App/Play Store, so the freshly-installed
    *  app reads the clipboard on first launch and redeems the invite. */
   clipboardToken?: string;
+  /** When set, adds a "Continue in your browser" button that opens the web app
+   *  (carrying the plan/invite so it resolves after login). */
+  webUrl?: string;
+  /** Absolute image URL for the OG / Twitter card (host photo, plan banner…). */
+  imageUrl?: string;
 }): string {
   const title = escapeHtml(opts.title);
   const description = escapeHtml(opts.description);
   const deepLink = escapeHtml(opts.deepLink);
   const clipboardToken = opts.clipboardToken ?? '';
+  const webUrl = opts.webUrl ? escapeHtml(opts.webUrl) : '';
+  const imageMeta = opts.imageUrl
+    ? `<meta property="og:image" content="${escapeHtml(opts.imageUrl)}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="${escapeHtml(opts.imageUrl)}" />`
+    : `<meta name="twitter:card" content="summary" />`;
+  const webButton = webUrl
+    ? `<a class="store-btn secondary" href="${webUrl}">Continue in your browser</a>`
+    : '';
   const inviterBlock = opts.inviter
     ? `<div class="inviter">${
         opts.inviter.photoUrl
@@ -58,7 +72,7 @@ export function renderShareLanding(opts: {
 <meta property="og:title" content="${title}" />
 <meta property="og:description" content="${description}" />
 <meta property="og:url" content="${SITE_URL}" />
-<meta name="twitter:card" content="summary" />
+${imageMeta}
 <meta name="twitter:title" content="${title}" />
 <meta name="twitter:description" content="${description}" />
 <link rel="stylesheet" href="/_layout.css" />
@@ -100,6 +114,7 @@ export function renderShareLanding(opts: {
 
     <div class="stack">
       <a id="open-app" class="store-btn" href="${deepLink}">Open in WUD</a>
+      ${webButton}
       <a class="store-btn secondary" data-store href="${APP_STORE_URL}">Download on the App Store</a>
       <a class="store-btn secondary" data-store href="${PLAY_STORE_URL}">Get it on Google Play</a>
     </div>

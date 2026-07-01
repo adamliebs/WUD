@@ -67,3 +67,37 @@ services:
         sync: false
       - key: LITESTREAM_SECRET_ACCESS_KEY
         sync: false
+
+  # ---------------------------------------------------------------------------
+  # WEB APP — the Vite SPA served in the browser (whatudoing.app in a browser).
+  #
+  # A CDN-backed static site: builds the client at the repo root and publishes
+  # dist/. The SPA rewrite sends every path to index.html so client routes and
+  # deep links (/?invite=, /?plan=, /plan/:id) resolve. It talks to the same
+  # wud-api service above over HTTPS; add its origin to that service's
+  # CORS_ORIGIN. See WEB.md for the full custom-domain + Firebase-web setup.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: wud-web
+    runtime: static
+    branch: main
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # SPA fallback — unknown paths serve the app shell, not a 404.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Where the SPA sends API calls. Point at the wud-api service's URL
+      # (its onrender.com URL, or the apex if you route the domain there).
+      - key: VITE_API_URL
+        sync: false           # e.g. https://api.whatudoing.app
+      # Firebase Web app id — register a Web app in the Firebase console
+      # (Project settings → Your apps → Web) to enable browser email/Google
+      # login. Until set, web social/email signup stays disabled.
+      - key: VITE_FIREBASE_APP_ID
+        sync: false           # e.g. 1:267273833603:web:xxxxxxxxxxxx
+      # Optional API key override (defaults to the project's key in code).
+      - key: VITE_FIREBASE_API_KEY
+        sync: false

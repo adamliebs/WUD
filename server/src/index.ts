@@ -13,11 +13,12 @@ import { pinoHttp } from 'pino-http';
 import { config } from './config.js';
 import { closeDb, dbHealthy, migrate } from './db/index.js';
 import { ensureBuddyUser } from './services/buddy.js';
-import { getUserRowByHandle } from './services/users.js';
+import { getUserRow, getUserRowByHandle } from './services/users.js';
+import { getActivityRow } from './services/activities.js';
 import { requireAuth } from './auth/middleware.js';
 import { errorMiddleware } from './lib/http.js';
 import { logger } from './lib/logger.js';
-import { renderShareLanding } from './lib/share-landing.js';
+import { renderShareLanding, SITE_URL } from './lib/share-landing.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { attachRealtime, closeRealtime, realtimeClientCount } from './realtime/gateway.js';
 import { startScheduler, stopScheduler } from './scheduler.js';
@@ -129,10 +130,23 @@ app.get('/plan/:id', (req, res) => {
     res.status(404).type('text/plain').send('Not found');
     return;
   }
+  // Personalize with the host's face + name (like the invite page). We
+  // deliberately do NOT expose plan content (title / time / place) on this
+  // public page — the real visibility gate lives in-app after login.
+  const row = getActivityRow(id);
+  const host = row ? getUserRow(row.host_id) : undefined;
+  const hostPhoto = host?.photo_url
+    ? (host.photo_url.startsWith('/') ? `${SITE_URL}${host.photo_url}` : host.photo_url)
+    : undefined;
   res.type('text/html').send(renderShareLanding({
-    title: 'Join the plan on WUD',
+    title: host ? `${host.name} shared a plan on WUD` : 'Join the plan on WUD',
     description: 'Open this plan in WUD to RSVP, chat with the crew, and see when it goes live.',
     deepLink: `wud://plan/${id}`,
+    webUrl: `${config.webAppUrl}/?plan=${id}`,
+    inviter: host
+      ? { name: host.name, emoji: host.avatar_emoji, photoUrl: host.photo_url ?? undefined }
+      : undefined,
+    imageUrl: hostPhoto,
   }));
 });
 
@@ -151,8 +165,12 @@ app.get('/invite', (req, res) => {
       ? `WUD is a friends-only spontaneous-plans app. Join from this link and you and ${inviter.name} will be friends automatically.`
       : 'WUD is a friends-only spontaneous-plans app. Tap below to open or download.',
     deepLink: handle ? `wud://invite?from=${encodeURIComponent(handle)}` : 'wud://invite',
+    webUrl: handle ? `${config.webAppUrl}/?invite=${handle}` : config.webAppUrl,
     inviter: inviter
       ? { name: inviter.name, emoji: inviter.avatar_emoji, photoUrl: inviter.photo_url ?? undefined }
+      : undefined,
+    imageUrl: inviter?.photo_url
+      ? (inviter.photo_url.startsWith('/') ? `${SITE_URL}${inviter.photo_url}` : inviter.photo_url)
       : undefined,
     // Deferred-deep-link token copied to the clipboard so a fresh install can
     // redeem the invite on first launch (the store can't carry ?from= through).

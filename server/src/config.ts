@@ -74,6 +74,11 @@ export const config = {
     'https://localhost',
   ]),
 
+  /** Public URL of the web app — the "Continue in your browser" target on the
+   *  share-landing pages. Point at the deployed SPA host (e.g. a Render Static
+   *  Site at https://app.whatudoing.app). */
+  webAppUrl: process.env.WEB_APP_URL ?? 'https://app.whatudoing.app',
+
   /** Scheduler tick interval (ms) for reminders / live-status expiry. */
   schedulerIntervalMs: num('SCHEDULER_MS', 30_000),
 
