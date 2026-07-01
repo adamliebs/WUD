@@ -82,12 +82,16 @@ html.android .glass-strong {
   background: rgba(15, 13, 22, 0.97);
 }
 
-/* Brand gradient text */
+/* Brand gradient text. `-webkit-text-fill-color` (not `color`) drives the
+   transparency so WebViews that don't clip the gradient — some Android builds
+   render the text invisible otherwise — fall back to the solid `color` and
+   stay legible. */
 .text-grad {
   background: linear-gradient(120deg, #fb7185 0%, #f472b6 40%, #fb923c 100%);
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
+  color: #fb7185;
+  -webkit-text-fill-color: transparent;
 }
 
 /* Pulsing live dot */

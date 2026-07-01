@@ -411,7 +411,7 @@ function Inner({ activityId, onClose }: { activityId: string; onClose: () => voi
       </div>
 
       {/* Sticky save button */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+      <div className="absolute bottom-0 left-0 right-0 px-4 pt-4 pb-safe bg-gradient-to-t from-black/80 to-transparent">
         <PulseButton onClick={onSave} disabled={!canSave}>
           {saving ? 'Saving…' : 'Save changes'}
         </PulseButton>

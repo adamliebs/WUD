@@ -136,7 +136,7 @@ export function PollComposerSheet() {
         </div>
 
         {/* Sticky submit */}
-        <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-4
+        <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-safe
                         bg-[#0a070f]/95 backdrop-blur-md border-t border-white/10">
           <PulseButton onClick={submit} disabled={!canSubmit}>
             Post poll to chat

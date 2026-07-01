@@ -500,7 +500,7 @@ function Inner({ activityId }: { activityId: string }) {
           chat) is full-width with the brand gradient; destructive / less
           common actions are smaller ghost-square buttons next to it. */}
       {tab === 'details' && (
-        <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-4
+        <div className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-safe
                         bg-black/40 backdrop-blur-xl border-t border-white/5">
           {over ? (
             // Past event — no join/leave/pass-host actions. Just read-only access
